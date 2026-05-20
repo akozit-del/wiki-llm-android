@@ -30,17 +30,15 @@ jobs:
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
-
-      - name: Make gradlew executable
-        run: |
-          if [ -f gradlew ]; then chmod +x gradlew; fi
+        with:
+          gradle-version: '8.9'
 
       - name: Generate Gradle wrapper if missing
         run: |
           if [ ! -f gradlew ]; then
             gradle wrapper --gradle-version 8.9
-            chmod +x gradlew
           fi
+          chmod +x gradlew
 
       - name: Build Debug APK
         run: ./gradlew :app:assembleDebug --no-daemon --stacktrace
