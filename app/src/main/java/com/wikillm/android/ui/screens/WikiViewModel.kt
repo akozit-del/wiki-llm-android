@@ -24,10 +24,10 @@ sealed interface CatalogState {
 }
 
 data class CatalogFilters(
-    val language: String? = null,       // null = all
-    val variant: String? = null,        // null = all
-    val topic: String? = null,          // null = all
-    val query: String = "",             // free-text in filename
+    val language: String? = null,
+    val variant: String? = null,
+    val topic: String? = null,
+    val query: String = "",
 )
 
 class WikiViewModel(app: Application) : AndroidViewModel(app) {
@@ -36,6 +36,11 @@ class WikiViewModel(app: Application) : AndroidViewModel(app) {
 
     val selected: StateFlow<List<SelectedZim>> = repo.selected
     val downloaded: StateFlow<List<DownloadedZim>> = repo.downloaded
+    val scanned: StateFlow<List<SelectedZim>> = repo.scanned
+    val zimDir: StateFlow<String?> = repo.zimDir
+
+    private val _scanning = MutableStateFlow(false)
+    val scanning: StateFlow<Boolean> = _scanning.asStateFlow()
 
     private val _catalog = MutableStateFlow<CatalogState>(CatalogState.Idle)
     val catalog: StateFlow<CatalogState> = _catalog.asStateFlow()
@@ -52,7 +57,35 @@ class WikiViewModel(app: Application) : AndroidViewModel(app) {
     private val downloadJobs = mutableMapOf<String, Job>()
 
     init {
+        // If a folder was picked earlier, run a scan on startup.
+        if (repo.zimDir.value != null) rescan()
         loadCatalog()
+    }
+
+    fun onZimDirPicked(uri: Uri) {
+        viewModelScope.launch {
+            _scanning.value = true
+            try {
+                repo.setZimDirectory(uri)
+            } finally {
+                _scanning.value = false
+            }
+        }
+    }
+
+    fun clearZimDir() {
+        repo.clearZimDirectory()
+    }
+
+    fun rescan() {
+        viewModelScope.launch {
+            _scanning.value = true
+            try {
+                repo.rescanDirectory()
+            } finally {
+                _scanning.value = false
+            }
+        }
     }
 
     fun loadCatalog() {
@@ -66,17 +99,9 @@ class WikiViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    fun setLanguage(lang: String?) {
-        _filters.value = _filters.value.copy(language = lang)
-    }
-
-    fun setVariant(variant: String?) {
-        _filters.value = _filters.value.copy(variant = variant)
-    }
-
-    fun setQuery(q: String) {
-        _filters.value = _filters.value.copy(query = q)
-    }
+    fun setLanguage(lang: String?) { _filters.value = _filters.value.copy(language = lang) }
+    fun setVariant(variant: String?) { _filters.value = _filters.value.copy(variant = variant) }
+    fun setQuery(q: String) { _filters.value = _filters.value.copy(query = q) }
 
     fun onUriPicked(uri: Uri) {
         val context = getApplication<Application>().applicationContext
@@ -97,13 +122,8 @@ class WikiViewModel(app: Application) : AndroidViewModel(app) {
         repo.addSelected(SelectedZim(uri.toString(), name, size))
     }
 
-    fun removeSelected(uriString: String) {
-        repo.removeSelected(uriString)
-    }
-
-    fun deleteDownloaded(zim: DownloadedZim) {
-        repo.deleteDownloaded(zim)
-    }
+    fun removeSelected(uriString: String) = repo.removeSelected(uriString)
+    fun deleteDownloaded(zim: DownloadedZim) = repo.deleteDownloaded(zim)
 
     fun download(entry: KiwixEntry) {
         val key = entry.filename

@@ -1,6 +1,8 @@
 package com.wikillm.android.ui.screens
 
+import android.content.Intent
 import android.net.Uri
+import android.provider.DocumentsContract
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
@@ -12,6 +14,7 @@ import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.FolderOpen
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -22,6 +25,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SecondaryTabRow
@@ -78,45 +82,114 @@ fun WikiScreen(navController: NavController, vm: WikiViewModel = viewModel()) {
     }
 }
 
-// ---- TAB 1: my files (SAF picker + downloaded) ----
+// ---- TAB 1: my files ----
 
 @Composable
 private fun MyFilesTab(vm: WikiViewModel) {
     val context = LocalContext.current
     val selected by vm.selected.collectAsState()
     val downloaded by vm.downloaded.collectAsState()
+    val scanned by vm.scanned.collectAsState()
+    val zimDir by vm.zimDir.collectAsState()
+    val scanning by vm.scanning.collectAsState()
 
-    val picker = rememberLauncherForActivityResult(
+    val filePicker = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument()
     ) { uri: Uri? ->
         if (uri != null) {
             runCatching {
                 context.contentResolver.takePersistableUriPermission(
-                    uri,
-                    android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION,
+                    uri, Intent.FLAG_GRANT_READ_URI_PERMISSION
                 )
             }
             vm.onUriPicked(uri)
         }
     }
 
+    val treePicker = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocumentTree()
+    ) { uri: Uri? ->
+        if (uri != null) {
+            runCatching {
+                context.contentResolver.takePersistableUriPermission(
+                    uri, Intent.FLAG_GRANT_READ_URI_PERMISSION
+                )
+            }
+            vm.onZimDirPicked(uri)
+        }
+    }
+
+    // Hint the picker to start in /Android/media on first launch.
+    val initialTreeUri: Uri = remember {
+        Uri.parse(
+            "content://com.android.externalstorage.documents/document/" +
+                    "primary%3AAndroid%2Fmedia"
+        )
+    }
+
     LazyColumn(Modifier.fillMaxSize()) {
+        // Directory picker section ------------------------------------------------
+        item {
+            Card(Modifier.fillMaxWidth().padding(16.dp)) {
+                Column(Modifier.padding(16.dp)) {
+                    Text("Папка с ZIM-файлами", fontWeight = FontWeight.SemiBold)
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        if (zimDir == null)
+                            "Выбери папку один раз — приложение будет автоматически находить в ней все .zim-файлы, включая скрытые от обычного пикера каталоги типа /Android/media/org.kiwix.kiwixmobile/."
+                        else
+                            "Папка выбрана. Тап «Обновить», если в ней появились/исчезли файлы.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Spacer(Modifier.height(12.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Button(onClick = { treePicker.launch(initialTreeUri) }) {
+                            Icon(Icons.Default.FolderOpen, contentDescription = null)
+                            Spacer(Modifier.width(8.dp))
+                            Text(if (zimDir == null) "Выбрать папку" else "Сменить папку")
+                        }
+                        if (zimDir != null) {
+                            OutlinedButton(onClick = { vm.rescan() }, enabled = !scanning) {
+                                Icon(Icons.Default.Refresh, contentDescription = null)
+                                Spacer(Modifier.width(8.dp))
+                                Text(if (scanning) "Сканирую…" else "Обновить")
+                            }
+                            TextButton(onClick = { vm.clearZimDir() }) { Text("Убрать") }
+                        }
+                    }
+                }
+            }
+        }
+
+        if (scanning && scanned.isEmpty()) {
+            item {
+                Box(Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator()
+                }
+            }
+        }
+
+        if (scanned.isNotEmpty()) {
+            item { SectionHeader("Найдено в выбранной папке (${scanned.size})") }
+            items(scanned, key = { "scan:" + it.uriString }) { z ->
+                ScannedZimCard(z)
+            }
+        }
+
+        // Manual file picker --------------------------------------------------
         item {
             Box(Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) {
-                Button(onClick = {
-                    // Open SAF picker. Many Android file managers don't expose .zim MIME;
-                    // use "*/*" so the user can navigate freely.
-                    picker.launch(arrayOf("*/*"))
-                }) {
+                OutlinedButton(onClick = { filePicker.launch(arrayOf("*/*")) }) {
                     Icon(Icons.Default.FolderOpen, contentDescription = null)
                     Spacer(Modifier.width(8.dp))
-                    Text("Выбрать ZIM-файл из памяти телефона")
+                    Text("Выбрать отдельный ZIM-файл")
                 }
             }
         }
 
         if (selected.isNotEmpty()) {
-            item { SectionHeader("Выбрано из памяти (${selected.size})") }
+            item { SectionHeader("Добавлено вручную (${selected.size})") }
             items(selected, key = { it.uriString }) { z ->
                 SelectedZimCard(z, onRemove = { vm.removeSelected(z.uriString) })
             }
@@ -129,11 +202,12 @@ private fun MyFilesTab(vm: WikiViewModel) {
             }
         }
 
-        if (selected.isEmpty() && downloaded.isEmpty()) {
+        if (selected.isEmpty() && downloaded.isEmpty() && scanned.isEmpty() && zimDir == null) {
             item {
                 Text(
-                    "Пока пусто. Можно либо открыть существующий .zim с телефона (кнопка выше), либо скачать новый в вкладке «Каталог Kiwix».",
+                    "Если у тебя уже есть скачанная Википедия в Kiwix-приложении, выбери папку «Выбрать папку» → «Android/media/org.kiwix.kiwixmobile» (на S26 может потребоваться сначала разрешить просмотр Android/media в самом пикере). Приложение найдёт .zim автоматически.",
                     Modifier.padding(16.dp),
+                    style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
@@ -144,13 +218,27 @@ private fun MyFilesTab(vm: WikiViewModel) {
 }
 
 @Composable
+private fun ScannedZimCard(zim: SelectedZim) {
+    Card(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp)) {
+        Column(Modifier.padding(16.dp)) {
+            Text(zim.displayName, fontWeight = FontWeight.Medium, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            Text(
+                "${formatBytes(zim.sizeBytes)} · найден автоматически",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
+}
+
+@Composable
 private fun SelectedZimCard(zim: SelectedZim, onRemove: () -> Unit) {
     Card(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp)) {
         Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
                 Text(zim.displayName, fontWeight = FontWeight.Medium, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 Text(
-                    "${formatBytes(zim.sizeBytes)} · из памяти телефона",
+                    "${formatBytes(zim.sizeBytes)} · добавлен вручную",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -206,7 +294,6 @@ private fun CatalogTab(vm: WikiViewModel) {
             }
         )
 
-        // Filter chips: language
         Row(
             Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(bottom = 4.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -220,7 +307,6 @@ private fun CatalogTab(vm: WikiViewModel) {
                 )
             }
         }
-        // Filter chips: variant
         Row(
             Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(bottom = 8.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -253,25 +339,33 @@ private fun CatalogTab(vm: WikiViewModel) {
                     (filters.variant == null || e.variant == filters.variant) &&
                     (filters.query.isBlank() || e.filename.contains(filters.query, ignoreCase = true))
                 }
-                LazyColumn(Modifier.fillMaxSize()) {
-                    item {
-                        Text(
-                            "Найдено: ${filtered.size} из ${s.entries.size}",
-                            style = MaterialTheme.typography.labelMedium,
-                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+                if (s.entries.isEmpty()) {
+                    Column(Modifier.padding(16.dp)) {
+                        Text("Каталог Kiwix не удалось распарсить — формат страницы видимо изменился. На следующем апдейте поправим. Используй пока вкладку «Мои файлы».", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Spacer(Modifier.height(8.dp))
+                        TextButton(onClick = { vm.loadCatalog() }) { Text("Повторить") }
                     }
-                    items(filtered, key = { it.filename }) { entry ->
-                        CatalogCard(
-                            entry = entry,
-                            progress = progress[entry.filename],
-                            errorMessage = errors[entry.filename],
-                            onDownload = { vm.download(entry) },
-                            onCancel = { vm.cancelDownload(entry) },
-                        )
+                } else {
+                    LazyColumn(Modifier.fillMaxSize()) {
+                        item {
+                            Text(
+                                "Найдено: ${filtered.size} из ${s.entries.size}",
+                                style = MaterialTheme.typography.labelMedium,
+                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        items(filtered, key = { it.filename }) { entry ->
+                            CatalogCard(
+                                entry = entry,
+                                progress = progress[entry.filename],
+                                errorMessage = errors[entry.filename],
+                                onDownload = { vm.download(entry) },
+                                onCancel = { vm.cancelDownload(entry) },
+                            )
+                        }
+                        item { Spacer(Modifier.height(24.dp)) }
                     }
-                    item { Spacer(Modifier.height(24.dp)) }
                 }
             }
         }
