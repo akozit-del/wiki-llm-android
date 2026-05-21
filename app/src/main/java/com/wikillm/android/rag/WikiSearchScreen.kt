@@ -90,9 +90,9 @@ private fun StatusCard(state: WikiSearchViewModel.State) {
                     )
                 }
                 is WikiSearchViewModel.State.Opening ->
-                    Text("Открываю ${state.path.substringAfterLast('/')}…")
+                    Text("Открываю ${state.label.substringAfterLast('/')}…")
                 is WikiSearchViewModel.State.Ready ->
-                    Text("ZIM открыт: ${state.path.substringAfterLast('/')}", fontWeight = FontWeight.Medium)
+                    Text("ZIM открыт: ${state.label.substringAfterLast('/')}", fontWeight = FontWeight.Medium)
                 is WikiSearchViewModel.State.Failed ->
                     Text("Ошибка: ${state.message}", color = MaterialTheme.colorScheme.error)
             }
