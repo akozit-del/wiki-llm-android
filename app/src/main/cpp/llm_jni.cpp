@@ -23,8 +23,42 @@ struct LlmHandle {
 
 std::once_flag g_backend_once;
 
+// Last error captured from llama_log_set callback, surfaced to Kotlin.
+std::mutex      g_err_mu;
+std::string     g_last_error;
+
+void llama_log_cb(ggml_log_level level, const char* text, void* /*user*/) {
+    if (!text) return;
+    switch (level) {
+        case GGML_LOG_LEVEL_ERROR:
+            __android_log_print(ANDROID_LOG_ERROR, LOG_TAG, "%s", text);
+            {
+                std::lock_guard<std::mutex> lk(g_err_mu);
+                if (!g_last_error.empty()) g_last_error += '\n';
+                g_last_error += text;
+                // Cap so we don't accumulate forever.
+                if (g_last_error.size() > 4096) {
+                    g_last_error = g_last_error.substr(g_last_error.size() - 4096);
+                }
+            }
+            break;
+        case GGML_LOG_LEVEL_WARN:
+            __android_log_print(ANDROID_LOG_WARN, LOG_TAG, "%s", text);
+            break;
+        default:
+            __android_log_print(ANDROID_LOG_INFO, LOG_TAG, "%s", text);
+            break;
+    }
+}
+
+void clear_last_error() {
+    std::lock_guard<std::mutex> lk(g_err_mu);
+    g_last_error.clear();
+}
+
 void ensure_backend() {
     std::call_once(g_backend_once, []() {
+        llama_log_set(llama_log_cb, nullptr);
         llama_backend_init();
         LOGI("llama_backend_init done");
     });
@@ -56,6 +90,34 @@ std::string token_piece(const llama_model* model, llama_token tok) {
     return std::string(buf, n);
 }
 
+// Apply the model's built-in chat template to a single-turn user message.
+// Falls back to plain text if the model has no template metadata.
+std::string apply_chat_template(const llama_model* model, const std::string& user_text) {
+    llama_chat_message msgs[1];
+    msgs[0].role    = "user";
+    msgs[0].content = user_text.c_str();
+
+    // Pass nullptr template -> use model's own metadata template.
+    int needed = llama_chat_apply_template(model, /*tmpl=*/nullptr,
+                                           msgs, 1,
+                                           /*add_assistant=*/true,
+                                           nullptr, 0);
+    if (needed <= 0) {
+        LOGW("chat template not available, using raw prompt");
+        return user_text;
+    }
+    std::vector<char> buf(needed + 1, 0);
+    int got = llama_chat_apply_template(model, nullptr,
+                                        msgs, 1,
+                                        /*add_assistant=*/true,
+                                        buf.data(), static_cast<int>(buf.size()));
+    if (got <= 0) {
+        LOGW("chat template returned %d, using raw prompt", got);
+        return user_text;
+    }
+    return std::string(buf.data(), static_cast<size_t>(got));
+}
+
 } // namespace
 
 extern "C" JNIEXPORT jlong JNICALL
@@ -63,6 +125,7 @@ Java_com_wikillm_android_llm_LlamaContext_nativeLoad(
     JNIEnv* env, jclass /*clazz*/, jstring jpath, jint nCtx) {
 
     ensure_backend();
+    clear_last_error();
 
     const char* path = env->GetStringUTFChars(jpath, nullptr);
     if (!path) return 0;
@@ -80,6 +143,8 @@ Java_com_wikillm_android_llm_LlamaContext_nativeLoad(
     h->model = llama_load_model_from_file(path_str.c_str(), mparams);
     if (!h->model) {
         LOGE("llama_load_model_from_file failed");
+        std::lock_guard<std::mutex> lk(g_err_mu);
+        if (g_last_error.empty()) g_last_error = "llama_load_model_from_file returned null";
         delete h;
         return 0;
     }
@@ -92,6 +157,8 @@ Java_com_wikillm_android_llm_LlamaContext_nativeLoad(
     h->ctx = llama_new_context_with_model(h->model, cparams);
     if (!h->ctx) {
         LOGE("llama_new_context_with_model failed");
+        std::lock_guard<std::mutex> lk(g_err_mu);
+        if (g_last_error.empty()) g_last_error = "llama_new_context_with_model returned null";
         llama_free_model(h->model);
         delete h;
         return 0;
@@ -100,12 +167,26 @@ Java_com_wikillm_android_llm_LlamaContext_nativeLoad(
     auto sparams = llama_sampler_chain_default_params();
     sparams.no_perf = true;
     h->smpl = llama_sampler_chain_init(sparams);
+    // Penalties first so they reshape the logits before temp/top_p.
+    // penalty_last_n=128 tokens, penalty_repeat=1.15, no freq/presence penalties.
+    llama_sampler_chain_add(h->smpl, llama_sampler_init_penalties(
+        /*penalty_last_n*/ 128,
+        /*penalty_repeat*/ 1.15f,
+        /*penalty_freq*/   0.0f,
+        /*penalty_present*/ 0.0f));
     llama_sampler_chain_add(h->smpl, llama_sampler_init_min_p(0.05f, 1));
-    llama_sampler_chain_add(h->smpl, llama_sampler_init_temp(0.8f));
+    llama_sampler_chain_add(h->smpl, llama_sampler_init_temp(0.7f));
     llama_sampler_chain_add(h->smpl, llama_sampler_init_dist(LLAMA_DEFAULT_SEED));
 
     LOGI("Model loaded OK");
     return reinterpret_cast<jlong>(h);
+}
+
+extern "C" JNIEXPORT jstring JNICALL
+Java_com_wikillm_android_llm_LlamaContext_nativeLastError(
+    JNIEnv* env, jclass /*clazz*/) {
+    std::lock_guard<std::mutex> lk(g_err_mu);
+    return env->NewStringUTF(g_last_error.c_str());
 }
 
 extern "C" JNIEXPORT void JNICALL
@@ -136,10 +217,14 @@ Java_com_wikillm_android_llm_LlamaContext_nativeGenerate(
 
     const char* prompt_chars = env->GetStringUTFChars(jprompt, nullptr);
     if (!prompt_chars) return;
-    std::string prompt(prompt_chars);
+    std::string user_text(prompt_chars);
     env->ReleaseStringUTFChars(jprompt, prompt_chars);
 
-    auto tokens = tokenize_text(h->model, prompt, true);
+    // Wrap user message in the model's chat template.
+    std::string formatted = apply_chat_template(h->model, user_text);
+    LOGI("Formatted prompt (%zu chars)", formatted.size());
+
+    auto tokens = tokenize_text(h->model, formatted, /*add_special=*/true);
     if (tokens.empty()) {
         LOGE("Tokenization failed");
         return;

@@ -55,10 +55,16 @@ class LlamaContext private constructor(private val handle: Long) : AutoCloseable
             System.loadLibrary("llm")
         }
 
-        suspend fun load(path: String, nCtx: Int = 2048): LlamaContext? =
+        class LoadException(message: String) : RuntimeException(message)
+
+        suspend fun load(path: String, nCtx: Int = 2048): LlamaContext =
             withContext(Dispatchers.IO) {
                 val h = nativeLoad(path, nCtx)
-                if (h == 0L) null else LlamaContext(h)
+                if (h == 0L) {
+                    val reason = nativeLastError().ifBlank { "Не удалось загрузить модель" }
+                    throw LoadException(reason)
+                }
+                LlamaContext(h)
             }
 
         @JvmStatic external fun nativeLoad(path: String, nCtx: Int): Long
@@ -66,5 +72,6 @@ class LlamaContext private constructor(private val handle: Long) : AutoCloseable
         @JvmStatic external fun nativeGenerate(
             handle: Long, prompt: String, maxTokens: Int, callback: TokenCallback
         )
+        @JvmStatic external fun nativeLastError(): String
     }
 }

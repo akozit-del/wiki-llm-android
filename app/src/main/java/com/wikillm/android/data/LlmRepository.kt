@@ -20,13 +20,16 @@ class LlmRepository {
 
     suspend fun load(file: File): Result<Unit> {
         unload()
-        val ctx = LlamaContext.load(file.absolutePath)
-            ?: return Result.failure(IllegalStateException("Не удалось загрузить модель"))
-        synchronized(mutex) {
-            current = ctx
-            _loaded.value = LoadedModel(file.absolutePath, file.name)
+        return try {
+            val ctx = LlamaContext.load(file.absolutePath)
+            synchronized(mutex) {
+                current = ctx
+                _loaded.value = LoadedModel(file.absolutePath, file.name)
+            }
+            Result.success(Unit)
+        } catch (t: Throwable) {
+            Result.failure(t)
         }
-        return Result.success(Unit)
     }
 
     fun unload() {
