@@ -1,5 +1,6 @@
 package com.wikillm.android.rag
 
+import android.os.ParcelFileDescriptor
 import android.util.Log
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -7,22 +8,19 @@ import org.kiwix.libzim.Archive
 import org.kiwix.libzim.Query
 import org.kiwix.libzim.Searcher
 import java.io.File
+import java.io.FileDescriptor
 
-/**
- * Wraps libkiwix's Archive + Searcher into a coroutine-friendly facade.
- * One instance binds to one ZIM file; create via [open] and keep around
- * — opening is cheap (libzim just mmaps the file).
- */
 class ZimSearcher private constructor(
-    val zimPath: String,
+    val source: String,
     private val archive: Archive,
     private val searcher: Searcher,
+    private val pfd: ParcelFileDescriptor?,
 ) : AutoCloseable {
 
     data class Hit(
         val title: String,
         val path: String,
-        val snippet: String,   // libzim returns an HTML snippet with <b> highlights
+        val snippet: String,
         val score: Int,
     )
 
@@ -51,16 +49,11 @@ class ZimSearcher private constructor(
             }
         }
 
-    /**
-     * Reads the full article body for a path returned by [search] and
-     * returns it as plain text (HTML tags stripped, whitespace normalised).
-     */
     suspend fun readArticleText(path: String): String? = withContext(Dispatchers.IO) {
         runCatching {
             val entry = archive.getEntryByPath(path)
             val item = entry.getItem(true)
             val blob = item.data
-            // libkiwix 2.6: Blob.getData() returns byte[] (older versions used String)
             val html = String(blob.data, Charsets.UTF_8)
             htmlToPlainText(html)
         }.onFailure {
@@ -71,26 +64,34 @@ class ZimSearcher private constructor(
     override fun close() {
         runCatching { searcher.dispose() }
         runCatching { archive.dispose() }
+        runCatching { pfd?.close() }
     }
 
     companion object {
         private const val TAG = "ZimSearcher"
 
-        suspend fun open(zimPath: String): Result<ZimSearcher> = withContext(Dispatchers.IO) {
+        suspend fun openPath(zimPath: String): Result<ZimSearcher> = withContext(Dispatchers.IO) {
             runCatching {
                 val f = File(zimPath)
                 require(f.exists()) { "ZIM не найден: $zimPath" }
                 val archive = Archive(zimPath)
                 val searcher = Searcher(archive)
-                ZimSearcher(zimPath, archive, searcher)
+                ZimSearcher(zimPath, archive, searcher, pfd = null)
             }
         }
 
-        /**
-         * Quick & dirty HTML→text: strip <script>/<style> blocks, drop tags,
-         * collapse whitespace, decode a handful of HTML entities. Good enough
-         * to feed Wikipedia article text into an LLM context window.
-         */
+        suspend fun openFd(pfd: ParcelFileDescriptor, sourceLabel: String): Result<ZimSearcher> =
+            withContext(Dispatchers.IO) {
+                runCatching {
+                    val fd: FileDescriptor = pfd.fileDescriptor
+                    val archive = Archive(fd)
+                    val searcher = Searcher(archive)
+                    ZimSearcher(sourceLabel, archive, searcher, pfd = pfd)
+                }.onFailure {
+                    runCatching { pfd.close() }
+                }
+            }
+
         fun htmlToPlainText(html: String): String {
             val noScript = html.replace(Regex("(?is)<(script|style)[^>]*>.*?</\\1>"), " ")
             val noTags = noScript.replace(Regex("<[^>]+>"), " ")

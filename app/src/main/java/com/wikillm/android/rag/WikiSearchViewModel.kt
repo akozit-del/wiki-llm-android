@@ -1,24 +1,30 @@
 package com.wikillm.android.rag
 
 import android.app.Application
+import android.content.Context
+import android.net.Uri
 import android.util.Log
+import androidx.documentfile.provider.DocumentFile
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.wikillm.android.data.ZimRepository
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.File
 
 class WikiSearchViewModel(app: Application) : AndroidViewModel(app) {
 
     private val zimRepo = ZimRepository(app.applicationContext)
+    private val context: Context get() = getApplication<Application>().applicationContext
 
     sealed interface State {
         data object NoZim : State
-        data class Opening(val path: String) : State
-        data class Ready(val path: String) : State
+        data class Opening(val label: String) : State
+        data class Ready(val label: String) : State
         data class Failed(val message: String) : State
     }
 
@@ -40,21 +46,81 @@ class WikiSearchViewModel(app: Application) : AndroidViewModel(app) {
 
     fun tryOpenBestEffort() {
         viewModelScope.launch {
-            val candidate = bestEffortPath() ?: run {
-                _state.value = State.NoZim
+            searcher?.close()
+            searcher = null
+            _results.value = emptyList()
+
+            // Refresh both downloaded and scanned snapshots before picking.
+            zimRepo.refreshDownloaded()
+            withContext(Dispatchers.IO) { runCatching { zimRepo.rescanDirectory() } }
+
+            // 1) Downloaded ZIM (regular file path).
+            zimRepo.downloaded.value.firstOrNull()?.absolutePath?.let { path ->
+                _state.value = State.Opening(File(path).name)
+                ZimSearcher.openPath(path).fold(
+                    onSuccess = { searcher = it; _state.value = State.Ready(File(path).name) },
+                    onFailure = { _state.value = State.Failed(it.message ?: "Не удалось открыть ZIM") },
+                )
                 return@launch
             }
-            _state.value = State.Opening(candidate)
-            ZimSearcher.open(candidate).fold(
-                onSuccess = {
-                    searcher?.close()
-                    searcher = it
-                    _state.value = State.Ready(candidate)
-                    Log.i(TAG, "Opened ZIM: $candidate")
-                },
-                onFailure = { _state.value = State.Failed(it.message ?: "Не удалось открыть ZIM") },
-            )
+
+            // 2) Scanned ZIM via SAF tree URI -> FileDescriptor.
+            zimRepo.scanned.value.firstOrNull()?.let { sz ->
+                _state.value = State.Opening(sz.displayName)
+                openByUri(Uri.parse(sz.uriString), sz.displayName)
+                return@launch
+            }
+
+            // 3) Manually selected ZIM (file picker).
+            zimRepo.selected.value.firstOrNull()?.let { sz ->
+                _state.value = State.Opening(sz.displayName)
+                openByUri(Uri.parse(sz.uriString), sz.displayName)
+                return@launch
+            }
+
+            _state.value = State.NoZim
         }
+    }
+
+    private suspend fun openByUri(uri: Uri, label: String) {
+        // For a SAF tree URI we need to walk to the actual document URI of the file.
+        val docUri = resolveDocumentUri(uri, label) ?: run {
+            _state.value = State.Failed("Не удалось получить URI документа для $label")
+            return
+        }
+        val pfd = runCatching { context.contentResolver.openFileDescriptor(docUri, "r") }
+            .getOrNull()
+        if (pfd == null) {
+            _state.value = State.Failed("openFileDescriptor вернул null для $label")
+            return
+        }
+        ZimSearcher.openFd(pfd, label).fold(
+            onSuccess = { searcher = it; _state.value = State.Ready(label) },
+            onFailure = { _state.value = State.Failed(it.message ?: "Archive(fd) кинул исключение") },
+        )
+    }
+
+    /**
+     * Some scanned entries store a tree URI rather than a document URI. Walk the tree
+     * to find the matching file by display name; otherwise the URI is already a document URI.
+     */
+    private suspend fun resolveDocumentUri(uri: Uri, displayName: String): Uri? =
+        withContext(Dispatchers.IO) {
+            runCatching {
+                val direct = DocumentFile.fromSingleUri(context, uri)
+                if (direct?.isFile == true) return@runCatching uri
+                val tree = DocumentFile.fromTreeUri(context, uri) ?: return@runCatching null
+                walk(tree, displayName)?.uri
+            }.onFailure { Log.w(TAG, "resolveDocumentUri failed: ${it.message}") }.getOrNull()
+        }
+
+    private fun walk(dir: DocumentFile, name: String): DocumentFile? {
+        if (!dir.isDirectory) return null
+        for (child in dir.listFiles()) {
+            if (child.isFile && child.name == name) return child
+            if (child.isDirectory) walk(child, name)?.let { return it }
+        }
+        return null
     }
 
     fun search(query: String, maxResults: Int = 10) {
@@ -82,27 +148,6 @@ class WikiSearchViewModel(app: Application) : AndroidViewModel(app) {
     override fun onCleared() {
         super.onCleared()
         searcher?.close()
-    }
-
-    /**
-     * Returns the first openable file path we can find. Priority:
-     *   1. downloaded ZIM in app storage
-     *   2. scanned ZIM mapped to /storage/emulated/0/Android/media/org.kiwix.kiwixmobile/<name>
-     */
-    private fun bestEffortPath(): String? {
-        zimRepo.refreshDownloaded()
-        zimRepo.downloaded.value.firstOrNull()?.absolutePath?.let { return it }
-
-        zimRepo.scanned.value.firstOrNull()?.displayName?.let { name ->
-            val candidates = listOf(
-                "/storage/emulated/0/Android/media/org.kiwix.kiwixmobile/$name",
-                "/storage/emulated/0/Android/media/org.kiwix.kiwixmobile/Custom/$name",
-                "/storage/emulated/0/Download/$name",
-                "/storage/emulated/0/$name",
-            )
-            candidates.firstOrNull { File(it).exists() }?.let { return it }
-        }
-        return null
     }
 
     companion object { private const val TAG = "WikiSearchVM" }
