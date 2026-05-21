@@ -170,10 +170,15 @@ Java_com_wikillm_android_llm_LlamaContext_nativeLoad(
     // Penalties first so they reshape the logits before temp/top_p.
     // penalty_last_n=128 tokens, penalty_repeat=1.15, no freq/presence penalties.
     llama_sampler_chain_add(h->smpl, llama_sampler_init_penalties(
+        /*n_vocab*/        llama_n_vocab(h->model),
+        /*special_eos_id*/ llama_token_eos(h->model),
+        /*linefeed_id*/    llama_token_nl(h->model),
         /*penalty_last_n*/ 128,
         /*penalty_repeat*/ 1.15f,
         /*penalty_freq*/   0.0f,
-        /*penalty_present*/ 0.0f));
+        /*penalty_present*/ 0.0f,
+        /*penalize_nl*/    false,
+        /*ignore_eos*/     false));
     llama_sampler_chain_add(h->smpl, llama_sampler_init_min_p(0.05f, 1));
     llama_sampler_chain_add(h->smpl, llama_sampler_init_temp(0.7f));
     llama_sampler_chain_add(h->smpl, llama_sampler_init_dist(LLAMA_DEFAULT_SEED));
