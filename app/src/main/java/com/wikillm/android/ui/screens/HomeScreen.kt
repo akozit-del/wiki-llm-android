@@ -8,6 +8,7 @@ import androidx.compose.material.icons.filled.Chat
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Memory
 import androidx.compose.material.icons.filled.MenuBook
+import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
@@ -108,6 +109,13 @@ fun HomeScreen(navController: NavController) {
                 title = "Поиск в вики (тест)",
                 subtitle = "Тест libkiwix: поиск + чтение статей",
                 onClick = { navController.navigate("wikisearch") }
+            )
+
+            MenuCard(
+                icon = Icons.Default.BugReport,
+                title = "Диагностика",
+                subtitle = "Логи и ошибки — кнопка «Копировать» отдаст текст в чат",
+                onClick = { navController.navigate("diag") }
             )
         }
     }

@@ -1,14 +1,14 @@
 package com.wikillm.android.rag
 
 import android.os.ParcelFileDescriptor
-import android.util.Log
+import com.wikillm.android.diag.DiagLog
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.kiwix.libzim.Archive
+import org.kiwix.libzim.FdInput
 import org.kiwix.libzim.Query
 import org.kiwix.libzim.Searcher
 import java.io.File
-import java.io.FileDescriptor
 
 class ZimSearcher private constructor(
     val source: String,
@@ -30,6 +30,7 @@ class ZimSearcher private constructor(
             val s = searcher.search(q)
             try {
                 val total = s.estimatedMatches
+                DiagLog.i(TAG, "search('$query') estimated=$total")
                 if (total == 0L) return@withContext emptyList()
                 val it = s.getResults(0, maxResults)
                 val out = ArrayList<Hit>(maxResults)
@@ -56,9 +57,8 @@ class ZimSearcher private constructor(
             val blob = item.data
             val html = String(blob.data, Charsets.UTF_8)
             htmlToPlainText(html)
-        }.onFailure {
-            Log.w(TAG, "readArticleText failed for $path: ${it.message}")
-        }.getOrNull()
+        }.onFailure { DiagLog.w(TAG, "readArticleText failed for $path", it) }
+            .getOrNull()
     }
 
     override fun close() {
@@ -74,22 +74,56 @@ class ZimSearcher private constructor(
             runCatching {
                 val f = File(zimPath)
                 require(f.exists()) { "ZIM не найден: $zimPath" }
+                DiagLog.i(TAG, "openPath: $zimPath (${f.length()} bytes)")
                 val archive = Archive(zimPath)
                 val searcher = Searcher(archive)
                 ZimSearcher(zimPath, archive, searcher, pfd = null)
-            }
+            }.onFailure { DiagLog.e(TAG, "openPath failed", it) }
         }
 
+        /**
+         * Open a ZIM from a SAF-derived ParcelFileDescriptor. libkiwix's plain
+         * Archive(FileDescriptor) JNI is sometimes missing from prebuilt .so; the
+         * embedded constructor Archive(FdInput[]) is the path actually used by the
+         * official Kiwix Android app, so we try that first and fall back if needed.
+         */
         suspend fun openFd(pfd: ParcelFileDescriptor, sourceLabel: String): Result<ZimSearcher> =
             withContext(Dispatchers.IO) {
-                runCatching {
-                    val fd: FileDescriptor = pfd.fileDescriptor
-                    val archive = Archive(fd)
-                    val searcher = Searcher(archive)
-                    ZimSearcher(sourceLabel, archive, searcher, pfd = pfd)
-                }.onFailure {
-                    runCatching { pfd.close() }
+                val size = runCatching { pfd.statSize }.getOrDefault(-1L)
+                DiagLog.i(TAG, "openFd: $sourceLabel size=$size")
+
+                val attempts = listOf<Triple<String, () -> Archive, String>>(
+                    Triple("Archive(FdInput[])", {
+                        val arr = arrayOf(FdInput(pfd.fileDescriptor, 0L, if (size > 0) size else 0L))
+                        Archive(arr)
+                    }, "FdInput array"),
+                    Triple("Archive(FdInput)", {
+                        Archive(FdInput(pfd.fileDescriptor, 0L, if (size > 0) size else 0L))
+                    }, "single FdInput"),
+                    Triple("Archive(FileDescriptor, offset, size)", {
+                        Archive(pfd.fileDescriptor, 0L, if (size > 0) size else 0L)
+                    }, "embedded FileDescriptor"),
+                    Triple("Archive(FileDescriptor)", {
+                        Archive(pfd.fileDescriptor)
+                    }, "plain FileDescriptor"),
+                )
+
+                for ((label, ctor, hint) in attempts) {
+                    val r = runCatching {
+                        DiagLog.i(TAG, "Trying $label ($hint)")
+                        val archive = ctor()
+                        val searcher = Searcher(archive)
+                        ZimSearcher(sourceLabel, archive, searcher, pfd = pfd)
+                    }
+                    if (r.isSuccess) {
+                        DiagLog.i(TAG, "OK with $label")
+                        return@withContext r
+                    } else {
+                        DiagLog.w(TAG, "$label failed: ${r.exceptionOrNull()?.javaClass?.simpleName} ${r.exceptionOrNull()?.message?.take(200)}")
+                    }
                 }
+                runCatching { pfd.close() }
+                Result.failure(RuntimeException("Все 4 варианта Archive(fd) не сработали — смотри Диагностику"))
             }
 
         fun htmlToPlainText(html: String): String {

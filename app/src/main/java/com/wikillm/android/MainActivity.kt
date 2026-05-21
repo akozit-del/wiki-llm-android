@@ -16,11 +16,14 @@ import com.wikillm.android.ui.screens.ModelsScreen
 import com.wikillm.android.ui.screens.WikiScreen
 import com.wikillm.android.ui.screens.ChatScreen
 import com.wikillm.android.rag.WikiSearchScreen
+import com.wikillm.android.diag.DiagLog
+import com.wikillm.android.diag.DiagScreen
 import com.wikillm.android.ui.theme.WikiLLMTheme
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        DiagLog.installCrashHandler()
         enableEdgeToEdge()
         setContent {
             WikiLLMTheme {
@@ -41,5 +44,6 @@ fun AppNav() {
         composable("wiki") { WikiScreen(navController) }
         composable("chat") { ChatScreen(navController) }
         composable("wikisearch") { WikiSearchScreen(navController) }
+        composable("diag") { DiagScreen(navController) }
     }
 }

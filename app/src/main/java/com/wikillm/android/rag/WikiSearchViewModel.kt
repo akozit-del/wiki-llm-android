@@ -3,7 +3,7 @@ package com.wikillm.android.rag
 import android.app.Application
 import android.content.Context
 import android.net.Uri
-import android.util.Log
+import com.wikillm.android.diag.DiagLog
 import androidx.documentfile.provider.DocumentFile
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
@@ -58,8 +58,8 @@ class WikiSearchViewModel(app: Application) : AndroidViewModel(app) {
             zimRepo.downloaded.value.firstOrNull()?.absolutePath?.let { path ->
                 _state.value = State.Opening(File(path).name)
                 ZimSearcher.openPath(path).fold(
-                    onSuccess = { searcher = it; _state.value = State.Ready(File(path).name) },
-                    onFailure = { _state.value = State.Failed(it.message ?: "Не удалось открыть ZIM") },
+                    onSuccess = { searcher = it; _state.value = State.Ready(File(path).name); DiagLog.i(TAG, "openPath OK: $path") },
+                    onFailure = { _state.value = State.Failed(it.message ?: "Не удалось открыть ZIM"); DiagLog.e(TAG, "openPath FAILED: $path", it) },
                 )
                 return@launch
             }
@@ -95,8 +95,8 @@ class WikiSearchViewModel(app: Application) : AndroidViewModel(app) {
             return
         }
         ZimSearcher.openFd(pfd, label).fold(
-            onSuccess = { searcher = it; _state.value = State.Ready(label) },
-            onFailure = { _state.value = State.Failed(it.message ?: "Archive(fd) кинул исключение") },
+            onSuccess = { searcher = it; _state.value = State.Ready(label); DiagLog.i(TAG, "openFd OK: $label") },
+            onFailure = { _state.value = State.Failed(it.message ?: "Archive(fd) кинул исключение"); DiagLog.e(TAG, "openFd FAILED: $label", it) },
         )
     }
 
@@ -111,7 +111,7 @@ class WikiSearchViewModel(app: Application) : AndroidViewModel(app) {
                 if (direct?.isFile == true) return@runCatching uri
                 val tree = DocumentFile.fromTreeUri(context, uri) ?: return@runCatching null
                 walk(tree, displayName)?.uri
-            }.onFailure { Log.w(TAG, "resolveDocumentUri failed: ${it.message}") }.getOrNull()
+            }.onFailure { DiagLog.w(TAG, "resolveDocumentUri failed: ${it.message}") }.getOrNull()
         }
 
     private fun walk(dir: DocumentFile, name: String): DocumentFile? {
@@ -129,7 +129,7 @@ class WikiSearchViewModel(app: Application) : AndroidViewModel(app) {
         _searching.value = true
         viewModelScope.launch {
             _results.value = runCatching { s.search(query, maxResults) }
-                .onFailure { Log.e(TAG, "search failed", it) }
+                .onFailure { DiagLog.e(TAG, "search failed", it) }
                 .getOrDefault(emptyList())
             _searching.value = false
         }
