@@ -1,5 +1,6 @@
 package com.wikillm.android.rag
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -133,7 +134,7 @@ private fun HitCard(hit: ZimSearcher.Hit, onOpen: () -> Unit) {
     val plainSnippet = remember(hit.snippet) {
         ZimSearcher.htmlToPlainText(hit.snippet)
     }
-    Card(Modifier.fillMaxWidth(), onClick = onOpen) {
+    Card(Modifier.fillMaxWidth().clickable(onClick = onOpen)) {
         Column(Modifier.padding(12.dp)) {
             Text(hit.title.ifBlank { hit.path }, fontWeight = FontWeight.Medium)
             if (plainSnippet.isNotBlank()) {
