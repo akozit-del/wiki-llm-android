@@ -1,5 +1,6 @@
 package com.wikillm.android.data
 
+import com.wikillm.android.llm.LlamaContext
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -7,10 +8,6 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.emptyFlow
 import java.io.File
 
-/**
- * Build 11: native llama.cpp engine временно отключён, чтобы остальной UI собрался.
- * Чат-движок будет включён обратно в следующем билде, после починки JNI-моста.
- */
 class LlmRepository {
 
     data class LoadedModel(val filePath: String, val displayName: String)
@@ -18,19 +15,32 @@ class LlmRepository {
     private val _loaded = MutableStateFlow<LoadedModel?>(null)
     val loaded: StateFlow<LoadedModel?> = _loaded.asStateFlow()
 
+    private var current: LlamaContext? = null
+    private val mutex = Object()
+
     suspend fun load(file: File): Result<Unit> {
-        return Result.failure(
-            UnsupportedOperationException(
-                "Чат-движок отключён в этой сборке. Жди build-12."
-            )
-        )
+        unload()
+        val ctx = LlamaContext.load(file.absolutePath)
+            ?: return Result.failure(IllegalStateException("Не удалось загрузить модель"))
+        synchronized(mutex) {
+            current = ctx
+            _loaded.value = LoadedModel(file.absolutePath, file.name)
+        }
+        return Result.success(Unit)
     }
 
     fun unload() {
-        _loaded.value = null
+        synchronized(mutex) {
+            current?.close()
+            current = null
+            _loaded.value = null
+        }
     }
 
-    fun generate(prompt: String, maxTokens: Int = 256): Flow<String> = emptyFlow()
+    fun generate(prompt: String, maxTokens: Int = 256): Flow<String> {
+        val ctx = synchronized(mutex) { current } ?: return emptyFlow()
+        return ctx.generate(prompt, maxTokens)
+    }
 
-    fun isLoaded(): Boolean = false
+    fun isLoaded(): Boolean = synchronized(mutex) { current != null }
 }
