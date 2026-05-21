@@ -148,7 +148,14 @@ Java_com_wikillm_android_llm_LlamaContext_nativeGenerate(
 
     llama_kv_cache_clear(h->ctx);
 
-    llama_batch batch = llama_batch_get_one(tokens.data(), static_cast<int>(tokens.size()));
+    // In llama.cpp tag b3789, llama_batch_get_one takes (tokens, n_tokens, pos_0, seq_id)
+    // so we track the absolute position in the sequence ourselves.
+    llama_pos n_past = 0;
+    const llama_seq_id seq_id = 0;
+
+    llama_batch batch = llama_batch_get_one(
+        tokens.data(), static_cast<int>(tokens.size()), n_past, seq_id);
+    n_past += static_cast<llama_pos>(tokens.size());
 
     llama_token next_token = 0;
     int generated = 0;
@@ -182,7 +189,8 @@ Java_com_wikillm_android_llm_LlamaContext_nativeGenerate(
         }
 
         ++generated;
-        batch = llama_batch_get_one(&next_token, 1);
+        batch = llama_batch_get_one(&next_token, 1, n_past, seq_id);
+        n_past += 1;
     }
 
     LOGI("Done, generated=%d", generated);
