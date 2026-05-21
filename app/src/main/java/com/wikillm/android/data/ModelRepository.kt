@@ -30,30 +30,65 @@ class ModelRepository(private val context: Context) {
     private val _local = MutableStateFlow<List<LocalModel>>(emptyList())
     val local: StateFlow<List<LocalModel>> = _local.asStateFlow()
 
-    init { refreshLocal() }
+    init {
+        migrateLegacyIfNeeded()
+        refreshLocal()
+    }
 
-    private fun modelsRoot(): File =
-        File(context.filesDir, "models").apply { mkdirs() }
+    /** Primary location: visible in MTP, survives app updates. */
+    private fun modelsRoot(): File {
+        val external = context.getExternalFilesDir(null)
+        val root = if (external != null) File(external, "models") else File(context.filesDir, "models")
+        root.mkdirs()
+        return root
+    }
+
+    /** Old internal-only location used in earlier builds. */
+    private fun legacyRoot(): File = File(context.filesDir, "models")
+
+    /** Move files from internal storage to external once after upgrade. */
+    private fun migrateLegacyIfNeeded() {
+        val legacy = legacyRoot()
+        val target = modelsRoot()
+        if (legacy.absolutePath == target.absolutePath) return
+        if (!legacy.exists()) return
+        legacy.walkTopDown().filter { it.isFile && it.name.endsWith(".gguf", ignoreCase = true) }.forEach { src ->
+            val rel = src.relativeTo(legacy)
+            val dst = File(target, rel.path)
+            dst.parentFile?.mkdirs()
+            if (!dst.exists()) {
+                runCatching { src.copyTo(dst, overwrite = false) }.onSuccess { src.delete() }
+            } else {
+                src.delete()
+            }
+        }
+        // Try to remove now-empty legacy dirs
+        legacy.walkBottomUp().filter { it.isDirectory }.forEach { runCatching { it.delete() } }
+    }
 
     fun refreshLocal() {
         val list = mutableListOf<LocalModel>()
-        modelsRoot().listFiles()?.forEach { authorDir ->
-            if (!authorDir.isDirectory) return@forEach
-            authorDir.listFiles()?.forEach { modelDir ->
-                if (!modelDir.isDirectory) return@forEach
-                modelDir.listFiles()?.forEach { file ->
-                    if (file.isFile && file.name.endsWith(".gguf", ignoreCase = true)) {
-                        list += LocalModel(
-                            modelId = "${authorDir.name}/${modelDir.name}",
-                            fileName = file.name,
-                            size = file.length(),
-                            file = file,
-                        )
+        val roots = listOfNotNull(modelsRoot(), legacyRoot().takeIf { it.exists() })
+            .distinctBy { it.absolutePath }
+        for (root in roots) {
+            root.listFiles()?.forEach { authorDir ->
+                if (!authorDir.isDirectory) return@forEach
+                authorDir.listFiles()?.forEach { modelDir ->
+                    if (!modelDir.isDirectory) return@forEach
+                    modelDir.listFiles()?.forEach { file ->
+                        if (file.isFile && file.name.endsWith(".gguf", ignoreCase = true)) {
+                            list += LocalModel(
+                                modelId = "${authorDir.name}/${modelDir.name}",
+                                fileName = file.name,
+                                size = file.length(),
+                                file = file,
+                            )
+                        }
                     }
                 }
             }
         }
-        _local.value = list.sortedBy { it.modelId }
+        _local.value = list.distinctBy { it.file.absolutePath }.sortedBy { it.modelId }
     }
 
     fun delete(local: LocalModel) {
