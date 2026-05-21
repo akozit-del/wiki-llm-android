@@ -8,6 +8,7 @@ import androidx.compose.material.icons.filled.Chat
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Memory
 import androidx.compose.material.icons.filled.MenuBook
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -100,6 +101,13 @@ fun HomeScreen(navController: NavController) {
                 else
                     "Загрузи модель и начни задавать вопросы",
                 onClick = { navController.navigate("chat") }
+            )
+
+            MenuCard(
+                icon = Icons.Default.Search,
+                title = "Поиск в вики (тест)",
+                subtitle = "Тест libkiwix: поиск + чтение статей",
+                onClick = { navController.navigate("wikisearch") }
             )
         }
     }

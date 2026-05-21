@@ -15,6 +15,7 @@ import com.wikillm.android.ui.screens.HomeScreen
 import com.wikillm.android.ui.screens.ModelsScreen
 import com.wikillm.android.ui.screens.WikiScreen
 import com.wikillm.android.ui.screens.ChatScreen
+import com.wikillm.android.rag.WikiSearchScreen
 import com.wikillm.android.ui.theme.WikiLLMTheme
 
 class MainActivity : ComponentActivity() {
@@ -39,5 +40,6 @@ fun AppNav() {
         composable("models") { ModelsScreen(navController) }
         composable("wiki") { WikiScreen(navController) }
         composable("chat") { ChatScreen(navController) }
+        composable("wikisearch") { WikiSearchScreen(navController) }
     }
 }
