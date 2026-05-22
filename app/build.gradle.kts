@@ -21,6 +21,11 @@ android {
             useSupportLibrary = true
         }
 
+        // CI passes DIAG_PAT via env; if missing we ship an empty string and
+        // the user has to paste their own token in Settings.
+        val diagPat = System.getenv("DIAG_PAT") ?: ""
+        buildConfigField("String", "DIAG_PAT", "\"$diagPat\"")
+
         ndk {
             abiFilters += listOf("arm64-v8a")
         }
@@ -69,6 +74,7 @@ android {
     }
     buildFeatures {
         compose = true
+        buildConfig = true
     }
     packaging {
         resources {

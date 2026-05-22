@@ -20,15 +20,19 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 import com.wikillm.android.diag.upload.PasteUploaderViewModel
+import com.wikillm.android.diag.github.GitHubReporterViewModel
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun DiagScreen(navController: NavController, vm: PasteUploaderViewModel = viewModel()) {
+fun DiagScreen(navController: NavController,
+               vm: PasteUploaderViewModel = viewModel(),
+               gh: GitHubReporterViewModel = viewModel()) {
     val entries by DiagLog.entries.collectAsState()
     val uploadState by vm.state.collectAsState()
+    val ghState by gh.state.collectAsState()
     val context = LocalContext.current
     var menuOpen by remember { mutableStateOf(false) }
 
@@ -67,6 +71,13 @@ fun DiagScreen(navController: NavController, vm: PasteUploaderViewModel = viewMo
                                     vm.upload(DiagLog.dump())
                                 },
                             )
+                            DropdownMenuItem(
+                                text = { Text("Создать GitHub Issue") },
+                                onClick = {
+                                    menuOpen = false
+                                    gh.send()
+                                },
+                            )
                             HorizontalDivider()
                             DropdownMenuItem(
                                 text = { Text("Очистить лог") },
@@ -79,6 +90,7 @@ fun DiagScreen(navController: NavController, vm: PasteUploaderViewModel = viewMo
         }
     ) { padding ->
         Column(Modifier.padding(padding).fillMaxSize()) {
+            GhBanner(ghState)
             UploadBanner(uploadState, onCopyUrl = { url ->
                 copyToClipboard(context, url)
                 Toast.makeText(context, "Ссылка скопирована", Toast.LENGTH_SHORT).show()
@@ -169,4 +181,39 @@ private fun shareText(context: Context, text: String) {
         addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
     }
     context.startActivity(chooser)
+}
+
+
+@Composable
+private fun GhBanner(state: GitHubReporterViewModel.State) {
+    when (state) {
+        GitHubReporterViewModel.State.Idle -> Unit
+        GitHubReporterViewModel.State.Sending -> Card(Modifier.fillMaxWidth().padding(12.dp)) {
+            Row(Modifier.padding(12.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                Spacer(Modifier.width(8.dp))
+                Text("Создаю GitHub Issue…")
+            }
+        }
+        is GitHubReporterViewModel.State.Ok -> Card(Modifier.fillMaxWidth().padding(12.dp)) {
+            Column(Modifier.padding(12.dp)) {
+                Text("Issue создан — Клод увидит его в репо.")
+                Spacer(Modifier.height(6.dp))
+                Text(state.url, style = MaterialTheme.typography.bodyMedium)
+            }
+        }
+        is GitHubReporterViewModel.State.Failed -> Card(Modifier.fillMaxWidth().padding(12.dp)) {
+            Column(Modifier.padding(12.dp)) {
+                Text("Не удалось создать Issue.", color = MaterialTheme.colorScheme.error)
+                Spacer(Modifier.height(4.dp))
+                Text(state.message, style = MaterialTheme.typography.bodySmall)
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    "Возможно, не задан GitHub PAT. Зайди в Настройки и вставь токен.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+    }
 }

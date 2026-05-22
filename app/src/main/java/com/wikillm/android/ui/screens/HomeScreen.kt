@@ -9,6 +9,7 @@ import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Memory
 import androidx.compose.material.icons.filled.MenuBook
 import androidx.compose.material.icons.filled.BugReport
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
@@ -116,6 +117,13 @@ fun HomeScreen(navController: NavController) {
                 title = "Диагностика",
                 subtitle = "Логи и ошибки — кнопка «Копировать» отдаст текст в чат",
                 onClick = { navController.navigate("diag") }
+            )
+
+            MenuCard(
+                icon = Icons.Default.Settings,
+                title = "Настройки",
+                subtitle = "GitHub-токен для авто-отправки логов в Issues",
+                onClick = { navController.navigate("settings") }
             )
         }
     }
