@@ -9,6 +9,7 @@ import com.wikillm.android.data.ModelRepository
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import com.wikillm.android.diag.DiagLog
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
@@ -55,10 +56,17 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         if (_loadState.value is ModelLoadState.Loading) return
         viewModelScope.launch {
             _loadState.value = ModelLoadState.Loading(model.fileName)
+            DiagLog.i(TAG, "Loading model: ${model.fileName} (${model.file.absolutePath})")
             val r = llmRepo.load(model.file)
             _loadState.value = r.fold(
-                onSuccess = { ModelLoadState.Loaded(model.fileName) },
-                onFailure = { ModelLoadState.Failed(it.message ?: "Ошибка загрузки модели") },
+                onSuccess = {
+                    DiagLog.i(TAG, "Model loaded: ${model.fileName}")
+                    ModelLoadState.Loaded(model.fileName)
+                },
+                onFailure = {
+                    DiagLog.e(TAG, "Model load failed: ${model.fileName}", it)
+                    ModelLoadState.Failed(it.message ?: "Ошибка загрузки модели")
+                },
             )
         }
     }
@@ -98,6 +106,8 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
 
     fun stop() { generationJob?.cancel() }
     fun clear() { generationJob?.cancel(); _messages.value = emptyList() }
+
+    companion object { private const val TAG = "ChatVM" }
 
     override fun onCleared() {
         super.onCleared()

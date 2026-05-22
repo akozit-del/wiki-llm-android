@@ -23,6 +23,7 @@ import com.wikillm.android.ui.theme.WikiLLMTheme
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        DiagLog.attach(applicationContext)
         DiagLog.installCrashHandler()
         enableEdgeToEdge()
         setContent {
