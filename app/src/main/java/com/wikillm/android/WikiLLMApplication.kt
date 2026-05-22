@@ -5,13 +5,19 @@ import com.getkeepsafe.relinker.ReLinker
 import com.wikillm.android.diag.DiagLog
 
 /**
- * libkiwix's published AAR packs its .so files under jniLibs/<abi>/libzim/
- * and jniLibs/<abi>/libkiwix/ sub-folders (not directly in jniLibs/<abi>/),
- * which is exactly the layout that ReLinker handles. A plain
- * System.loadLibrary("zim") would throw UnsatisfiedLinkError because the
- * runtime linker doesn't look in sub-directories.
+ * libkiwix's AAR ships FOUR native libraries that need to be loaded in order:
+ *   1. libzim.so          — core ZIM library (under jniLibs/<abi>/libzim/ — sub-dir!)
+ *   2. libkiwix.so        — core libkiwix (under jniLibs/<abi>/libkiwix/ — sub-dir!)
+ *   3. libzim_wrapper.so  — JNI bridge: registers Archive/Searcher/Query native methods
+ *   4. libkiwix_wrapper.so — JNI bridge: registers Library/Manager/Book native methods
  *
- * Load order: libzim first, then libkiwix (libkiwix depends on libzim symbols).
+ * The "core" .so files live in non-standard sub-directories so the linker can't find
+ * them by itself — that's why we use ReLinker (which scans sub-dirs inside the APK).
+ * The "_wrapper" .so files live in the normal jni/<abi>/ folder, so plain
+ * System.loadLibrary works for them.
+ *
+ * Until we load all four, every JNI call on org.kiwix.libzim.Archive throws
+ * UnsatisfiedLinkError.
  */
 class WikiLLMApplication : Application() {
     override fun onCreate() {
@@ -22,22 +28,33 @@ class WikiLLMApplication : Application() {
     }
 
     private fun loadKiwixNatives() {
-        loadOne("zim")
-        loadOne("kiwix")
+        loadViaReLinker("zim")
+        loadViaReLinker("kiwix")
+        loadViaSystem("zim_wrapper")
+        loadViaSystem("kiwix_wrapper")
     }
 
-    private fun loadOne(name: String) {
+    private fun loadViaReLinker(name: String) {
         try {
             ReLinker.loadLibrary(this, name)
             DiagLog.i(TAG, "ReLinker.loadLibrary($name) OK")
         } catch (t: Throwable) {
             DiagLog.e(TAG, "ReLinker.loadLibrary($name) failed", t)
-            // Fall back to the regular linker in case the layout is flat after all.
+        }
+    }
+
+    private fun loadViaSystem(name: String) {
+        try {
+            System.loadLibrary(name)
+            DiagLog.i(TAG, "System.loadLibrary($name) OK")
+        } catch (t: Throwable) {
+            DiagLog.e(TAG, "System.loadLibrary($name) failed", t)
+            // Fallback: maybe wrapper is also in a sub-dir for some abi.
             try {
-                System.loadLibrary(name)
-                DiagLog.i(TAG, "System.loadLibrary($name) OK (fallback)")
+                ReLinker.loadLibrary(this, name)
+                DiagLog.i(TAG, "ReLinker.loadLibrary($name) OK (fallback)")
             } catch (t2: Throwable) {
-                DiagLog.e(TAG, "System.loadLibrary($name) also failed", t2)
+                DiagLog.e(TAG, "ReLinker.loadLibrary($name) also failed", t2)
             }
         }
     }
