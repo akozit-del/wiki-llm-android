@@ -64,17 +64,26 @@ class WikiSearchViewModel(app: Application) : AndroidViewModel(app) {
                 return@launch
             }
 
-            // 2) Scanned ZIM via SAF tree URI -> FileDescriptor.
-            zimRepo.scanned.value.firstOrNull()?.let { sz ->
+            // 2/3) Scanned or selected ZIM — first try direct File API at standard places.
+            //       libzim mmap'ing a SAF /proc/self/fd handle fails because it's a FUSE pipe,
+            //       so a real file path is the only reliable open source.
+            val candidate = zimRepo.scanned.value.firstOrNull() ?: zimRepo.selected.value.firstOrNull()
+            candidate?.let { sz ->
                 _state.value = State.Opening(sz.displayName)
-                openByUri(Uri.parse(sz.uriString), sz.displayName)
-                return@launch
-            }
-
-            // 3) Manually selected ZIM (file picker).
-            zimRepo.selected.value.firstOrNull()?.let { sz ->
-                _state.value = State.Opening(sz.displayName)
-                openByUri(Uri.parse(sz.uriString), sz.displayName)
+                val direct = directFilePathFor(sz.displayName)
+                if (direct != null) {
+                    DiagLog.i(TAG, "Using direct file: $direct")
+                    ZimSearcher.openPath(direct).fold(
+                        onSuccess = { searcher = it; _state.value = State.Ready(sz.displayName); DiagLog.i(TAG, "openPath OK") },
+                        onFailure = { fail ->
+                            DiagLog.w(TAG, "openPath failed, trying SAF fd as last resort", fail)
+                            openByUri(Uri.parse(sz.uriString), sz.displayName)
+                        },
+                    )
+                } else {
+                    DiagLog.w(TAG, "no readable direct file for ${sz.displayName}, falling back to SAF fd")
+                    openByUri(Uri.parse(sz.uriString), sz.displayName)
+                }
                 return@launch
             }
 
@@ -150,5 +159,29 @@ class WikiSearchViewModel(app: Application) : AndroidViewModel(app) {
         searcher?.close()
     }
 
+
+    /**
+     * Probes the standard places where Kiwix-related apps drop their .zim files.
+     * Returns the first existing readable path so libzim can mmap it directly.
+     * On Android 11+ /Android/media/<other_package>/ is readable without SAF.
+     */
+    private fun directFilePathFor(displayName: String): String? {
+        val candidates = listOf(
+            "/storage/emulated/0/Android/media/org.kiwix.kiwixmobile/$displayName",
+            "/storage/emulated/0/Android/media/org.kiwix.kiwixmobile/Custom/$displayName",
+            "/storage/emulated/0/Download/$displayName",
+            "/storage/emulated/0/Documents/$displayName",
+            "/storage/emulated/0/Kiwix/$displayName",
+            "/storage/emulated/0/$displayName",
+        )
+        for (p in candidates) {
+            val f = File(p)
+            val ex = f.exists()
+            val rd = if (ex) f.canRead() else false
+            DiagLog.i(TAG, "probe $p exists=$ex canRead=$rd size=${if (ex) f.length() else 0L}")
+            if (ex && rd) return p
+        }
+        return null
+    }
     companion object { private const val TAG = "WikiSearchVM" }
 }
