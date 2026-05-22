@@ -57,7 +57,7 @@ class LlamaContext private constructor(private val handle: Long) : AutoCloseable
 
         class LoadException(message: String) : RuntimeException(message)
 
-        suspend fun load(path: String, nCtx: Int = 2048): LlamaContext =
+        suspend fun load(path: String, nCtx: Int = 4096): LlamaContext =
             withContext(Dispatchers.IO) {
                 val h = nativeLoad(path, nCtx)
                 if (h == 0L) {

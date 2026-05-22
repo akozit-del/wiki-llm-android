@@ -108,7 +108,8 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
             val builder = StringBuilder()
             try {
                 val prompt = buildPrompt(userMsg.text)
-                llmRepo.generate(prompt, maxTokens = 384).collect { piece ->
+                DiagLog.i(TAG, "Prompt length: ${prompt.length} chars, generating up to 256 tokens")
+                llmRepo.generate(prompt, maxTokens = 256).collect { piece ->
                     builder.append(piece)
                     _messages.value = _messages.value.map {
                         if (it.id == assistantId) it.copy(text = builder.toString()) else it
@@ -135,7 +136,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                 question = userText,
                 candidates = _ragCandidates.value,
                 topK = 3,
-                budgetChars = 4000,
+                budgetChars = 2500,
             )
             DiagLog.i(TAG, "RAG ctx: ${r.sourcesUsed.size} articles from ${r.totalCandidates} candidates")
             r.prompt
