@@ -50,6 +50,8 @@ fun ChatScreen(navController: NavController, vm: ChatViewModel = viewModel()) {
         Column(Modifier.padding(padding).fillMaxSize()) {
             ModelPicker(loadState, downloaded, vm::loadModel, vm::refreshModels)
 
+            RagControls(vm)
+
             val listState = rememberLazyListState()
             LaunchedEffect(messages.size, messages.lastOrNull()?.text?.length) {
                 if (messages.isNotEmpty()) listState.animateScrollToItem(messages.lastIndex)
@@ -204,4 +206,47 @@ private fun formatBytes(b: Long): String {
     var i = 0
     while (v >= 1024 && i < units.lastIndex) { v /= 1024; i++ }
     return String.format("%.1f %s", v, units[i])
+}
+
+
+@Composable
+private fun RagControls(vm: ChatViewModel) {
+    val ragOn by vm.ragEnabled.collectAsState()
+    val n by vm.ragCandidates.collectAsState()
+    val zimState by vm.zimState.collectAsState()
+
+    Card(Modifier.fillMaxWidth().padding(horizontal = 12.dp)) {
+        Column(Modifier.padding(12.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Switch(checked = ragOn, onCheckedChange = vm::setRagEnabled)
+                Spacer(Modifier.width(8.dp))
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        if (ragOn) "Вся вики (RAG)" else "Без вики",
+                        fontWeight = FontWeight.Medium,
+                    )
+                    val zimLabel = when (val s = zimState) {
+                        is com.wikillm.android.rag.ZimSearchHolder.State.Ready -> "ZIM: ${s.label}"
+                        is com.wikillm.android.rag.ZimSearchHolder.State.Opening -> "ZIM открывается…"
+                        is com.wikillm.android.rag.ZimSearchHolder.State.Failed -> "ZIM не открыт: ${s.message}"
+                        com.wikillm.android.rag.ZimSearchHolder.State.Empty -> "ZIM не выбран"
+                    }
+                    Text(zimLabel, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+            if (ragOn) {
+                Spacer(Modifier.height(8.dp))
+                Text("Кандидатов из вики: $n", style = MaterialTheme.typography.bodySmall)
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    listOf(10, 20, 50).forEach { v ->
+                        FilterChip(
+                            selected = n == v,
+                            onClick = { vm.setRagCandidates(v) },
+                            label = { Text(v.toString()) },
+                        )
+                    }
+                }
+            }
+        }
+    }
 }

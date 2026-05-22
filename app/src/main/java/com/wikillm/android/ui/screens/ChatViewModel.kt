@@ -10,6 +10,8 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import com.wikillm.android.diag.DiagLog
+import com.wikillm.android.rag.RagPromptBuilder
+import com.wikillm.android.rag.ZimSearchHolder
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
@@ -45,10 +47,26 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     private val _generating = MutableStateFlow(false)
     val generating: StateFlow<Boolean> = _generating.asStateFlow()
 
+    private val _ragEnabled = MutableStateFlow(false)
+    val ragEnabled: StateFlow<Boolean> = _ragEnabled.asStateFlow()
+
+    private val _ragCandidates = MutableStateFlow(20)
+    val ragCandidates: StateFlow<Int> = _ragCandidates.asStateFlow()
+
+    val zimState: StateFlow<ZimSearchHolder.State> = ZimSearchHolder.state
+
     private var generationJob: Job? = null
     private var nextMessageId = 0L
 
-    init { modelRepo.refreshLocal() }
+    init {
+        modelRepo.refreshLocal()
+        viewModelScope.launch {
+            runCatching { ZimSearchHolder.ensureOpen(getApplication<Application>().applicationContext) }
+        }
+    }
+
+    fun setRagEnabled(v: Boolean) { _ragEnabled.value = v }
+    fun setRagCandidates(v: Int) { _ragCandidates.value = v }
 
     fun refreshModels() = modelRepo.refreshLocal()
 
@@ -89,7 +107,8 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         generationJob = viewModelScope.launch {
             val builder = StringBuilder()
             try {
-                llmRepo.generate(userMsg.text, maxTokens = 256).collect { piece ->
+                val prompt = buildPrompt(userMsg.text)
+                llmRepo.generate(prompt, maxTokens = 384).collect { piece ->
                     builder.append(piece)
                     _messages.value = _messages.value.map {
                         if (it.id == assistantId) it.copy(text = builder.toString()) else it
@@ -102,6 +121,26 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                 _generating.value = false
             }
         }
+    }
+
+    private suspend fun buildPrompt(userText: String): String {
+        if (!_ragEnabled.value) return userText
+        val searcher = ZimSearchHolder.searcher()
+        if (searcher == null) {
+            DiagLog.w(TAG, "RAG on, but ZIM not open — sending raw question")
+            return userText
+        }
+        return runCatching {
+            val r = RagPromptBuilder(searcher).build(
+                question = userText,
+                candidates = _ragCandidates.value,
+                topK = 3,
+                budgetChars = 4000,
+            )
+            DiagLog.i(TAG, "RAG ctx: ${r.sourcesUsed.size} articles from ${r.totalCandidates} candidates")
+            r.prompt
+        }.onFailure { DiagLog.e(TAG, "RAG prompt build failed, sending raw question", it) }
+            .getOrDefault(userText)
     }
 
     fun stop() { generationJob?.cancel() }
