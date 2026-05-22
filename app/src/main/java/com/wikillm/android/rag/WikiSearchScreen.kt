@@ -13,7 +13,14 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import android.content.Context
+import android.content.Intent
+import android.net.Uri
+import android.os.Build
+import android.os.Environment
+import android.provider.Settings
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 
@@ -163,7 +170,7 @@ private fun ArticleView(text: String) {
 
 
 @Composable
-private fun AllFilesAccessCard(vm: WikiSearchViewModel, context: android.content.Context) {
+private fun AllFilesAccessCard(vm: WikiSearchViewModel, context: Context) {
     if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return
     if (Environment.isExternalStorageManager()) return
     Card(Modifier.fillMaxWidth().padding(horizontal = 12.dp)) {
