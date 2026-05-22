@@ -66,8 +66,17 @@ class GitHubIssueReporter(private val settings: SettingsRepository) {
         return "diag: $ts"
     }
 
-    fun formatBody(diagDump: String): String =
-        "Автоматический отчёт из приложения wiki-llm-android.\n\n```\n${diagDump.takeLast(50_000)}\n```"
+    fun formatBody(diagDump: String): String {
+        val limit = 50_000
+        if (diagDump.length <= limit) {
+            return "Автоматический отчёт из приложения wiki-llm-android.\n\n```\n$diagDump\n```"
+        }
+        // Keep both ends: first 12 KB (load library, init) + last 35 KB (latest errors).
+        val head = diagDump.take(12_000)
+        val tail = diagDump.takeLast(35_000)
+        return "Автоматический отчёт из приложения wiki-llm-android. Лог обрезан в середине.\n\n" +
+                "```\n$head\n\n... (skipped ${diagDump.length - head.length - tail.length} chars) ...\n\n$tail\n```"
+    }
 
     companion object { private const val TAG = "GitHubReporter" }
 }
