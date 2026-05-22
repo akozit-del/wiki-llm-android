@@ -32,7 +32,9 @@ class RagPromptBuilder(private val searcher: ZimSearcher) {
         topK: Int = 3,
         budgetChars: Int = 4000,
     ): Result {
-        val hits = searcher.search(question, candidates)
+        val searchQuery = QueryExtractor.extract(question)
+        DiagLog.i(TAG, "Query: '$question' -> ZIM keywords: '$searchQuery'")
+        val hits = searcher.search(searchQuery.ifBlank { question }, candidates)
         DiagLog.i(TAG, "RAG: '$question' candidates=${hits.size}")
         if (hits.isEmpty()) {
             return Result(
@@ -78,6 +80,7 @@ class RagPromptBuilder(private val searcher: ZimSearcher) {
             append("=== КОНЕЦ ВЫДЕРЖЕК ===\n\n")
             append("Вопрос: ").append(question)
         }
+        DiagLog.i(TAG, "RAG prompt preview: " + prompt.take(500).replace('\n', ' '))
         return Result(prompt = prompt, sourcesUsed = titles, totalCandidates = hits.size)
     }
 
