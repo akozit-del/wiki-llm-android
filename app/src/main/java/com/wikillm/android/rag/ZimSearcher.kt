@@ -5,7 +5,6 @@ import com.wikillm.android.diag.DiagLog
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.kiwix.libzim.Archive
-import org.kiwix.libzim.FdInput
 import org.kiwix.libzim.Query
 import org.kiwix.libzim.Searcher
 import java.io.File
@@ -82,48 +81,32 @@ class ZimSearcher private constructor(
         }
 
         /**
-         * Open a ZIM from a SAF-derived ParcelFileDescriptor. libkiwix's plain
-         * Archive(FileDescriptor) JNI is sometimes missing from prebuilt .so; the
-         * embedded constructor Archive(FdInput[]) is the path actually used by the
-         * official Kiwix Android app, so we try that first and fall back if needed.
+         * libkiwix 2.6.0 prebuilt .so has NO fd-based JNI methods implemented —
+         * confirmed via UnsatisfiedLinkError on all four ctors. Workaround:
+         * turn the ParcelFileDescriptor into a /proc/self/fd/<n> path, which is
+         * a valid Linux pseudofile that resolves to the same open file. libzim
+         * opens that as a plain path through its String ctor, which IS in the .so.
+         *
+         * The trick relies on the kernel keeping the fd open; we hold onto the
+         * PFD until close() so the descriptor isn't GC'd.
          */
         suspend fun openFd(pfd: ParcelFileDescriptor, sourceLabel: String): Result<ZimSearcher> =
             withContext(Dispatchers.IO) {
+                val fdNum = pfd.fd
                 val size = runCatching { pfd.statSize }.getOrDefault(-1L)
-                DiagLog.i(TAG, "openFd: $sourceLabel size=$size")
+                val procPath = "/proc/self/fd/$fdNum"
+                DiagLog.i(TAG, "openFd: $sourceLabel fd=$fdNum size=$size path=$procPath")
 
-                val attempts = listOf<Triple<String, () -> Archive, String>>(
-                    Triple("Archive(FdInput[])", {
-                        val arr = arrayOf(FdInput(pfd.fileDescriptor, 0L, if (size > 0) size else 0L))
-                        Archive(arr)
-                    }, "FdInput array"),
-                    Triple("Archive(FdInput)", {
-                        Archive(FdInput(pfd.fileDescriptor, 0L, if (size > 0) size else 0L))
-                    }, "single FdInput"),
-                    Triple("Archive(FileDescriptor, offset, size)", {
-                        Archive(pfd.fileDescriptor, 0L, if (size > 0) size else 0L)
-                    }, "embedded FileDescriptor"),
-                    Triple("Archive(FileDescriptor)", {
-                        Archive(pfd.fileDescriptor)
-                    }, "plain FileDescriptor"),
-                )
-
-                for ((label, ctor, hint) in attempts) {
-                    val r = runCatching {
-                        DiagLog.i(TAG, "Trying $label ($hint)")
-                        val archive = ctor()
-                        val searcher = Searcher(archive)
-                        ZimSearcher(sourceLabel, archive, searcher, pfd = pfd)
-                    }
-                    if (r.isSuccess) {
-                        DiagLog.i(TAG, "OK with $label")
-                        return@withContext r
-                    } else {
-                        DiagLog.w(TAG, "$label failed: ${r.exceptionOrNull()?.javaClass?.simpleName} ${r.exceptionOrNull()?.message?.take(200)}")
-                    }
+                val r = runCatching {
+                    val archive = Archive(procPath)
+                    val searcher = Searcher(archive)
+                    ZimSearcher(sourceLabel, archive, searcher, pfd = pfd)
                 }
-                runCatching { pfd.close() }
-                Result.failure(RuntimeException("Все 4 варианта Archive(fd) не сработали — смотри Диагностику"))
+                if (r.isFailure) {
+                    runCatching { pfd.close() }
+                    DiagLog.e(TAG, "Archive(/proc/self/fd) failed", r.exceptionOrNull())
+                }
+                r
             }
 
         fun htmlToPlainText(html: String): String {

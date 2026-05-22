@@ -92,23 +92,45 @@ std::string token_piece(const llama_model* model, llama_token tok) {
 
 // Apply the model's built-in chat template to a single-turn user message.
 // Falls back to plain text if the model has no template metadata.
+static const char* DEFAULT_SYSTEM_PROMPT =
+    "Ты — полезный ассистент. Отвечай кратко и по существу на русском языке. "
+    "Если ответ короткий — не растягивай. Если не знаешь точно — пиши \"не знаю\" вместо догадок. "
+    "Не повторяй одну и ту же мысль или слово несколько раз.";
+
 std::string apply_chat_template(const llama_model* model, const std::string& user_text) {
-    llama_chat_message msgs[1];
-    msgs[0].role    = "user";
-    msgs[0].content = user_text.c_str();
+    llama_chat_message msgs[2];
+    msgs[0].role    = "system";
+    msgs[0].content = DEFAULT_SYSTEM_PROMPT;
+    msgs[1].role    = "user";
+    msgs[1].content = user_text.c_str();
 
     // Pass nullptr template -> use model's own metadata template.
     int needed = llama_chat_apply_template(model, /*tmpl=*/nullptr,
-                                           msgs, 1,
+                                           msgs, 2,
                                            /*add_assistant=*/true,
                                            nullptr, 0);
     if (needed <= 0) {
-        LOGW("chat template not available, using raw prompt");
-        return user_text;
+        // Some templates don't support system role — retry user only.
+        LOGW("chat template w/ system returned %d, retrying user-only", needed);
+        int needed2 = llama_chat_apply_template(model, nullptr,
+                                                &msgs[1], 1,
+                                                /*add_assistant=*/true,
+                                                nullptr, 0);
+        if (needed2 <= 0) {
+            LOGW("chat template unavailable, using raw prompt");
+            return user_text;
+        }
+        std::vector<char> buf(needed2 + 1, 0);
+        int got = llama_chat_apply_template(model, nullptr,
+                                            &msgs[1], 1,
+                                            /*add_assistant=*/true,
+                                            buf.data(), static_cast<int>(buf.size()));
+        if (got <= 0) return user_text;
+        return std::string(buf.data(), static_cast<size_t>(got));
     }
     std::vector<char> buf(needed + 1, 0);
     int got = llama_chat_apply_template(model, nullptr,
-                                        msgs, 1,
+                                        msgs, 2,
                                         /*add_assistant=*/true,
                                         buf.data(), static_cast<int>(buf.size()));
     if (got <= 0) {
