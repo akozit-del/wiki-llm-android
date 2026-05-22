@@ -136,7 +136,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                 question = userText,
                 candidates = _ragCandidates.value,
                 topK = 3,
-                budgetChars = 2500,
+                budgetChars = 1500,
             )
             DiagLog.i(TAG, "RAG ctx: ${r.sourcesUsed.size} articles from ${r.totalCandidates} candidates")
             r.prompt

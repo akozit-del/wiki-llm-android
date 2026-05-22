@@ -173,7 +173,7 @@ Java_com_wikillm_android_llm_LlamaContext_nativeLoad(
 
     llama_context_params cparams = llama_context_default_params();
     cparams.n_ctx   = nCtx;
-    cparams.n_batch = 256;
+    cparams.n_batch = 2048;
     cparams.no_perf = true;
 
     h->ctx = llama_new_context_with_model(h->model, cparams);
