@@ -3,6 +3,8 @@ package com.wikillm.android.rag
 import android.app.Application
 import android.content.Context
 import android.net.Uri
+import android.os.Build
+import android.os.Environment
 import com.wikillm.android.diag.DiagLog
 import androidx.documentfile.provider.DocumentFile
 import androidx.lifecycle.AndroidViewModel
@@ -159,6 +161,11 @@ class WikiSearchViewModel(app: Application) : AndroidViewModel(app) {
         searcher?.close()
     }
 
+
+
+    /** True iff the user has granted MANAGE_EXTERNAL_STORAGE (Android 11+). */
+    fun hasAllFilesAccess(): Boolean =
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) Environment.isExternalStorageManager() else true
 
     /**
      * Probes the standard places where Kiwix-related apps drop their .zim files.

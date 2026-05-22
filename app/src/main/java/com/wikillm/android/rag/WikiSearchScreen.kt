@@ -43,6 +43,10 @@ fun WikiSearchScreen(navController: NavController, vm: WikiSearchViewModel = vie
     ) { padding ->
         Column(Modifier.padding(padding).fillMaxSize()) {
             StatusCard(state)
+            if (state is WikiSearchViewModel.State.NoZim ||
+                state is WikiSearchViewModel.State.Failed) {
+                AllFilesAccessCard(vm, LocalContext.current)
+            }
 
             if (article != null) {
                 ArticleView(article!!)
@@ -154,5 +158,41 @@ private fun ArticleView(text: String) {
     val scroll = rememberScrollState()
     Column(Modifier.padding(12.dp).verticalScroll(scroll)) {
         Text(text)
+    }
+}
+
+
+@Composable
+private fun AllFilesAccessCard(vm: WikiSearchViewModel, context: android.content.Context) {
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return
+    if (Environment.isExternalStorageManager()) return
+    Card(Modifier.fillMaxWidth().padding(horizontal = 12.dp)) {
+        Column(Modifier.padding(12.dp)) {
+            Text("Доступ ко всем файлам не выдан",
+                style = MaterialTheme.typography.titleSmall,
+                color = MaterialTheme.colorScheme.error)
+            Spacer(Modifier.height(6.dp))
+            Text(
+                "Чтобы открыть ZIM из /Android/media/org.kiwix.kiwixmobile/, Android требует разрешения «All files access». " +
+                "После выдачи разрешения вернись и нажми «Переоткрыть».",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Spacer(Modifier.height(8.dp))
+            Button(onClick = {
+                val intent = Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION).apply {
+                    data = Uri.fromParts("package", context.packageName, null)
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                runCatching { context.startActivity(intent) }
+                    .onFailure {
+                        val fallback = Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION)
+                            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        runCatching { context.startActivity(fallback) }
+                    }
+            }) {
+                Text("Открыть настройки разрешений")
+            }
+        }
     }
 }
