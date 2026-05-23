@@ -134,29 +134,35 @@ adb shell am start -n com.wikillm.android.debug/com.wikillm.android.MainActivity
 
 ## В работе
 
-**Stage 8 — llama.cpp upgrade + статистика генерации**
-
-- `llama.cpp` обновлён `b3789 → b9296` (репо `ggml-org/llama.cpp`), чтобы
-  поддержать архитектуру `gemma4` и др. новые модели.
-- `llm_jni.cpp` переписан под новый API: `llama_model_load_from_file`,
-  `llama_init_from_model`, vocab-функции (`llama_vocab_*`),
-  `llama_chat_apply_template(tmpl_str, …)` (шаблон берётся из
-  `llama_model_chat_template`), `llama_batch_get_one(tokens, n)` (позиции
-  трекаются автоматически), `llama_memory_clear`, упрощённые `penalties`.
-  `llama_sampler_sample` теперь сам делает accept — отдельный вызов убран.
-- `TokenCallback.onComplete(promptTokens, genTokens)` + новый тип `LlmEvent`
-  (`Token`/`Done`): нативка отдаёт точное число токенов промпта и ответа.
-- `ChatViewModel`: тикер живого прогресса (`GenProgress`: прошедшее время + ETA
-  до `maxTokens`), финальная статистика (`GenStats`: модель, секунды, токены,
-  ток/с) под каждым ответом.
-- `ChatScreen`: «⏱ N с · осталось ~M с» во время генерации, строка
-  «модель · N с · K ток · R ток/с» после ответа.
-
-**Что дальше (Stage 9+):** полный OpenWebUI-редизайн (чат — главный экран,
-боковое меню, выбор модели сверху, тёмная тема), докачка моделей с резюме +
-проценты.
+Ближайших задач в очереди нет — следующий этап обсуждается с пользователем.
+Идеи на потом: вынести системный промпт/параметры сэмплинга в настройки;
+прогресс-бар загрузки модели в RAM; персист истории чатов между сессиями.
 
 ### Готово
+
+- **Stage 9 — OpenWebUI-редизайн + докачка моделей.**
+  - 9a: `ModelDownloader` хранит `.part` при отмене/ошибке и докачивает через
+    HTTP Range (206 resume / 200 restart / 416 done). `ModelRepository.partialBytes`,
+    `ModelsViewModel.partials`; в каталоге — проценты загрузки и кнопка «Продолжить».
+  - 9b: тёмная-only палитра в стиле OpenWebUI (`Theme.kt`); чат — стартовый
+    экран, остальное — в `ModalNavigationDrawer` (бургер). `HomeScreen` удалён.
+    Выбор модели — выпадающий список в шапке. Живой статус «думаю» вынесен в
+    фиксированную строку над вводом (не уезжает за длинным ответом).
+  - Fix: краш на кириллице. Токен мог обрываться посреди многобайтового UTF-8
+    символа → `NewStringUTF` делал `abort()`. Теперь `run_generation` буферизует
+    байты (`utf8_complete_len`) и отдаёт в Kotlin `ByteArray` (декод
+    `String(bytes, UTF_8)`); `TokenCallback.onToken(ByteArray)`.
+
+- **Stage 8 — llama.cpp upgrade + статистика генерации.**
+  - `llama.cpp` обновлён `b3789 → b9296` (репо `ggml-org/llama.cpp`) — грузятся
+    `gemma4` и др. новые архитектуры.
+  - `llm_jni.cpp` переписан под новый API: `llama_model_load_from_file`,
+    `llama_init_from_model`, vocab-функции (`llama_vocab_*`),
+    `llama_chat_apply_template(tmpl_str, …)` (шаблон из `llama_model_chat_template`),
+    `llama_batch_get_one(tokens, n)` (авто-позиции), `llama_memory_clear`,
+    упрощённые `penalties`; `llama_sampler_sample` сам делает accept.
+  - `TokenCallback.onComplete` + тип `LlmEvent` (`Token`/`Done`) — точные счётчики
+    токенов. `GenProgress` (живой таймер + ETA), `GenStats` (модель, c, ток, ток/с).
 
 - **Stage 7 — Chat history + RAG fixes.** `nativeGenerateChat` (roles/contents,
   шаблон на всю историю), `generateChat`-обёртки, история обменов в модель,
