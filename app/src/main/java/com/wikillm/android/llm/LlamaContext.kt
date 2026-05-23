@@ -65,8 +65,8 @@ class LlamaContext private constructor(private val handle: Long) : AutoCloseable
         val promptTok = AtomicInteger(0)
         val genTok    = AtomicInteger(0)
         val cb = object : TokenCallback {
-            override fun onToken(piece: String): Boolean {
-                val r = trySend(LlmEvent.Token(piece))
+            override fun onToken(utf8: ByteArray): Boolean {
+                val r = trySend(LlmEvent.Token(String(utf8, Charsets.UTF_8)))
                 if (r.isClosed) { cancelled.set(true); return false }
                 return !cancelled.get()
             }
