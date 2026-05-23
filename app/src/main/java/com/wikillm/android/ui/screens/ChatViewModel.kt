@@ -3,9 +3,12 @@ package com.wikillm.android.ui.screens
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.wikillm.android.data.ChatHistoryStore
+import com.wikillm.android.data.Conversation
 import com.wikillm.android.data.LlmRepository
 import com.wikillm.android.data.LocalModel
 import com.wikillm.android.data.ModelRepository
+import com.wikillm.android.data.StoredMessage
 import com.wikillm.android.llm.LlmEvent
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -61,6 +64,10 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     private val modelRepo = ModelRepository(app.applicationContext)
     private val llmRepo = LlmRepository()
     private val genSettings = GenerationSettings(app.applicationContext)
+    private val historyStore = ChatHistoryStore(app.applicationContext)
+
+    /** Saved conversations (OpenWebUI-style history), newest first. */
+    val conversations: StateFlow<List<Conversation>> = historyStore.conversations
 
     val downloadedModels: StateFlow<List<LocalModel>> = modelRepo.local
 
@@ -86,6 +93,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
 
     private var generationJob: Job? = null
     private var nextMessageId = 0L
+    private var currentConvId = System.currentTimeMillis()
 
     init {
         modelRepo.refreshLocal()
@@ -161,6 +169,8 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
 
         _generating.value = true
 
+        val convId       = currentConvId
+        val maxTokens    = genSettings.currentMaxTokens()
         val startMs      = System.currentTimeMillis()
         val firstTokenMs = AtomicLong(0L)
         val tokenCount   = AtomicInteger(0)
@@ -175,7 +185,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                 val eta: Long? = if (ft > 0 && n > 1) {
                     val genElapsed = now - ft
                     val ratePerMs = if (genElapsed > 0) n.toFloat() / genElapsed else 0f
-                    if (ratePerMs > 0f) ((MAX_TOKENS - n).coerceAtLeast(0) / ratePerMs).toLong() else null
+                    if (ratePerMs > 0f) ((maxTokens - n).coerceAtLeast(0) / ratePerMs).toLong() else null
                 } else null
                 _genProgress.value = GenProgress(now - startMs, n, eta)
                 delay(400)
@@ -187,12 +197,12 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
             var stats: GenStats? = null
             try {
                 val history = buildHistory(previousMessages, userText.trim())
-                val sysPrompt = genSettings.currentSystemPrompt()
+                val sysPrompt = genSettings.effectiveSystemPrompt()
                 val temp = genSettings.currentTemperature()
                 val noThink = genSettings.currentNoThink()
-                DiagLog.i(TAG, "Generating: ${history.size} msgs, maxTokens=$MAX_TOKENS, temp=$temp, noThink=$noThink")
+                DiagLog.i(TAG, "Generating: ${history.size} msgs, maxTokens=$maxTokens, temp=$temp, noThink=$noThink")
                 llmRepo.generateChat(
-                    history, maxTokens = MAX_TOKENS,
+                    history, maxTokens = maxTokens,
                     systemPrompt = sysPrompt, temperature = temp, noThink = noThink,
                 ).collect { ev ->
                     when (ev) {
@@ -233,8 +243,45 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                     } else it
                 }
                 _generating.value = false
+                persistConversation(convId)
             }
         }
+    }
+
+    /** Save the current (non-streaming) messages as a conversation under [convId]. */
+    private fun persistConversation(convId: Long) {
+        val msgs = _messages.value.filter { !it.isStreaming && it.text.isNotBlank() }
+        if (msgs.isEmpty()) return
+        val title = msgs.firstOrNull { it.role == ChatMessage.Role.USER }?.text
+            ?.replace('\n', ' ')?.trim()?.take(50)?.ifBlank { null } ?: "Чат"
+        val stored = msgs.map {
+            StoredMessage(
+                role = if (it.role == ChatMessage.Role.USER) "user" else "assistant",
+                text = it.text,
+            )
+        }
+        historyStore.upsert(Conversation(convId, title, System.currentTimeMillis(), stored))
+    }
+
+    /** Open a saved conversation, replacing the current messages. */
+    fun openConversation(id: Long) {
+        generationJob?.cancel()
+        val conv = historyStore.get(id) ?: return
+        currentConvId = id
+        var idc = nextMessageId
+        _messages.value = conv.messages.map { sm ->
+            ChatMessage(
+                id = idc++,
+                role = if (sm.role == "user") ChatMessage.Role.USER else ChatMessage.Role.ASSISTANT,
+                text = sm.text,
+            )
+        }
+        nextMessageId = idc
+    }
+
+    fun deleteConversation(id: Long) {
+        historyStore.delete(id)
+        if (id == currentConvId) clear()
     }
 
     /** Builds the full message list to pass to the model: previous turns + current user (with RAG). */
@@ -303,11 +350,16 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun stop() { generationJob?.cancel() }
-    fun clear() { generationJob?.cancel(); _messages.value = emptyList() }
+
+    /** Start a fresh chat. The previous one is already saved after each reply. */
+    fun clear() {
+        generationJob?.cancel()
+        _messages.value = emptyList()
+        currentConvId = System.currentTimeMillis()
+    }
 
     companion object {
         private const val TAG = "ChatVM"
-        private const val MAX_TOKENS = 512
 
         /** Matches a complete <think>…</think> block (DOTALL). */
         private val THINK_BLOCK = Regex("(?s)<think>.*?</think>")

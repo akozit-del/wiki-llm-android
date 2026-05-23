@@ -22,6 +22,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
 import com.wikillm.android.BuildConfig
+import kotlin.math.roundToInt
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -31,6 +32,7 @@ fun SettingsScreen(navController: NavController) {
     val sysPrompt by gen.systemPrompt.collectAsState()
     val temp by gen.temperature.collectAsState()
     val thinking by gen.thinking.collectAsState()
+    val words by gen.responseWords.collectAsState()
 
     Scaffold(
         topBar = {
@@ -108,6 +110,25 @@ fun SettingsScreen(navController: NavController) {
             )
             Text(
                 "Ниже — точнее и предсказуемее, выше — разнообразнее и креативнее.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+
+            Spacer(Modifier.height(4.dp))
+
+            // Response length
+            Text(
+                "Длина ответа: примерно $words слов",
+                style = MaterialTheme.typography.bodyMedium,
+            )
+            Slider(
+                value = words.toFloat(),
+                onValueChange = { gen.setResponseWords(it.roundToInt()) },
+                valueRange = 50f..600f,
+                steps = 10, // 50-word increments
+            )
+            Text(
+                "Целевой объём ответа. Добавляется в системный промпт и масштабирует лимит токенов.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )

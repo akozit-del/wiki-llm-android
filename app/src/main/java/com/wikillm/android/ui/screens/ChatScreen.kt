@@ -11,6 +11,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Stop
@@ -28,7 +30,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
+import com.wikillm.android.data.Conversation
 import com.wikillm.android.data.LocalModel
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -38,61 +42,140 @@ fun ChatScreen(navController: NavController, vm: ChatViewModel = viewModel()) {
     val messages by vm.messages.collectAsState()
     val generating by vm.generating.collectAsState()
     val genProgress by vm.genProgress.collectAsState()
+    val conversations by vm.conversations.collectAsState()
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                navigationIcon = {
-                    IconButton(onClick = { navController.navigate("settings") }) {
-                        Icon(Icons.Default.Settings, contentDescription = "Настройки")
-                    }
-                },
-                title = {
-                    ModelSelector(
-                        loadState = loadState,
-                        downloaded = downloaded,
-                        onLoad = vm::loadModel,
-                        onRefresh = vm::refreshModels,
-                    )
-                },
-                actions = {
-                    if (messages.isNotEmpty()) {
+    val drawerState = rememberDrawerState(DrawerValue.Closed)
+    val scope = rememberCoroutineScope()
+    fun closeDrawer() = scope.launch { drawerState.close() }
+
+    ModalNavigationDrawer(
+        drawerState = drawerState,
+        drawerContent = {
+            HistoryDrawer(
+                conversations = conversations,
+                onNewChat = { vm.clear(); closeDrawer() },
+                onOpen = { id -> vm.openConversation(id); closeDrawer() },
+                onDelete = { id -> vm.deleteConversation(id) },
+                onSettings = { closeDrawer(); navController.navigate("settings") },
+            )
+        },
+    ) {
+        Scaffold(
+            topBar = {
+                TopAppBar(
+                    navigationIcon = {
+                        IconButton(onClick = { scope.launch { drawerState.open() } }) {
+                            Icon(Icons.Default.Menu, contentDescription = "История")
+                        }
+                    },
+                    title = {
+                        ModelSelector(
+                            loadState = loadState,
+                            downloaded = downloaded,
+                            onLoad = vm::loadModel,
+                            onRefresh = vm::refreshModels,
+                        )
+                    },
+                    actions = {
                         IconButton(onClick = { vm.clear() }) {
                             Icon(Icons.Default.Add, contentDescription = "Новый чат")
                         }
-                    }
-                },
-            )
-        },
-    ) { padding ->
-        Column(Modifier.padding(padding).fillMaxSize()) {
-            (loadState as? ModelLoadState.Failed)?.let { s ->
-                ErrorBanner(s.message)
-            }
+                    },
+                )
+            },
+        ) { padding ->
+            Column(Modifier.padding(padding).fillMaxSize()) {
+                (loadState as? ModelLoadState.Failed)?.let { s -> ErrorBanner(s.message) }
 
-            RagControls(vm)
+                RagControls(vm)
 
-            val listState = rememberLazyListState()
-            LaunchedEffect(messages.size, messages.lastOrNull()?.text?.length) {
-                if (messages.isNotEmpty()) listState.animateScrollToItem(messages.lastIndex)
-            }
-
-            LazyColumn(
-                modifier = Modifier.weight(1f).fillMaxWidth(),
-                state = listState,
-                contentPadding = PaddingValues(12.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                if (messages.isEmpty()) {
-                    item { EmptyHint(loaded = loadState is ModelLoadState.Loaded) }
+                val listState = rememberLazyListState()
+                LaunchedEffect(messages.size, messages.lastOrNull()?.text?.length) {
+                    if (messages.isNotEmpty()) listState.animateScrollToItem(messages.lastIndex)
                 }
-                items(messages, key = { it.id }) { MessageBubble(it) }
+
+                LazyColumn(
+                    modifier = Modifier.weight(1f).fillMaxWidth(),
+                    state = listState,
+                    contentPadding = PaddingValues(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    if (messages.isEmpty()) {
+                        item { EmptyHint(loaded = loadState is ModelLoadState.Loaded) }
+                    }
+                    items(messages, key = { it.id }) { MessageBubble(it) }
+                }
+
+                if (generating) ThinkingBar(genProgress)
+
+                ChatInput(loadState is ModelLoadState.Loaded, generating, vm::send, vm::stop)
             }
-
-            if (generating) ThinkingBar(genProgress)
-
-            ChatInput(loadState is ModelLoadState.Loaded, generating, vm::send, vm::stop)
         }
+    }
+}
+
+@Composable
+private fun HistoryDrawer(
+    conversations: List<Conversation>,
+    onNewChat: () -> Unit,
+    onOpen: (Long) -> Unit,
+    onDelete: (Long) -> Unit,
+    onSettings: () -> Unit,
+) {
+    ModalDrawerSheet {
+        Spacer(Modifier.height(16.dp))
+        Text(
+            "Wiki LLM",
+            style = MaterialTheme.typography.titleLarge,
+            fontWeight = FontWeight.Bold,
+            modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp),
+        )
+        NavigationDrawerItem(
+            icon = { Icon(Icons.Default.Add, contentDescription = null) },
+            label = { Text("Новый чат") },
+            selected = false,
+            onClick = onNewChat,
+            modifier = Modifier.padding(horizontal = 12.dp),
+        )
+        HorizontalDivider(Modifier.padding(vertical = 8.dp))
+        Text(
+            "История",
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(start = 28.dp, bottom = 4.dp),
+        )
+        if (conversations.isEmpty()) {
+            Text(
+                "Пока пусто. Задай вопрос — диалоги будут сохраняться здесь.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(horizontal = 28.dp, vertical = 8.dp),
+            )
+        }
+        LazyColumn(Modifier.weight(1f).fillMaxWidth()) {
+            items(conversations, key = { it.id }) { c ->
+                NavigationDrawerItem(
+                    label = { Text(c.title, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                    selected = false,
+                    onClick = { onOpen(c.id) },
+                    badge = {
+                        IconButton(onClick = { onDelete(c.id) }) {
+                            Icon(Icons.Default.Delete, contentDescription = "Удалить", modifier = Modifier.size(20.dp))
+                        }
+                    },
+                    modifier = Modifier.padding(horizontal = 12.dp),
+                )
+            }
+        }
+        HorizontalDivider(Modifier.padding(vertical = 8.dp))
+        NavigationDrawerItem(
+            icon = { Icon(Icons.Default.Settings, contentDescription = null) },
+            label = { Text("Настройки") },
+            selected = false,
+            onClick = onSettings,
+            modifier = Modifier.padding(horizontal = 12.dp),
+        )
+        Spacer(Modifier.height(8.dp))
     }
 }
 
@@ -173,7 +256,7 @@ private fun ErrorBanner(message: String) {
 private fun EmptyHint(loaded: Boolean) {
     Text(
         if (loaded)
-            "Введи запрос ниже. История чата сохраняется в течение сессии. При включённом RAG ответы основаны на Википедии. Нажми на сообщение, чтобы скопировать."
+            "Введи запрос ниже. История чатов — в меню слева (☰). Нажми на сообщение, чтобы скопировать."
         else
             "Выбери модель сверху, чтобы начать. Скачать модели можно в Настройках → «Модели».",
         color = MaterialTheme.colorScheme.onSurfaceVariant,
