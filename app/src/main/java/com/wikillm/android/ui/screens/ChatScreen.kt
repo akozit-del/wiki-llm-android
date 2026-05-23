@@ -66,7 +66,7 @@ fun ChatScreen(navController: NavController, vm: ChatViewModel = viewModel()) {
                 if (messages.isEmpty() && loadState is ModelLoadState.Loaded) {
                     item {
                         Text(
-                            "Введи запрос ниже. На этом этапе чат пока без истории и без поиска по Википедии — это будет в следующей итерации.",
+                            "Введи запрос ниже. История чата сохраняется в течение сессии. При включённом RAG ответы основаны на Википедии.",
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             style = MaterialTheme.typography.bodySmall,
                             modifier = Modifier.padding(8.dp),

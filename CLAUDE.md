@@ -134,5 +134,11 @@ adb shell am start -n com.wikillm.android.debug/com.wikillm.android.MainActivity
 
 ## В работе
 
-# TODO: текущая задача
+**Stage 7 — Chat history + RAG fixes**
+
+- `nativeGenerateChat` в JNI: `roles[]`/`contents[]`, `llama_chat_apply_template` на полную историю.
+- `LlamaContext.generateChat`, `LlmRepository.generateChat` — Kotlin-обёртки.
+- `ChatViewModel`: история всех предыдущих обменов передаётся модели; `maxTokens 256→512`.
+- RAG: `topK 3→5`, `budgetChars 1500→2000`, title-boost (фикс «спидвей вместо Тольятти»).
+- Понятная ошибка для неподдерживаемых архитектур (gemma4 и др.).
 

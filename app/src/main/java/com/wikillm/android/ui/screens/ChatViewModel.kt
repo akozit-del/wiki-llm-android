@@ -83,7 +83,15 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                 },
                 onFailure = {
                     DiagLog.e(TAG, "Model load failed: ${model.fileName}", it)
-                    ModelLoadState.Failed(it.message ?: "Ошибка загрузки модели")
+                    val msg = when {
+                        it.message?.contains("unknown model architecture") == true -> {
+                            val arch = Regex("unknown model architecture: '([^']+)'")
+                                .find(it.message!!)?.groupValues?.get(1) ?: "?"
+                            "Архитектура '$arch' не поддерживается. Нужна новая версия llama.cpp."
+                        }
+                        else -> it.message?.substringBefore('\n') ?: "Ошибка загрузки модели"
+                    }
+                    ModelLoadState.Failed(msg)
                 },
             )
         }
@@ -98,18 +106,21 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     fun send(userText: String) {
         if (userText.isBlank() || !llmRepo.isLoaded() || _generating.value) return
 
-        val userMsg = ChatMessage(nextMessageId++, ChatMessage.Role.USER, userText.trim())
+        // Capture completed history BEFORE adding the new exchange.
+        val previousMessages = _messages.value.filter { !it.isStreaming }
+
+        val userMsg    = ChatMessage(nextMessageId++, ChatMessage.Role.USER,      userText.trim())
         val assistantId = nextMessageId++
         val assistantMsg = ChatMessage(assistantId, ChatMessage.Role.ASSISTANT, "", isStreaming = true)
-        _messages.value = _messages.value + userMsg + assistantMsg
+        _messages.value = previousMessages + userMsg + assistantMsg
 
         _generating.value = true
         generationJob = viewModelScope.launch {
             val builder = StringBuilder()
             try {
-                val prompt = buildPrompt(userMsg.text)
-                DiagLog.i(TAG, "Prompt length: ${prompt.length} chars, generating up to 256 tokens")
-                llmRepo.generate(prompt, maxTokens = 256).collect { piece ->
+                val history = buildHistory(previousMessages, userText.trim())
+                DiagLog.i(TAG, "Generating: ${history.size} msgs in history, maxTokens=512")
+                llmRepo.generateChat(history, maxTokens = 512).collect { piece ->
                     builder.append(piece)
                     _messages.value = _messages.value.map {
                         if (it.id == assistantId) it.copy(text = builder.toString()) else it
@@ -117,7 +128,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                 }
             } finally {
                 val finalText = builder.toString()
-                DiagLog.i(TAG, "Reply (${finalText.length} chars): ${finalText.take(1000).replace('\n', ' ')}")
+                DiagLog.i(TAG, "Reply (${finalText.length} chars): ${finalText.take(200).replace('\n', ' ')}")
                 _messages.value = _messages.value.map {
                     if (it.id == assistantId) it.copy(text = finalText, isStreaming = false) else it
                 }
@@ -126,7 +137,25 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    private suspend fun buildPrompt(userText: String): String {
+    /** Builds the full message list to pass to the model: previous turns + current user (with RAG). */
+    private suspend fun buildHistory(
+        previous: List<ChatMessage>,
+        currentUserText: String,
+    ): List<Pair<String, String>> {
+        val result = mutableListOf<Pair<String, String>>()
+        for (msg in previous) {
+            if (msg.text.isNotBlank()) {
+                result += Pair(
+                    if (msg.role == ChatMessage.Role.USER) "user" else "assistant",
+                    msg.text,
+                )
+            }
+        }
+        result += Pair("user", buildRagContent(currentUserText))
+        return result
+    }
+
+    private suspend fun buildRagContent(userText: String): String {
         if (!_ragEnabled.value) return userText
         val searcher = ZimSearchHolder.searcher()
         if (searcher == null) {
@@ -137,8 +166,8 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
             val r = RagPromptBuilder(searcher).build(
                 question = userText,
                 candidates = _ragCandidates.value,
-                topK = 3,
-                budgetChars = 1500,
+                topK = 5,
+                budgetChars = 2000,
             )
             DiagLog.i(TAG, "RAG ctx: ${r.sourcesUsed.size} articles from ${r.totalCandidates} candidates")
             r.prompt

@@ -44,6 +44,16 @@ class RagPromptBuilder(private val searcher: ZimSearcher) {
                 DiagLog.i(TAG, "Retry hits: ${hits.size}")
             }
         }
+        // Title-boost: articles whose title contains a search keyword rank first.
+        // Fixes cases where an off-topic article that merely mentions the term
+        // outscores the primary article in Xapian's ranking.
+        val searchTerms = searchQuery.split(" ").filter { it.length >= 2 }.map { it.lowercase() }
+        val hits = if (searchTerms.isNotEmpty()) {
+            hits.sortedWith(compareByDescending { hit ->
+                searchTerms.any { term -> hit.title.lowercase().contains(term) }
+            })
+        } else hits
+
         DiagLog.i(TAG, "RAG: '$question' candidates=${hits.size}")
         if (hits.isEmpty()) {
             return Result(

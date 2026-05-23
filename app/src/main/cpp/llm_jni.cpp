@@ -140,6 +140,94 @@ std::string apply_chat_template(const llama_model* model, const std::string& use
     return std::string(buf.data(), static_cast<size_t>(got));
 }
 
+// Apply the model's built-in chat template to a multi-turn conversation.
+// Falls back progressively: with system → without system → last-user single-turn.
+static std::string apply_chat_template_multi(
+    const llama_model* model,
+    const std::vector<std::pair<std::string, std::string>>& history) {
+
+    // Helper: try template on given slice, return formatted string or empty.
+    auto try_tmpl = [&](std::vector<llama_chat_message>& msgs) -> std::string {
+        int needed = llama_chat_apply_template(
+            model, nullptr, msgs.data(), msgs.size(), /*add_ass=*/true, nullptr, 0);
+        if (needed <= 0) return {};
+        std::vector<char> buf(needed + 1, 0);
+        int got = llama_chat_apply_template(
+            model, nullptr, msgs.data(), msgs.size(), true, buf.data(), (int)buf.size());
+        if (got <= 0) return {};
+        return std::string(buf.data(), (size_t)got);
+    };
+
+    // Build with system message.
+    std::vector<llama_chat_message> msgs;
+    msgs.reserve(history.size() + 1);
+    msgs.push_back({"system", DEFAULT_SYSTEM_PROMPT});
+    for (auto& [role, content] : history)
+        msgs.push_back({role.c_str(), content.c_str()});
+
+    auto res = try_tmpl(msgs);
+    if (!res.empty()) return res;
+
+    // Retry without system.
+    LOGW("multi-turn template w/ system failed, retrying without");
+    msgs.erase(msgs.begin());
+    res = try_tmpl(msgs);
+    if (!res.empty()) return res;
+
+    // Last resort: single-turn for the last user message.
+    LOGW("multi-turn template failed, falling back to single-turn");
+    for (int i = (int)history.size() - 1; i >= 0; i--) {
+        if (history[i].first == "user")
+            return apply_chat_template(model, history[i].second);
+    }
+    return history.empty() ? std::string{} : history.back().second;
+}
+
+// Shared generation loop used by both nativeGenerate and nativeGenerateChat.
+static void run_generation(
+    JNIEnv* env, LlmHandle* h,
+    const std::string& formatted,
+    int maxTokens,
+    jobject callback) {
+
+    jclass cbClass = env->GetObjectClass(callback);
+    jmethodID onTokenMethod = env->GetMethodID(cbClass, "onToken", "(Ljava/lang/String;)Z");
+    if (!onTokenMethod) { LOGE("TokenCallback.onToken not found"); return; }
+
+    auto tokens = tokenize_text(h->model, formatted, /*add_special=*/true);
+    if (tokens.empty()) { LOGE("Tokenization failed"); return; }
+    LOGI("Prompt: %zu tokens", tokens.size());
+
+    llama_kv_cache_clear(h->ctx);
+    llama_pos n_past = 0;
+    const llama_seq_id seq_id = 0;
+
+    llama_batch batch = llama_batch_get_one(
+        tokens.data(), static_cast<int>(tokens.size()), n_past, seq_id);
+    n_past += static_cast<llama_pos>(tokens.size());
+
+    llama_token next_token = 0;
+    int generated = 0;
+    while (generated < maxTokens) {
+        if (llama_decode(h->ctx, batch) != 0) { LOGE("llama_decode failed"); break; }
+        next_token = llama_sampler_sample(h->smpl, h->ctx, -1);
+        llama_sampler_accept(h->smpl, next_token);
+        if (llama_token_is_eog(h->model, next_token)) { LOGI("EOG, stopping"); break; }
+        std::string piece = token_piece(h->model, next_token);
+        if (!piece.empty()) {
+            jstring jpiece = env->NewStringUTF(piece.c_str());
+            jboolean keep = env->CallBooleanMethod(callback, onTokenMethod, jpiece);
+            env->DeleteLocalRef(jpiece);
+            if (env->ExceptionCheck()) { env->ExceptionClear(); break; }
+            if (!keep) { LOGI("Cancelled"); break; }
+        }
+        ++generated;
+        batch = llama_batch_get_one(&next_token, 1, n_past, seq_id);
+        n_past += 1;
+    }
+    LOGI("Done, generated=%d", generated);
+}
+
 } // namespace
 
 extern "C" JNIEXPORT jlong JNICALL
@@ -235,75 +323,40 @@ Java_com_wikillm_android_llm_LlamaContext_nativeGenerate(
     auto* h = reinterpret_cast<LlmHandle*>(handle);
     if (!h || !h->model || !h->ctx) return;
 
-    jclass cbClass = env->GetObjectClass(callback);
-    jmethodID onTokenMethod = env->GetMethodID(cbClass, "onToken", "(Ljava/lang/String;)Z");
-    if (!onTokenMethod) {
-        LOGE("TokenCallback.onToken(String):Z not found");
-        return;
-    }
-
     const char* prompt_chars = env->GetStringUTFChars(jprompt, nullptr);
     if (!prompt_chars) return;
     std::string user_text(prompt_chars);
     env->ReleaseStringUTFChars(jprompt, prompt_chars);
 
-    // Wrap user message in the model's chat template.
     std::string formatted = apply_chat_template(h->model, user_text);
-    LOGI("Formatted prompt (%zu chars)", formatted.size());
+    LOGI("nativeGenerate: formatted prompt (%zu chars)", formatted.size());
+    run_generation(env, h, formatted, maxTokens, callback);
+}
 
-    auto tokens = tokenize_text(h->model, formatted, /*add_special=*/true);
-    if (tokens.empty()) {
-        LOGE("Tokenization failed");
-        return;
-    }
-    LOGI("Prompt: %zu tokens", tokens.size());
+// Multi-turn chat: roles[] and contents[] are parallel String arrays.
+extern "C" JNIEXPORT void JNICALL
+Java_com_wikillm_android_llm_LlamaContext_nativeGenerateChat(
+    JNIEnv* env, jclass /*clazz*/, jlong handle,
+    jobjectArray jroles, jobjectArray jcontents,
+    jint maxTokens, jobject callback) {
 
-    llama_kv_cache_clear(h->ctx);
+    auto* h = reinterpret_cast<LlmHandle*>(handle);
+    if (!h || !h->model || !h->ctx) return;
 
-    // In llama.cpp tag b3789, llama_batch_get_one takes (tokens, n_tokens, pos_0, seq_id)
-    // so we track the absolute position in the sequence ourselves.
-    llama_pos n_past = 0;
-    const llama_seq_id seq_id = 0;
-
-    llama_batch batch = llama_batch_get_one(
-        tokens.data(), static_cast<int>(tokens.size()), n_past, seq_id);
-    n_past += static_cast<llama_pos>(tokens.size());
-
-    llama_token next_token = 0;
-    int generated = 0;
-    while (generated < maxTokens) {
-        if (llama_decode(h->ctx, batch) != 0) {
-            LOGE("llama_decode failed");
-            break;
-        }
-
-        next_token = llama_sampler_sample(h->smpl, h->ctx, -1);
-        llama_sampler_accept(h->smpl, next_token);
-
-        if (llama_token_is_eog(h->model, next_token)) {
-            LOGI("EOG, stopping");
-            break;
-        }
-
-        std::string piece = token_piece(h->model, next_token);
-        if (!piece.empty()) {
-            jstring jpiece = env->NewStringUTF(piece.c_str());
-            jboolean keep = env->CallBooleanMethod(callback, onTokenMethod, jpiece);
-            env->DeleteLocalRef(jpiece);
-            if (env->ExceptionCheck()) {
-                env->ExceptionClear();
-                break;
-            }
-            if (!keep) {
-                LOGI("Cancelled by callback");
-                break;
-            }
-        }
-
-        ++generated;
-        batch = llama_batch_get_one(&next_token, 1, n_past, seq_id);
-        n_past += 1;
+    jsize count = env->GetArrayLength(jroles);
+    std::vector<std::pair<std::string, std::string>> history(count);
+    for (jsize i = 0; i < count; i++) {
+        auto jr = (jstring)env->GetObjectArrayElement(jroles, i);
+        auto jc = (jstring)env->GetObjectArrayElement(jcontents, i);
+        const char* r = jr ? env->GetStringUTFChars(jr, nullptr) : nullptr;
+        const char* c = jc ? env->GetStringUTFChars(jc, nullptr) : nullptr;
+        if (r) { history[i].first  = r; env->ReleaseStringUTFChars(jr, r); }
+        if (c) { history[i].second = c; env->ReleaseStringUTFChars(jc, c); }
+        if (jr) env->DeleteLocalRef(jr);
+        if (jc) env->DeleteLocalRef(jc);
     }
 
-    LOGI("Done, generated=%d", generated);
+    std::string formatted = apply_chat_template_multi(h->model, history);
+    LOGI("nativeGenerateChat: %zu turns, formatted (%zu chars)", (size_t)count, formatted.size());
+    run_generation(env, h, formatted, maxTokens, callback);
 }

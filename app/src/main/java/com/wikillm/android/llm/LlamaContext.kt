@@ -16,7 +16,7 @@ class LlamaContext private constructor(private val handle: Long) : AutoCloseable
 
     @Volatile private var closed = false
 
-    fun generate(prompt: String, maxTokens: Int = 256): Flow<String> = channelFlow {
+    fun generate(prompt: String, maxTokens: Int = 512): Flow<String> = channelFlow {
         if (closed) {
             close()
             return@channelFlow
@@ -43,6 +43,27 @@ class LlamaContext private constructor(private val handle: Long) : AutoCloseable
             }
         }
     }.flowOn(Dispatchers.Default).buffer(Channel.UNLIMITED)
+
+    /** Multi-turn chat: messages is a list of (role, content) pairs. */
+    fun generateChat(messages: List<Pair<String, String>>, maxTokens: Int = 512): Flow<String> =
+        channelFlow {
+            if (closed) { close(); return@channelFlow }
+            val cancelled = java.util.concurrent.atomic.AtomicBoolean(false)
+            val cb = object : TokenCallback {
+                override fun onToken(piece: String): Boolean {
+                    val r = trySend(piece)
+                    if (r.isClosed) { cancelled.set(true); return false }
+                    return !cancelled.get()
+                }
+            }
+            val roles    = messages.map { it.first  }.toTypedArray()
+            val contents = messages.map { it.second }.toTypedArray()
+            withContext(Dispatchers.IO) {
+                try {
+                    nativeGenerateChat(handle, roles, contents, maxTokens, cb)
+                } catch (t: Throwable) { cancelled.set(true); throw t }
+            }
+        }.flowOn(Dispatchers.Default).buffer(Channel.UNLIMITED)
 
     override fun close() {
         if (closed) return
@@ -71,6 +92,13 @@ class LlamaContext private constructor(private val handle: Long) : AutoCloseable
         @JvmStatic external fun nativeFree(handle: Long)
         @JvmStatic external fun nativeGenerate(
             handle: Long, prompt: String, maxTokens: Int, callback: TokenCallback
+        )
+        @JvmStatic external fun nativeGenerateChat(
+            handle: Long,
+            roles: Array<String>,
+            contents: Array<String>,
+            maxTokens: Int,
+            callback: TokenCallback,
         )
         @JvmStatic external fun nativeLastError(): String
     }
