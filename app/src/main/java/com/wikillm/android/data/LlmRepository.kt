@@ -1,6 +1,7 @@
 package com.wikillm.android.data
 
 import com.wikillm.android.llm.LlamaContext
+import com.wikillm.android.llm.LlmEvent
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -40,12 +41,12 @@ class LlmRepository {
         }
     }
 
-    fun generate(prompt: String, maxTokens: Int = 512): Flow<String> {
+    fun generate(prompt: String, maxTokens: Int = 512): Flow<LlmEvent> {
         val ctx = synchronized(mutex) { current } ?: return emptyFlow()
         return ctx.generate(prompt, maxTokens)
     }
 
-    fun generateChat(messages: List<Pair<String, String>>, maxTokens: Int = 512): Flow<String> {
+    fun generateChat(messages: List<Pair<String, String>>, maxTokens: Int = 512): Flow<LlmEvent> {
         val ctx = synchronized(mutex) { current } ?: return emptyFlow()
         return ctx.generateChat(messages, maxTokens)
     }

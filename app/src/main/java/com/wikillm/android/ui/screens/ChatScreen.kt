@@ -28,6 +28,7 @@ fun ChatScreen(navController: NavController, vm: ChatViewModel = viewModel()) {
     val loadState by vm.loadState.collectAsState()
     val messages by vm.messages.collectAsState()
     val generating by vm.generating.collectAsState()
+    val genProgress by vm.genProgress.collectAsState()
 
     Scaffold(
         topBar = {
@@ -73,7 +74,9 @@ fun ChatScreen(navController: NavController, vm: ChatViewModel = viewModel()) {
                         )
                     }
                 }
-                items(messages, key = { it.id }) { MessageBubble(it) }
+                items(messages, key = { it.id }) {
+                    MessageBubble(it, if (it.isStreaming) genProgress else null)
+                }
             }
 
             ChatInput(loadState is ModelLoadState.Loaded, generating, vm::send, vm::stop)
@@ -145,7 +148,7 @@ private fun PickerList(
 }
 
 @Composable
-private fun MessageBubble(msg: ChatMessage) {
+private fun MessageBubble(msg: ChatMessage, progress: GenProgress?) {
     val isUser = msg.role == ChatMessage.Role.USER
     val align = if (isUser) Alignment.End else Alignment.Start
     val bg = if (isUser) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant
@@ -158,8 +161,42 @@ private fun MessageBubble(msg: ChatMessage) {
             val text = if (msg.text.isEmpty() && msg.isStreaming) "…" else msg.text
             Text(text, color = fg)
         }
+        // Live "thinking" timer + ETA while streaming.
+        if (msg.isStreaming && progress != null) {
+            Text(
+                liveStatus(progress),
+                modifier = Modifier.align(align).padding(top = 2.dp, start = 4.dp, end = 4.dp),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        // Final stats once the reply is complete.
+        msg.stats?.let { s ->
+            Text(
+                statsLine(s),
+                modifier = Modifier.align(align).padding(top = 2.dp, start = 4.dp, end = 4.dp),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
     }
 }
+
+/** "⏱ 8 с · осталось ~12 с" — shown while the model is generating. */
+private fun liveStatus(p: GenProgress): String {
+    val sb = StringBuilder("⏱ ${secs(p.elapsedMs)} с")
+    val eta = p.etaMs
+    if (eta != null && eta > 0) sb.append(" · осталось ~${secs(eta)} с")
+    return sb.toString()
+}
+
+/** "qwen2.5-1.5b · 12 с · 187 ток · 15.6 ток/с" — shown under a finished reply. */
+private fun statsLine(s: GenStats): String {
+    val rate = String.format("%.1f", s.tokensPerSec)
+    return "${s.model} · ${secs(s.elapsedMs)} с · ${s.genTokens} ток · $rate ток/с"
+}
+
+private fun secs(ms: Long): Long = (ms + 500) / 1000
 
 @Composable
 private fun ChatInput(

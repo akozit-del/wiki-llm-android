@@ -15,9 +15,10 @@
 namespace {
 
 struct LlmHandle {
-    llama_model*   model = nullptr;
-    llama_context* ctx   = nullptr;
-    llama_sampler* smpl  = nullptr;
+    llama_model*       model = nullptr;
+    const llama_vocab* vocab = nullptr;
+    llama_context*     ctx   = nullptr;
+    llama_sampler*     smpl  = nullptr;
     int n_ctx = 2048;
 };
 
@@ -64,17 +65,17 @@ void ensure_backend() {
     });
 }
 
-std::vector<llama_token> tokenize_text(const llama_model* model,
+std::vector<llama_token> tokenize_text(const llama_vocab* vocab,
                                        const std::string& text,
                                        bool add_special) {
     int est = static_cast<int>(text.size()) + 8;
     std::vector<llama_token> out(est);
-    int n = llama_tokenize(model, text.c_str(), static_cast<int>(text.size()),
+    int n = llama_tokenize(vocab, text.c_str(), static_cast<int>(text.size()),
                            out.data(), static_cast<int>(out.size()),
                            add_special, /*parse_special*/ true);
     if (n < 0) {
         out.resize(-n);
-        n = llama_tokenize(model, text.c_str(), static_cast<int>(text.size()),
+        n = llama_tokenize(vocab, text.c_str(), static_cast<int>(text.size()),
                            out.data(), static_cast<int>(out.size()),
                            add_special, true);
         if (n < 0) return {};
@@ -83,95 +84,75 @@ std::vector<llama_token> tokenize_text(const llama_model* model,
     return out;
 }
 
-std::string token_piece(const llama_model* model, llama_token tok) {
+std::string token_piece(const llama_vocab* vocab, llama_token tok) {
     char buf[256];
-    int n = llama_token_to_piece(model, tok, buf, sizeof(buf), 0, /*special*/ true);
+    int n = llama_token_to_piece(vocab, tok, buf, sizeof(buf), 0, /*special*/ true);
     if (n < 0) return {};
     return std::string(buf, n);
 }
 
-// Apply the model's built-in chat template to a single-turn user message.
-// Falls back to plain text if the model has no template metadata.
 static const char* DEFAULT_SYSTEM_PROMPT =
     "Ты — полезный ассистент. Отвечай кратко и по существу на русском языке. "
     "Если ответ короткий — не растягивай. Если не знаешь точно — пиши \"не знаю\" вместо догадок. "
     "Не повторяй одну и ту же мысль или слово несколько раз.";
 
-std::string apply_chat_template(const llama_model* model, const std::string& user_text) {
-    llama_chat_message msgs[2];
-    msgs[0].role    = "system";
-    msgs[0].content = DEFAULT_SYSTEM_PROMPT;
-    msgs[1].role    = "user";
-    msgs[1].content = user_text.c_str();
-
-    // Pass nullptr template -> use model's own metadata template.
-    int needed = llama_chat_apply_template(model, /*tmpl=*/nullptr,
-                                           msgs, 2,
-                                           /*add_assistant=*/true,
-                                           nullptr, 0);
-    if (needed <= 0) {
-        // Some templates don't support system role — retry user only.
-        LOGW("chat template w/ system returned %d, retrying user-only", needed);
-        int needed2 = llama_chat_apply_template(model, nullptr,
-                                                &msgs[1], 1,
-                                                /*add_assistant=*/true,
-                                                nullptr, 0);
-        if (needed2 <= 0) {
-            LOGW("chat template unavailable, using raw prompt");
-            return user_text;
-        }
-        std::vector<char> buf(needed2 + 1, 0);
-        int got = llama_chat_apply_template(model, nullptr,
-                                            &msgs[1], 1,
-                                            /*add_assistant=*/true,
-                                            buf.data(), static_cast<int>(buf.size()));
-        if (got <= 0) return user_text;
-        return std::string(buf.data(), static_cast<size_t>(got));
-    }
+// Run the model's built-in chat template (string from metadata) on the given
+// messages. Returns formatted prompt or empty string on failure.
+static std::string run_template(const char* tmpl,
+                                std::vector<llama_chat_message>& msgs) {
+    if (!tmpl) return {};
+    int needed = llama_chat_apply_template(tmpl, msgs.data(), msgs.size(),
+                                           /*add_ass=*/true, nullptr, 0);
+    if (needed <= 0) return {};
     std::vector<char> buf(needed + 1, 0);
-    int got = llama_chat_apply_template(model, nullptr,
-                                        msgs, 2,
-                                        /*add_assistant=*/true,
-                                        buf.data(), static_cast<int>(buf.size()));
-    if (got <= 0) {
-        LOGW("chat template returned %d, using raw prompt", got);
-        return user_text;
-    }
+    int got = llama_chat_apply_template(tmpl, msgs.data(), msgs.size(),
+                                        true, buf.data(), static_cast<int>(buf.size()));
+    if (got <= 0) return {};
     return std::string(buf.data(), static_cast<size_t>(got));
 }
 
-// Apply the model's built-in chat template to a multi-turn conversation.
-// Falls back progressively: with system → without system → last-user single-turn.
+// Single-turn convenience: system + user.
+std::string apply_chat_template(const llama_model* model, const std::string& user_text) {
+    const char* tmpl = llama_model_chat_template(model, /*name=*/nullptr);
+
+    std::vector<llama_chat_message> with_sys = {
+        {"system", DEFAULT_SYSTEM_PROMPT},
+        {"user",   user_text.c_str()},
+    };
+    auto res = run_template(tmpl, with_sys);
+    if (!res.empty()) return res;
+
+    // Some templates reject the system role — retry user-only.
+    LOGW("chat template w/ system failed, retrying user-only");
+    std::vector<llama_chat_message> user_only = { {"user", user_text.c_str()} };
+    res = run_template(tmpl, user_only);
+    if (!res.empty()) return res;
+
+    LOGW("chat template unavailable, using raw prompt");
+    return user_text;
+}
+
+// Multi-turn: system + full history, with progressive fallbacks.
 static std::string apply_chat_template_multi(
     const llama_model* model,
     const std::vector<std::pair<std::string, std::string>>& history) {
 
-    // Helper: try template on given slice, return formatted string or empty.
-    auto try_tmpl = [&](std::vector<llama_chat_message>& msgs) -> std::string {
-        int needed = llama_chat_apply_template(
-            model, nullptr, msgs.data(), msgs.size(), /*add_ass=*/true, nullptr, 0);
-        if (needed <= 0) return {};
-        std::vector<char> buf(needed + 1, 0);
-        int got = llama_chat_apply_template(
-            model, nullptr, msgs.data(), msgs.size(), true, buf.data(), (int)buf.size());
-        if (got <= 0) return {};
-        return std::string(buf.data(), (size_t)got);
-    };
+    const char* tmpl = llama_model_chat_template(model, nullptr);
 
-    // Build with system message.
+    // With system message.
     std::vector<llama_chat_message> msgs;
     msgs.reserve(history.size() + 1);
     msgs.push_back({"system", DEFAULT_SYSTEM_PROMPT});
     for (auto& [role, content] : history)
         msgs.push_back({role.c_str(), content.c_str()});
 
-    auto res = try_tmpl(msgs);
+    auto res = run_template(tmpl, msgs);
     if (!res.empty()) return res;
 
     // Retry without system.
     LOGW("multi-turn template w/ system failed, retrying without");
     msgs.erase(msgs.begin());
-    res = try_tmpl(msgs);
+    res = run_template(tmpl, msgs);
     if (!res.empty()) return res;
 
     // Last resort: single-turn for the last user message.
@@ -184,6 +165,7 @@ static std::string apply_chat_template_multi(
 }
 
 // Shared generation loop used by both nativeGenerate and nativeGenerateChat.
+// Reports prompt/generated token counts via TokenCallback.onComplete at the end.
 static void run_generation(
     JNIEnv* env, LlmHandle* h,
     const std::string& formatted,
@@ -191,29 +173,29 @@ static void run_generation(
     jobject callback) {
 
     jclass cbClass = env->GetObjectClass(callback);
-    jmethodID onTokenMethod = env->GetMethodID(cbClass, "onToken", "(Ljava/lang/String;)Z");
+    jmethodID onTokenMethod    = env->GetMethodID(cbClass, "onToken",    "(Ljava/lang/String;)Z");
+    jmethodID onCompleteMethod = env->GetMethodID(cbClass, "onComplete", "(II)V");
     if (!onTokenMethod) { LOGE("TokenCallback.onToken not found"); return; }
 
-    auto tokens = tokenize_text(h->model, formatted, /*add_special=*/true);
+    auto tokens = tokenize_text(h->vocab, formatted, /*add_special=*/true);
     if (tokens.empty()) { LOGE("Tokenization failed"); return; }
-    LOGI("Prompt: %zu tokens", tokens.size());
+    const int promptTokens = static_cast<int>(tokens.size());
+    LOGI("Prompt: %d tokens", promptTokens);
 
-    llama_kv_cache_clear(h->ctx);
-    llama_pos n_past = 0;
-    const llama_seq_id seq_id = 0;
+    // Reset the KV cache; positions are tracked automatically by llama_decode
+    // when batches come from llama_batch_get_one().
+    llama_memory_clear(llama_get_memory(h->ctx), /*data=*/true);
 
-    llama_batch batch = llama_batch_get_one(
-        tokens.data(), static_cast<int>(tokens.size()), n_past, seq_id);
-    n_past += static_cast<llama_pos>(tokens.size());
+    llama_batch batch = llama_batch_get_one(tokens.data(), static_cast<int>(tokens.size()));
 
     llama_token next_token = 0;
     int generated = 0;
     while (generated < maxTokens) {
         if (llama_decode(h->ctx, batch) != 0) { LOGE("llama_decode failed"); break; }
-        next_token = llama_sampler_sample(h->smpl, h->ctx, -1);
-        llama_sampler_accept(h->smpl, next_token);
-        if (llama_token_is_eog(h->model, next_token)) { LOGI("EOG, stopping"); break; }
-        std::string piece = token_piece(h->model, next_token);
+        next_token = llama_sampler_sample(h->smpl, h->ctx, -1); // also accepts the token
+        if (llama_vocab_is_eog(h->vocab, next_token)) { LOGI("EOG, stopping"); break; }
+        std::string piece = token_piece(h->vocab, next_token);
+        ++generated;
         if (!piece.empty()) {
             jstring jpiece = env->NewStringUTF(piece.c_str());
             jboolean keep = env->CallBooleanMethod(callback, onTokenMethod, jpiece);
@@ -221,11 +203,13 @@ static void run_generation(
             if (env->ExceptionCheck()) { env->ExceptionClear(); break; }
             if (!keep) { LOGI("Cancelled"); break; }
         }
-        ++generated;
-        batch = llama_batch_get_one(&next_token, 1, n_past, seq_id);
-        n_past += 1;
+        batch = llama_batch_get_one(&next_token, 1);
     }
     LOGI("Done, generated=%d", generated);
+    if (onCompleteMethod) {
+        env->CallVoidMethod(callback, onCompleteMethod,
+                            static_cast<jint>(promptTokens), static_cast<jint>(generated));
+    }
 }
 
 } // namespace
@@ -250,26 +234,27 @@ Java_com_wikillm_android_llm_LlamaContext_nativeLoad(
     mparams.use_mmap = true;
 
     LOGI("Loading model: %s", path_str.c_str());
-    h->model = llama_load_model_from_file(path_str.c_str(), mparams);
+    h->model = llama_model_load_from_file(path_str.c_str(), mparams);
     if (!h->model) {
-        LOGE("llama_load_model_from_file failed");
+        LOGE("llama_model_load_from_file failed");
         std::lock_guard<std::mutex> lk(g_err_mu);
-        if (g_last_error.empty()) g_last_error = "llama_load_model_from_file returned null";
+        if (g_last_error.empty()) g_last_error = "llama_model_load_from_file returned null";
         delete h;
         return 0;
     }
+    h->vocab = llama_model_get_vocab(h->model);
 
     llama_context_params cparams = llama_context_default_params();
     cparams.n_ctx   = nCtx;
     cparams.n_batch = 2048;
     cparams.no_perf = true;
 
-    h->ctx = llama_new_context_with_model(h->model, cparams);
+    h->ctx = llama_init_from_model(h->model, cparams);
     if (!h->ctx) {
-        LOGE("llama_new_context_with_model failed");
+        LOGE("llama_init_from_model failed");
         std::lock_guard<std::mutex> lk(g_err_mu);
-        if (g_last_error.empty()) g_last_error = "llama_new_context_with_model returned null";
-        llama_free_model(h->model);
+        if (g_last_error.empty()) g_last_error = "llama_init_from_model returned null";
+        llama_model_free(h->model);
         delete h;
         return 0;
     }
@@ -277,18 +262,13 @@ Java_com_wikillm_android_llm_LlamaContext_nativeLoad(
     auto sparams = llama_sampler_chain_default_params();
     sparams.no_perf = true;
     h->smpl = llama_sampler_chain_init(sparams);
-    // Penalties first so they reshape the logits before temp/top_p.
-    // penalty_last_n=128 tokens, penalty_repeat=1.15, no freq/presence penalties.
+    // Penalties first so they reshape the logits before temp/min_p.
+    // penalty_last_n=128, penalty_repeat=1.15, no freq/presence penalties.
     llama_sampler_chain_add(h->smpl, llama_sampler_init_penalties(
-        /*n_vocab*/        llama_n_vocab(h->model),
-        /*special_eos_id*/ llama_token_eos(h->model),
-        /*linefeed_id*/    llama_token_nl(h->model),
         /*penalty_last_n*/ 128,
         /*penalty_repeat*/ 1.15f,
         /*penalty_freq*/   0.0f,
-        /*penalty_present*/ 0.0f,
-        /*penalize_nl*/    false,
-        /*ignore_eos*/     false));
+        /*penalty_present*/ 0.0f));
     llama_sampler_chain_add(h->smpl, llama_sampler_init_min_p(0.05f, 1));
     llama_sampler_chain_add(h->smpl, llama_sampler_init_temp(0.7f));
     llama_sampler_chain_add(h->smpl, llama_sampler_init_dist(LLAMA_DEFAULT_SEED));
@@ -311,7 +291,7 @@ Java_com_wikillm_android_llm_LlamaContext_nativeFree(
     if (!h) return;
     if (h->smpl)  llama_sampler_free(h->smpl);
     if (h->ctx)   llama_free(h->ctx);
-    if (h->model) llama_free_model(h->model);
+    if (h->model) llama_model_free(h->model);
     delete h;
 }
 

@@ -134,11 +134,33 @@ adb shell am start -n com.wikillm.android.debug/com.wikillm.android.MainActivity
 
 ## В работе
 
-**Stage 7 — Chat history + RAG fixes**
+**Stage 8 — llama.cpp upgrade + статистика генерации**
 
-- `nativeGenerateChat` в JNI: `roles[]`/`contents[]`, `llama_chat_apply_template` на полную историю.
-- `LlamaContext.generateChat`, `LlmRepository.generateChat` — Kotlin-обёртки.
-- `ChatViewModel`: история всех предыдущих обменов передаётся модели; `maxTokens 256→512`.
-- RAG: `topK 3→5`, `budgetChars 1500→2000`, title-boost (фикс «спидвей вместо Тольятти»).
-- Понятная ошибка для неподдерживаемых архитектур (gemma4 и др.).
+- `llama.cpp` обновлён `b3789 → b9296` (репо `ggml-org/llama.cpp`), чтобы
+  поддержать архитектуру `gemma4` и др. новые модели.
+- `llm_jni.cpp` переписан под новый API: `llama_model_load_from_file`,
+  `llama_init_from_model`, vocab-функции (`llama_vocab_*`),
+  `llama_chat_apply_template(tmpl_str, …)` (шаблон берётся из
+  `llama_model_chat_template`), `llama_batch_get_one(tokens, n)` (позиции
+  трекаются автоматически), `llama_memory_clear`, упрощённые `penalties`.
+  `llama_sampler_sample` теперь сам делает accept — отдельный вызов убран.
+- `TokenCallback.onComplete(promptTokens, genTokens)` + новый тип `LlmEvent`
+  (`Token`/`Done`): нативка отдаёт точное число токенов промпта и ответа.
+- `ChatViewModel`: тикер живого прогресса (`GenProgress`: прошедшее время + ETA
+  до `maxTokens`), финальная статистика (`GenStats`: модель, секунды, токены,
+  ток/с) под каждым ответом.
+- `ChatScreen`: «⏱ N с · осталось ~M с» во время генерации, строка
+  «модель · N с · K ток · R ток/с» после ответа.
+
+**Что дальше (Stage 9+):** полный OpenWebUI-редизайн (чат — главный экран,
+боковое меню, выбор модели сверху, тёмная тема), докачка моделей с резюме +
+проценты.
+
+### Готово
+
+- **Stage 7 — Chat history + RAG fixes.** `nativeGenerateChat` (roles/contents,
+  шаблон на всю историю), `generateChat`-обёртки, история обменов в модель,
+  `maxTokens 256→512`, RAG `topK 3→5` / `budgetChars 1500→2000` + title-boost
+  (фикс «спидвей вместо Тольятти»), понятная ошибка неподдерживаемых архитектур,
+  coreference-резолв местоимений в follow-up вопросах.
 

@@ -7,53 +7,41 @@ import kotlinx.coroutines.flow.channelFlow
 import kotlinx.coroutines.flow.buffer
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.withContext
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 
 interface TokenCallback {
+    /** Called for each generated token piece. Return false to stop generation. */
     fun onToken(piece: String): Boolean
+    /** Called once at the very end with exact token counts. */
+    fun onComplete(promptTokens: Int, genTokens: Int)
+}
+
+/** Streamed output of a generation: token pieces followed by a final [Done] with stats. */
+sealed interface LlmEvent {
+    data class Token(val piece: String) : LlmEvent
+    data class Done(val promptTokens: Int, val genTokens: Int) : LlmEvent
 }
 
 class LlamaContext private constructor(private val handle: Long) : AutoCloseable {
 
     @Volatile private var closed = false
 
-    fun generate(prompt: String, maxTokens: Int = 512): Flow<String> = channelFlow {
-        if (closed) {
-            close()
-            return@channelFlow
-        }
-        val cancelled = java.util.concurrent.atomic.AtomicBoolean(false)
-
-        val cb = object : TokenCallback {
-            override fun onToken(piece: String): Boolean {
-                val r = trySend(piece)
-                if (r.isClosed) {
-                    cancelled.set(true)
-                    return false
-                }
-                return !cancelled.get()
-            }
-        }
-
-        withContext(Dispatchers.IO) {
-            try {
-                nativeGenerate(handle, prompt, maxTokens, cb)
-            } catch (t: Throwable) {
-                cancelled.set(true)
-                throw t
-            }
-        }
-    }.flowOn(Dispatchers.Default).buffer(Channel.UNLIMITED)
-
     /** Multi-turn chat: messages is a list of (role, content) pairs. */
-    fun generateChat(messages: List<Pair<String, String>>, maxTokens: Int = 512): Flow<String> =
+    fun generateChat(messages: List<Pair<String, String>>, maxTokens: Int = 512): Flow<LlmEvent> =
         channelFlow {
             if (closed) { close(); return@channelFlow }
-            val cancelled = java.util.concurrent.atomic.AtomicBoolean(false)
+            val cancelled  = AtomicBoolean(false)
+            val promptTok  = AtomicInteger(0)
+            val genTok     = AtomicInteger(0)
             val cb = object : TokenCallback {
                 override fun onToken(piece: String): Boolean {
-                    val r = trySend(piece)
+                    val r = trySend(LlmEvent.Token(piece))
                     if (r.isClosed) { cancelled.set(true); return false }
                     return !cancelled.get()
+                }
+                override fun onComplete(promptTokens: Int, genTokens: Int) {
+                    promptTok.set(promptTokens); genTok.set(genTokens)
                 }
             }
             val roles    = messages.map { it.first  }.toTypedArray()
@@ -63,7 +51,35 @@ class LlamaContext private constructor(private val handle: Long) : AutoCloseable
                     nativeGenerateChat(handle, roles, contents, maxTokens, cb)
                 } catch (t: Throwable) { cancelled.set(true); throw t }
             }
+            trySend(LlmEvent.Done(promptTok.get(), genTok.get()))
         }.flowOn(Dispatchers.Default).buffer(Channel.UNLIMITED)
+
+    /** Single-turn generation (legacy; chat path is preferred). */
+    fun generate(prompt: String, maxTokens: Int = 512): Flow<LlmEvent> = channelFlow {
+        if (closed) { close(); return@channelFlow }
+        val cancelled = AtomicBoolean(false)
+        val promptTok = AtomicInteger(0)
+        val genTok    = AtomicInteger(0)
+        val cb = object : TokenCallback {
+            override fun onToken(piece: String): Boolean {
+                val r = trySend(LlmEvent.Token(piece))
+                if (r.isClosed) { cancelled.set(true); return false }
+                return !cancelled.get()
+            }
+            override fun onComplete(promptTokens: Int, genTokens: Int) {
+                promptTok.set(promptTokens); genTok.set(genTokens)
+            }
+        }
+        withContext(Dispatchers.IO) {
+            try {
+                nativeGenerate(handle, prompt, maxTokens, cb)
+            } catch (t: Throwable) {
+                cancelled.set(true)
+                throw t
+            }
+        }
+        trySend(LlmEvent.Done(promptTok.get(), genTok.get()))
+    }.flowOn(Dispatchers.Default).buffer(Channel.UNLIMITED)
 
     override fun close() {
         if (closed) return
