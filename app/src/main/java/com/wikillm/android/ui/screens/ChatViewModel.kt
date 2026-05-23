@@ -1,6 +1,7 @@
 package com.wikillm.android.ui.screens
 
 import android.app.Application
+import android.content.Context
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.wikillm.android.data.ChatHistoryStore
@@ -65,6 +66,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     private val llmRepo = LlmRepository()
     private val genSettings = GenerationSettings(app.applicationContext)
     private val historyStore = ChatHistoryStore(app.applicationContext)
+    private val prefs = app.getSharedPreferences("wikillm_chat", Context.MODE_PRIVATE)
 
     /** Saved conversations (OpenWebUI-style history), newest first. */
     val conversations: StateFlow<List<Conversation>> = historyStore.conversations
@@ -100,6 +102,15 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             runCatching { ZimSearchHolder.ensureOpen(getApplication<Application>().applicationContext) }
         }
+        autoLoadLastModel()
+    }
+
+    /** Re-load the model used last session so the user doesn't pick it every launch. */
+    private fun autoLoadLastModel() {
+        val path = prefs.getString(KEY_LAST_MODEL, null) ?: return
+        val model = modelRepo.local.value.firstOrNull { it.file.absolutePath == path } ?: return
+        DiagLog.i(TAG, "Auto-loading last model: ${model.fileName}")
+        loadModel(model)
     }
 
     fun setRagEnabled(v: Boolean) { _ragEnabled.value = v }
@@ -116,6 +127,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
             _loadState.value = r.fold(
                 onSuccess = {
                     DiagLog.i(TAG, "Model loaded: ${model.fileName}")
+                    prefs.edit().putString(KEY_LAST_MODEL, model.file.absolutePath).apply()
                     ModelLoadState.Loaded(model.fileName)
                 },
                 onFailure = {
@@ -360,6 +372,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
 
     companion object {
         private const val TAG = "ChatVM"
+        private const val KEY_LAST_MODEL = "last_model_path"
 
         /** Matches a complete <think>…</think> block (DOTALL). */
         private val THINK_BLOCK = Regex("(?s)<think>.*?</think>")
