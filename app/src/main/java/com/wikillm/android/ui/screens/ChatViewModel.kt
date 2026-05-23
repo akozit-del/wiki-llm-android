@@ -133,6 +133,19 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     private fun currentModelName(): String =
         (_loadState.value as? ModelLoadState.Loaded)?.name?.removeSuffix(".gguf") ?: "модель"
 
+    /**
+     * Safety net for reasoning models (Qwen3.5 etc.): hide any <think>…</think>
+     * block so the user sees only the answer. Native side normally pre-closes
+     * thinking, so this is usually a no-op; it also handles a still-open block
+     * mid-stream (everything up to a future </think> is treated as thinking).
+     */
+    private fun stripThinking(text: String): String {
+        val closed = THINK_BLOCK.replace(text, "")
+        val openIdx = closed.indexOf("<think>")
+        val cleaned = if (openIdx >= 0) closed.substring(0, openIdx) else closed
+        return cleaned.trimStart('\n', ' ', '\t')
+    }
+
     fun send(userText: String) {
         if (userText.isBlank() || !llmRepo.isLoaded() || _generating.value) return
 
@@ -179,8 +192,9 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                             firstTokenMs.compareAndSet(0L, System.currentTimeMillis())
                             tokenCount.incrementAndGet()
                             builder.append(ev.piece)
+                            val shown = stripThinking(builder.toString())
                             _messages.value = _messages.value.map {
-                                if (it.id == assistantId) it.copy(text = builder.toString()) else it
+                                if (it.id == assistantId) it.copy(text = shown) else it
                             }
                         }
                         is LlmEvent.Done -> {
@@ -196,7 +210,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
             } finally {
                 ticker.cancel()
                 _genProgress.value = null
-                val finalText = builder.toString()
+                val finalText = stripThinking(builder.toString())
                 val finalStats = stats ?: GenStats(
                     model = currentModelName(),
                     elapsedMs = System.currentTimeMillis() - startMs,
@@ -286,6 +300,9 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     companion object {
         private const val TAG = "ChatVM"
         private const val MAX_TOKENS = 512
+
+        /** Matches a complete <think>…</think> block (DOTALL). */
+        private val THINK_BLOCK = Regex("(?s)<think>.*?</think>")
 
         /** Russian pronouns/locatives that signal the question refers to a prior topic. */
         private val PRONOUNS = setOf(

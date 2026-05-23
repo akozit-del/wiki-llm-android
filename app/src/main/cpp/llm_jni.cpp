@@ -1,6 +1,7 @@
 #include <jni.h>
 #include <android/log.h>
 #include <atomic>
+#include <cstring>
 #include <mutex>
 #include <string>
 #include <vector>
@@ -184,6 +185,18 @@ static size_t utf8_complete_len(const std::string& s) {
     return (avail >= expected) ? len : j; // complete → all; incomplete → cut before lead
 }
 
+// Qwen3-style "thinking" models otherwise burn the whole token budget on a
+// <think>…</think> block and never reach the answer. If the model's template
+// supports thinking, pre-close the block so we get a direct answer. Detected
+// generically by looking for "think" in the model's chat template.
+static void maybe_suppress_thinking(const llama_model* model, std::string& formatted) {
+    const char* tmpl = llama_model_chat_template(model, nullptr);
+    if (tmpl && std::strstr(tmpl, "think")) {
+        formatted += "<think>\n\n</think>\n\n";
+        LOGI("thinking model detected — pre-closed <think> for a direct answer");
+    }
+}
+
 // Shared generation loop used by both nativeGenerate and nativeGenerateChat.
 // Streams complete UTF-8 chunks as byte[] (Kotlin decodes them), so we never
 // hand partial/4-byte sequences to NewStringUTF (which aborts on those).
@@ -349,6 +362,7 @@ Java_com_wikillm_android_llm_LlamaContext_nativeGenerate(
     env->ReleaseStringUTFChars(jprompt, prompt_chars);
 
     std::string formatted = apply_chat_template(h->model, user_text);
+    maybe_suppress_thinking(h->model, formatted);
     LOGI("nativeGenerate: formatted prompt (%zu chars)", formatted.size());
     run_generation(env, h, formatted, maxTokens, callback);
 }
@@ -377,6 +391,7 @@ Java_com_wikillm_android_llm_LlamaContext_nativeGenerateChat(
     }
 
     std::string formatted = apply_chat_template_multi(h->model, history);
+    maybe_suppress_thinking(h->model, formatted);
     LOGI("nativeGenerateChat: %zu turns, formatted (%zu chars)", (size_t)count, formatted.size());
     run_generation(env, h, formatted, maxTokens, callback);
 }
