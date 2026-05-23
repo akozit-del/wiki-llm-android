@@ -99,9 +99,8 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
 
     init {
         modelRepo.refreshLocal()
-        viewModelScope.launch {
-            runCatching { ZimSearchHolder.ensureOpen(getApplication<Application>().applicationContext) }
-        }
+        // ZIM is opened lazily only when RAG is switched on (see setRagEnabled),
+        // so its ~14 GB mmap doesn't compete with the model when RAG is off.
         autoLoadLastModel()
     }
 
@@ -113,7 +112,14 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         loadModel(model)
     }
 
-    fun setRagEnabled(v: Boolean) { _ragEnabled.value = v }
+    fun setRagEnabled(v: Boolean) {
+        _ragEnabled.value = v
+        val ctx = getApplication<Application>().applicationContext
+        viewModelScope.launch {
+            if (v) runCatching { ZimSearchHolder.ensureOpen(ctx) }
+            else ZimSearchHolder.closeAll() // free the ZIM mmap when RAG is off
+        }
+    }
     fun setRagCandidates(v: Int) { _ragCandidates.value = v }
 
     fun refreshModels() = modelRepo.refreshLocal()
@@ -162,6 +168,8 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
      * mid-stream (everything up to a future </think> is treated as thinking).
      */
     private fun stripThinking(text: String): String {
+        // Fast path: no thinking marker (the usual case) — avoid the regex entirely.
+        if (!text.contains("<think>")) return text
         val closed = THINK_BLOCK.replace(text, "")
         val openIdx = closed.indexOf("<think>")
         val cleaned = if (openIdx >= 0) closed.substring(0, openIdx) else closed
@@ -316,6 +324,10 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
 
     private suspend fun buildRagContent(userText: String, previous: List<ChatMessage>): String {
         if (!_ragEnabled.value) return userText
+        // ZIM is opened lazily when RAG turns on; make sure it's ready before the first query.
+        if (ZimSearchHolder.searcher() == null) {
+            runCatching { ZimSearchHolder.ensureOpen(getApplication<Application>().applicationContext) }
+        }
         val searcher = ZimSearchHolder.searcher()
         if (searcher == null) {
             DiagLog.w(TAG, "RAG on, but ZIM not open — sending raw question")

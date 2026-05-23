@@ -65,33 +65,6 @@ class LlamaContext private constructor(private val handle: Long) : AutoCloseable
             trySend(LlmEvent.Done(promptTok.get(), genTok.get()))
         }.flowOn(Dispatchers.Default).buffer(Channel.UNLIMITED)
 
-    /** Single-turn generation (legacy; chat path is preferred). */
-    fun generate(prompt: String, maxTokens: Int = 512): Flow<LlmEvent> = channelFlow {
-        if (closed) { close(); return@channelFlow }
-        val cancelled = AtomicBoolean(false)
-        val promptTok = AtomicInteger(0)
-        val genTok    = AtomicInteger(0)
-        val cb = object : TokenCallback {
-            override fun onToken(utf8: ByteArray): Boolean {
-                val r = trySend(LlmEvent.Token(String(utf8, Charsets.UTF_8)))
-                if (r.isClosed) { cancelled.set(true); return false }
-                return !cancelled.get()
-            }
-            override fun onComplete(promptTokens: Int, genTokens: Int) {
-                promptTok.set(promptTokens); genTok.set(genTokens)
-            }
-        }
-        withContext(Dispatchers.IO) {
-            try {
-                nativeGenerate(handle, prompt, maxTokens, cb)
-            } catch (t: Throwable) {
-                cancelled.set(true)
-                throw t
-            }
-        }
-        trySend(LlmEvent.Done(promptTok.get(), genTok.get()))
-    }.flowOn(Dispatchers.Default).buffer(Channel.UNLIMITED)
-
     override fun close() {
         if (closed) return
         closed = true
@@ -117,9 +90,6 @@ class LlamaContext private constructor(private val handle: Long) : AutoCloseable
 
         @JvmStatic external fun nativeLoad(path: String, nCtx: Int): Long
         @JvmStatic external fun nativeFree(handle: Long)
-        @JvmStatic external fun nativeGenerate(
-            handle: Long, prompt: String, maxTokens: Int, callback: TokenCallback
-        )
         @JvmStatic external fun nativeGenerateChat(
             handle: Long,
             roles: Array<String>,

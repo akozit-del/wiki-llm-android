@@ -228,7 +228,7 @@ static void maybe_suppress_thinking(const llama_model* model, std::string& forma
     }
 }
 
-// Shared generation loop used by both nativeGenerate and nativeGenerateChat.
+// Generation loop for nativeGenerateChat.
 // Streams complete UTF-8 chunks as byte[] (Kotlin decodes them), so we never
 // hand partial/4-byte sequences to NewStringUTF (which aborts on those).
 // Reports prompt/generated token counts via TokenCallback.onComplete at the end.
@@ -366,25 +366,6 @@ Java_com_wikillm_android_llm_LlamaContext_nativeFree(
     if (h->ctx)   llama_free(h->ctx);
     if (h->model) llama_model_free(h->model);
     delete h;
-}
-
-extern "C" JNIEXPORT void JNICALL
-Java_com_wikillm_android_llm_LlamaContext_nativeGenerate(
-    JNIEnv* env, jclass /*clazz*/, jlong handle,
-    jstring jprompt, jint maxTokens, jobject callback) {
-
-    auto* h = reinterpret_cast<LlmHandle*>(handle);
-    if (!h || !h->model || !h->ctx) return;
-
-    const char* prompt_chars = env->GetStringUTFChars(jprompt, nullptr);
-    if (!prompt_chars) return;
-    std::string user_text(prompt_chars);
-    env->ReleaseStringUTFChars(jprompt, prompt_chars);
-
-    std::string formatted = apply_chat_template(h->model, user_text);
-    maybe_suppress_thinking(h->model, formatted);
-    LOGI("nativeGenerate: formatted prompt (%zu chars)", formatted.size());
-    run_generation(env, h, formatted, maxTokens, callback);
 }
 
 // Multi-turn chat: roles[] and contents[] are parallel String arrays.
