@@ -1,13 +1,22 @@
 package com.wikillm.android.ui.screens
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.MenuBook
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material.icons.filled.BugReport
+import androidx.compose.material.icons.filled.Memory
+import androidx.compose.material.icons.filled.Menu
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Send
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -16,10 +25,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 import com.wikillm.android.data.LocalModel
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -30,98 +41,173 @@ fun ChatScreen(navController: NavController, vm: ChatViewModel = viewModel()) {
     val generating by vm.generating.collectAsState()
     val genProgress by vm.genProgress.collectAsState()
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text("Чат") },
-                navigationIcon = {
-                    TextButton(onClick = { navController.popBackStack() }) { Text("Назад") }
-                },
-                actions = {
-                    if (loadState is ModelLoadState.Loaded) {
-                        TextButton(onClick = { vm.unloadModel() }) { Text("Выгрузить") }
-                    }
-                    if (messages.isNotEmpty()) {
-                        TextButton(onClick = { vm.clear() }) { Text("Очистить") }
-                    }
+    val drawerState = rememberDrawerState(DrawerValue.Closed)
+    val scope = rememberCoroutineScope()
+
+    ModalNavigationDrawer(
+        drawerState = drawerState,
+        drawerContent = {
+            ChatDrawer(
+                onNavigate = { route ->
+                    scope.launch { drawerState.close() }
+                    navController.navigate(route)
                 }
             )
-        }
-    ) { padding ->
-        Column(Modifier.padding(padding).fillMaxSize()) {
-            ModelPicker(loadState, downloaded, vm::loadModel, vm::refreshModels)
-
-            RagControls(vm)
-
-            val listState = rememberLazyListState()
-            LaunchedEffect(messages.size, messages.lastOrNull()?.text?.length) {
-                if (messages.isNotEmpty()) listState.animateScrollToItem(messages.lastIndex)
-            }
-
-            LazyColumn(
-                modifier = Modifier.weight(1f).fillMaxWidth(),
-                state = listState,
-                contentPadding = PaddingValues(12.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                if (messages.isEmpty() && loadState is ModelLoadState.Loaded) {
-                    item {
-                        Text(
-                            "Введи запрос ниже. История чата сохраняется в течение сессии. При включённом RAG ответы основаны на Википедии.",
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            style = MaterialTheme.typography.bodySmall,
-                            modifier = Modifier.padding(8.dp),
+        },
+    ) {
+        Scaffold(
+            topBar = {
+                TopAppBar(
+                    navigationIcon = {
+                        IconButton(onClick = { scope.launch { drawerState.open() } }) {
+                            Icon(Icons.Default.Menu, contentDescription = "Меню")
+                        }
+                    },
+                    title = {
+                        ModelSelector(
+                            loadState = loadState,
+                            downloaded = downloaded,
+                            onLoad = vm::loadModel,
+                            onRefresh = vm::refreshModels,
                         )
-                    }
+                    },
+                    actions = {
+                        if (messages.isNotEmpty()) {
+                            IconButton(onClick = { vm.clear() }) {
+                                Icon(Icons.Default.Add, contentDescription = "Новый чат")
+                            }
+                        }
+                    },
+                )
+            },
+        ) { padding ->
+            Column(Modifier.padding(padding).fillMaxSize()) {
+                (loadState as? ModelLoadState.Failed)?.let { s ->
+                    ErrorBanner(s.message)
                 }
-                items(messages, key = { it.id }) {
-                    MessageBubble(it, if (it.isStreaming) genProgress else null)
-                }
-            }
 
-            ChatInput(loadState is ModelLoadState.Loaded, generating, vm::send, vm::stop)
+                RagControls(vm)
+
+                val listState = rememberLazyListState()
+                LaunchedEffect(messages.size, messages.lastOrNull()?.text?.length) {
+                    if (messages.isNotEmpty()) listState.animateScrollToItem(messages.lastIndex)
+                }
+
+                LazyColumn(
+                    modifier = Modifier.weight(1f).fillMaxWidth(),
+                    state = listState,
+                    contentPadding = PaddingValues(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    if (messages.isEmpty()) {
+                        item { EmptyHint(loaded = loadState is ModelLoadState.Loaded) }
+                    }
+                    items(messages, key = { it.id }) { MessageBubble(it) }
+                }
+
+                if (generating) ThinkingBar(genProgress)
+
+                ChatInput(loadState is ModelLoadState.Loaded, generating, vm::send, vm::stop)
+            }
         }
     }
 }
 
 @Composable
-private fun ModelPicker(
+private fun ChatDrawer(onNavigate: (String) -> Unit) {
+    ModalDrawerSheet {
+        Spacer(Modifier.height(16.dp))
+        Text(
+            "Wiki LLM",
+            style = MaterialTheme.typography.titleLarge,
+            fontWeight = FontWeight.Bold,
+            modifier = Modifier.padding(horizontal = 24.dp, vertical = 12.dp),
+        )
+        Text(
+            "Локальная нейросеть + Википедия офлайн",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(horizontal = 24.dp),
+        )
+        Spacer(Modifier.height(16.dp))
+        HorizontalDivider()
+        Spacer(Modifier.height(8.dp))
+
+        DrawerItem(Icons.Default.Memory, "Модели") { onNavigate("models") }
+        DrawerItem(Icons.Default.MenuBook, "Википедия") { onNavigate("wiki") }
+        DrawerItem(Icons.Default.Search, "Поиск в вики (тест)") { onNavigate("wikisearch") }
+        DrawerItem(Icons.Default.BugReport, "Диагностика") { onNavigate("diag") }
+        DrawerItem(Icons.Default.Settings, "Настройки") { onNavigate("settings") }
+    }
+}
+
+@Composable
+private fun DrawerItem(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    label: String,
+    onClick: () -> Unit,
+) {
+    NavigationDrawerItem(
+        icon = { Icon(icon, contentDescription = null) },
+        label = { Text(label) },
+        selected = false,
+        onClick = onClick,
+        modifier = Modifier.padding(horizontal = 12.dp, vertical = 2.dp),
+    )
+}
+
+@Composable
+private fun ModelSelector(
     loadState: ModelLoadState,
     downloaded: List<LocalModel>,
     onLoad: (LocalModel) -> Unit,
     onRefresh: () -> Unit,
 ) {
-    Card(Modifier.fillMaxWidth().padding(12.dp)) {
-        Column(Modifier.padding(12.dp)) {
-            when (val s = loadState) {
-                is ModelLoadState.Loading -> {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
-                        Spacer(Modifier.width(8.dp))
-                        Text("Загружается: ${s.name}")
-                    }
-                }
-                is ModelLoadState.Loaded -> {
-                    Text("Модель: ${s.name}", fontWeight = FontWeight.Medium)
-                }
-                is ModelLoadState.Failed -> {
-                    Text("Ошибка: ${s.message}", color = MaterialTheme.colorScheme.error)
-                    Spacer(Modifier.height(8.dp))
-                    PickerList(downloaded, onLoad, onRefresh)
-                }
-                ModelLoadState.NotLoaded -> {
-                    if (downloaded.isEmpty()) {
-                        Text(
-                            "Сначала скачай хотя бы одну модель в разделе «Модели».",
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                        Spacer(Modifier.height(8.dp))
-                        OutlinedButton(onClick = onRefresh) { Text("Обновить список") }
-                    } else {
-                        Text("Выбери модель для загрузки:", fontWeight = FontWeight.Medium)
-                        Spacer(Modifier.height(8.dp))
-                        PickerList(downloaded, onLoad, onRefresh)
-                    }
+    var expanded by remember { mutableStateOf(false) }
+    val label = when (val s = loadState) {
+        is ModelLoadState.Loaded -> s.name.removeSuffix(".gguf")
+        is ModelLoadState.Loading -> "Загрузка…"
+        else -> "Выбрать модель"
+    }
+    Box {
+        Row(
+            modifier = Modifier
+                .clip(RoundedCornerShape(8.dp))
+                .clickable { onRefresh(); expanded = true }
+                .padding(horizontal = 8.dp, vertical = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                label,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.widthIn(max = 220.dp),
+            )
+            Icon(Icons.Default.ArrowDropDown, contentDescription = "Выбрать модель")
+        }
+        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+            if (downloaded.isEmpty()) {
+                DropdownMenuItem(
+                    text = { Text("Нет моделей — открой «Модели»") },
+                    onClick = { expanded = false },
+                )
+            } else {
+                downloaded.forEach { m ->
+                    DropdownMenuItem(
+                        text = {
+                            Column {
+                                Text(m.fileName.removeSuffix(".gguf"), fontWeight = FontWeight.Medium)
+                                Text(
+                                    "${m.modelId} · ${formatBytes(m.size)}",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                        },
+                        onClick = { onLoad(m); expanded = false },
+                    )
                 }
             }
         }
@@ -129,48 +215,47 @@ private fun ModelPicker(
 }
 
 @Composable
-private fun PickerList(
-    downloaded: List<LocalModel>,
-    onLoad: (LocalModel) -> Unit,
-    onRefresh: () -> Unit,
-) {
-    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        downloaded.forEach { m ->
-            Button(onClick = { onLoad(m) }, modifier = Modifier.fillMaxWidth()) {
-                Column(Modifier.fillMaxWidth()) {
-                    Text(m.modelId, fontWeight = FontWeight.Medium)
-                    Text("${m.fileName} · ${formatBytes(m.size)}", style = MaterialTheme.typography.bodySmall)
-                }
-            }
-        }
-        TextButton(onClick = onRefresh) { Text("Обновить список") }
+private fun ErrorBanner(message: String) {
+    Surface(
+        color = MaterialTheme.colorScheme.errorContainer,
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Text(
+            message,
+            color = MaterialTheme.colorScheme.onErrorContainer,
+            style = MaterialTheme.typography.bodySmall,
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+        )
     }
 }
 
 @Composable
-private fun MessageBubble(msg: ChatMessage, progress: GenProgress?) {
+private fun EmptyHint(loaded: Boolean) {
+    Text(
+        if (loaded)
+            "Введи запрос ниже. История чата сохраняется в течение сессии. При включённом RAG ответы основаны на Википедии."
+        else
+            "Выбери модель сверху, чтобы начать. Скачать модели можно в меню → «Модели».",
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        style = MaterialTheme.typography.bodySmall,
+        modifier = Modifier.padding(8.dp),
+    )
+}
+
+@Composable
+private fun MessageBubble(msg: ChatMessage) {
     val isUser = msg.role == ChatMessage.Role.USER
     val align = if (isUser) Alignment.End else Alignment.Start
     val bg = if (isUser) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant
-    val fg = if (isUser) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
+    val fg = if (isUser) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface
     Column(Modifier.fillMaxWidth()) {
         Box(
-            Modifier.align(align).widthIn(max = 320.dp).clip(RoundedCornerShape(12.dp))
+            Modifier.align(align).widthIn(max = 320.dp).clip(RoundedCornerShape(14.dp))
                 .background(bg).padding(horizontal = 12.dp, vertical = 8.dp)
         ) {
             val text = if (msg.text.isEmpty() && msg.isStreaming) "…" else msg.text
             Text(text, color = fg)
         }
-        // Live "thinking" timer + ETA while streaming.
-        if (msg.isStreaming && progress != null) {
-            Text(
-                liveStatus(progress),
-                modifier = Modifier.align(align).padding(top = 2.dp, start = 4.dp, end = 4.dp),
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-        // Final stats once the reply is complete.
         msg.stats?.let { s ->
             Text(
                 statsLine(s),
@@ -182,21 +267,24 @@ private fun MessageBubble(msg: ChatMessage, progress: GenProgress?) {
     }
 }
 
-/** "⏱ 8 с · осталось ~12 с" — shown while the model is generating. */
-private fun liveStatus(p: GenProgress): String {
-    val sb = StringBuilder("⏱ ${secs(p.elapsedMs)} с")
-    val eta = p.etaMs
-    if (eta != null && eta > 0) sb.append(" · осталось ~${secs(eta)} с")
-    return sb.toString()
+/** Fixed status row above the input while the model is thinking/generating. */
+@Composable
+private fun ThinkingBar(progress: GenProgress?) {
+    Surface(color = MaterialTheme.colorScheme.surfaceVariant, modifier = Modifier.fillMaxWidth()) {
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+            Spacer(Modifier.width(10.dp))
+            Text(
+                liveStatus(progress),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
 }
-
-/** "qwen2.5-1.5b · 12 с · 187 ток · 15.6 ток/с" — shown under a finished reply. */
-private fun statsLine(s: GenStats): String {
-    val rate = String.format("%.1f", s.tokensPerSec)
-    return "${s.model} · ${secs(s.elapsedMs)} с · ${s.genTokens} ток · $rate ток/с"
-}
-
-private fun secs(ms: Long): Long = (ms + 500) / 1000
 
 @Composable
 private fun ChatInput(
@@ -209,14 +297,15 @@ private fun ChatInput(
             value = text,
             onValueChange = { text = it },
             modifier = Modifier.weight(1f),
-            placeholder = { Text(if (enabled) "Сообщение" else "Сначала загрузи модель") },
+            placeholder = { Text(if (enabled) "Сообщение" else "Сначала выбери модель") },
+            shape = RoundedCornerShape(20.dp),
             enabled = enabled && !generating,
             maxLines = 4,
         )
         Spacer(Modifier.width(8.dp))
         if (generating) {
             IconButton(onClick = onStop,
-                modifier = Modifier.size(48.dp).clip(RoundedCornerShape(12.dp))
+                modifier = Modifier.size(48.dp).clip(RoundedCornerShape(14.dp))
                     .background(MaterialTheme.colorScheme.error)) {
                 Icon(Icons.Default.Stop, contentDescription = "Стоп", tint = Color.White)
             }
@@ -227,24 +316,36 @@ private fun ChatInput(
                     if (t.isNotBlank()) { onSend(t); text = "" }
                 },
                 enabled = enabled && text.isNotBlank(),
-                modifier = Modifier.size(48.dp).clip(RoundedCornerShape(12.dp))
-                    .background(MaterialTheme.colorScheme.primary),
+                modifier = Modifier.size(48.dp).clip(RoundedCornerShape(14.dp))
+                    .background(
+                        if (enabled && text.isNotBlank()) MaterialTheme.colorScheme.primary
+                        else MaterialTheme.colorScheme.surfaceVariant
+                    ),
             ) {
-                Icon(Icons.Default.Send, contentDescription = "Отправить", tint = Color.White)
+                Icon(Icons.Default.Send, contentDescription = "Отправить",
+                    tint = if (enabled && text.isNotBlank()) MaterialTheme.colorScheme.onPrimary
+                    else MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
     }
 }
 
-private fun formatBytes(b: Long): String {
-    if (b <= 0) return "—"
-    val units = listOf("Б", "КБ", "МБ", "ГБ")
-    var v = b.toDouble()
-    var i = 0
-    while (v >= 1024 && i < units.lastIndex) { v /= 1024; i++ }
-    return String.format("%.1f %s", v, units[i])
+/** "⏱ 8 с · осталось ~12 с" while generating; "Думаю…" before the first token. */
+private fun liveStatus(p: GenProgress?): String {
+    if (p == null) return "Думаю…"
+    val sb = StringBuilder("⏱ ${secs(p.elapsedMs)} с")
+    val eta = p.etaMs
+    if (eta != null && eta > 0) sb.append(" · осталось ~${secs(eta)} с")
+    return sb.toString()
 }
 
+/** "qwen2.5-1.5b · 12 с · 187 ток · 15.6 ток/с" under a finished reply. */
+private fun statsLine(s: GenStats): String {
+    val rate = String.format("%.1f", s.tokensPerSec)
+    return "${s.model} · ${secs(s.elapsedMs)} с · ${s.genTokens} ток · $rate ток/с"
+}
+
+private fun secs(ms: Long): Long = (ms + 500) / 1000
 
 @Composable
 private fun RagControls(vm: ChatViewModel) {
@@ -252,7 +353,7 @@ private fun RagControls(vm: ChatViewModel) {
     val n by vm.ragCandidates.collectAsState()
     val zimState by vm.zimState.collectAsState()
 
-    Card(Modifier.fillMaxWidth().padding(horizontal = 12.dp)) {
+    Card(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp)) {
         Column(Modifier.padding(12.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Switch(checked = ragOn, onCheckedChange = vm::setRagEnabled)
@@ -286,4 +387,13 @@ private fun RagControls(vm: ChatViewModel) {
             }
         }
     }
+}
+
+private fun formatBytes(b: Long): String {
+    if (b <= 0) return "—"
+    val units = listOf("Б", "КБ", "МБ", "ГБ")
+    var v = b.toDouble()
+    var i = 0
+    while (v >= 1024 && i < units.lastIndex) { v /= 1024; i++ }
+    return String.format("%.1f %s", v, units[i])
 }
