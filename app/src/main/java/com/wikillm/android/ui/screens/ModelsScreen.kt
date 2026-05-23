@@ -8,6 +8,7 @@ import androidx.compose.material.icons.filled.Cancel
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -43,6 +44,7 @@ fun ModelsScreen(navController: NavController, vm: ModelsViewModel = viewModel()
     val expanded by vm.expanded.collectAsState()
     val progress by vm.progress.collectAsState()
     val errors by vm.errors.collectAsState()
+    val partials by vm.partials.collectAsState()
 
     Scaffold(
         topBar = {
@@ -111,6 +113,7 @@ fun ModelsScreen(navController: NavController, vm: ModelsViewModel = viewModel()
                                     model = m,
                                     files = expanded[m.id],
                                     progress = progress,
+                                    partials = partials,
                                     errorMessage = errors[m.id],
                                     onToggle = { vm.toggleFiles(m.id) },
                                     onDownload = { f -> vm.download(m.id, f) },
@@ -172,6 +175,7 @@ private fun RemoteModelCard(
     model: RemoteModel,
     files: List<HfFile>?,
     progress: Map<String, DownloadProgress>,
+    partials: Map<String, Long>,
     errorMessage: String?,
     onToggle: () -> Unit,
     onDownload: (HfFile) -> Unit,
@@ -218,10 +222,10 @@ private fun RemoteModelCard(
                 } else {
                     files.forEach { f ->
                         val key = "${model.id}#${f.path}"
-                        val p = progress[key]
                         FileRow(
                             file = f,
-                            progress = p,
+                            progress = progress[key],
+                            partialBytes = partials[key] ?: 0L,
                             onDownload = { onDownload(f) },
                             onCancel = { onCancel(f) },
                         )
@@ -236,6 +240,7 @@ private fun RemoteModelCard(
 private fun FileRow(
     file: HfFile,
     progress: DownloadProgress?,
+    partialBytes: Long,
     onDownload: () -> Unit,
     onCancel: () -> Unit,
 ) {
@@ -250,10 +255,15 @@ private fun FileRow(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
-            val sizeLine = if (progress != null && progress.totalBytes > 0)
-                "${formatBytes(progress.bytesRead)} / ${formatBytes(progress.totalBytes)}"
-            else
-                formatBytes(file.size)
+            // Effective ratio for the resume hint when not actively downloading.
+            val partialRatio = if (file.size > 0) partialBytes.toFloat() / file.size else 0f
+            val sizeLine = when {
+                progress != null && progress.totalBytes > 0 ->
+                    "${formatBytes(progress.bytesRead)} / ${formatBytes(progress.totalBytes)} · ${percent(progress.ratio)}"
+                partialBytes > 0 ->
+                    "Загружено ${formatBytes(partialBytes)} / ${formatBytes(file.size)} · ${percent(partialRatio)} — пауза"
+                else -> formatBytes(file.size)
+            }
             Text(
                 sizeLine,
                 style = MaterialTheme.typography.bodySmall,
@@ -264,11 +274,19 @@ private fun FileRow(
                     progress = { progress.ratio.coerceIn(0f, 1f) },
                     modifier = Modifier.fillMaxWidth().padding(top = 4.dp)
                 )
+            } else if (partialBytes > 0) {
+                LinearProgressIndicator(
+                    progress = { partialRatio.coerceIn(0f, 1f) },
+                    modifier = Modifier.fillMaxWidth().padding(top = 4.dp)
+                )
             }
         }
         if (progress == null) {
             IconButton(onClick = onDownload) {
-                Icon(Icons.Default.Download, contentDescription = "Скачать")
+                Icon(
+                    if (partialBytes > 0) Icons.Default.PlayArrow else Icons.Default.Download,
+                    contentDescription = if (partialBytes > 0) "Продолжить" else "Скачать",
+                )
             }
         } else {
             IconButton(onClick = onCancel) {
@@ -277,6 +295,8 @@ private fun FileRow(
         }
     }
 }
+
+private fun percent(ratio: Float): String = "${(ratio.coerceIn(0f, 1f) * 100).toInt()}%"
 
 private fun formatBytes(b: Long): String {
     if (b <= 0) return "—"

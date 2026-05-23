@@ -127,13 +127,24 @@ class ModelRepository(private val context: Context) {
             .sortedBy { it.size }
     }
 
-    fun downloadFlow(modelId: String, file: HfFile): Flow<DownloadEvent> {
+    private fun outFileFor(modelId: String, file: HfFile): File {
         val parts = modelId.split('/', limit = 2)
         val author = if (parts.size == 2) parts[0] else "unknown"
         val name = if (parts.size == 2) parts[1] else modelId
-        val outFile = File(modelsRoot(), "$author/$name/${file.path.substringAfterLast('/')}")
+        return File(modelsRoot(), "$author/$name/${file.path.substringAfterLast('/')}")
+    }
+
+    fun downloadFlow(modelId: String, file: HfFile): Flow<DownloadEvent> {
+        val outFile = outFileFor(modelId, file)
         val url = api.fileUrl(modelId, file.path)
         return downloader.download(url, outFile)
+    }
+
+    /** Bytes already on disk in the `.part` file for a not-yet-finished download. */
+    fun partialBytes(modelId: String, file: HfFile): Long {
+        val outFile = outFileFor(modelId, file)
+        val tmp = File(outFile.parentFile, outFile.name + ".part")
+        return if (tmp.exists()) tmp.length() else 0L
     }
 
     companion object {

@@ -50,6 +50,10 @@ class ModelsViewModel(app: Application) : AndroidViewModel(app) {
     private val _errors = MutableStateFlow<Map<String, String>>(emptyMap())
     val errors: StateFlow<Map<String, String>> = _errors.asStateFlow()
 
+    // Bytes already on disk in a `.part` file for a paused/failed download.
+    private val _partials = MutableStateFlow<Map<String, Long>>(emptyMap())
+    val partials: StateFlow<Map<String, Long>> = _partials.asStateFlow()
+
     private val downloadJobs = mutableMapOf<String, Job>()
     private var searchJob: Job? = null
 
@@ -91,6 +95,11 @@ class ModelsViewModel(app: Application) : AndroidViewModel(app) {
             try {
                 val files = repo.listGgufFiles(modelId)
                 _expanded.value = _expanded.value + (modelId to files)
+                // Surface any partially-downloaded files so the UI can offer "Продолжить".
+                val parts = files.associate { f ->
+                    downloadKey(modelId, f) to repo.partialBytes(modelId, f)
+                }.filterValues { it > 0 }
+                _partials.value = _partials.value + parts
             } catch (e: Exception) {
                 _errors.value = _errors.value + (modelId to (e.message ?: "Не удалось получить список файлов"))
             }
@@ -110,10 +119,12 @@ class ModelsViewModel(app: Application) : AndroidViewModel(app) {
                     }
                     is DownloadEvent.Done -> {
                         _progress.value = _progress.value - key
+                        _partials.value = _partials.value - key
                         repo.refreshLocal()
                     }
                     is DownloadEvent.Failed -> {
                         _progress.value = _progress.value - key
+                        _partials.value = _partials.value + (key to repo.partialBytes(modelId, file))
                         _errors.value = _errors.value + (key to ev.message)
                     }
                 }
@@ -126,6 +137,8 @@ class ModelsViewModel(app: Application) : AndroidViewModel(app) {
         downloadJobs[key]?.cancel()
         downloadJobs.remove(key)
         _progress.value = _progress.value - key
+        // The .part file is kept on cancel — record it so the row offers a resume.
+        _partials.value = _partials.value + (key to repo.partialBytes(modelId, file))
     }
 
     fun delete(local: LocalModel) {
