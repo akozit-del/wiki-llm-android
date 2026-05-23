@@ -164,7 +164,29 @@ static std::string apply_chat_template_multi(
     return history.empty() ? std::string{} : history.back().second;
 }
 
+// Length of the longest prefix of s that ends on a complete UTF-8 character.
+// A token piece can split a multi-byte character (common with Cyrillic), so we
+// hold back the trailing incomplete bytes until the next token completes them.
+static size_t utf8_complete_len(const std::string& s) {
+    size_t len = s.size();
+    if (len == 0) return 0;
+    // Walk back over continuation bytes (10xxxxxx) to the lead byte of the last char.
+    size_t j = len - 1;
+    while (j > 0 && ((unsigned char)s[j] & 0xC0) == 0x80) j--;
+    unsigned char lead = (unsigned char)s[j];
+    size_t expected;
+    if ((lead & 0x80) == 0x00)      expected = 1;
+    else if ((lead & 0xE0) == 0xC0) expected = 2;
+    else if ((lead & 0xF0) == 0xE0) expected = 3;
+    else if ((lead & 0xF8) == 0xF0) expected = 4;
+    else return len; // not a lead byte (malformed) — don't hold back
+    size_t avail = len - j;
+    return (avail >= expected) ? len : j; // complete → all; incomplete → cut before lead
+}
+
 // Shared generation loop used by both nativeGenerate and nativeGenerateChat.
+// Streams complete UTF-8 chunks as byte[] (Kotlin decodes them), so we never
+// hand partial/4-byte sequences to NewStringUTF (which aborts on those).
 // Reports prompt/generated token counts via TokenCallback.onComplete at the end.
 static void run_generation(
     JNIEnv* env, LlmHandle* h,
@@ -173,9 +195,22 @@ static void run_generation(
     jobject callback) {
 
     jclass cbClass = env->GetObjectClass(callback);
-    jmethodID onTokenMethod    = env->GetMethodID(cbClass, "onToken",    "(Ljava/lang/String;)Z");
+    jmethodID onTokenMethod    = env->GetMethodID(cbClass, "onToken",    "([B)Z");
     jmethodID onCompleteMethod = env->GetMethodID(cbClass, "onComplete", "(II)V");
     if (!onTokenMethod) { LOGE("TokenCallback.onToken not found"); return; }
+
+    // Emit a complete-UTF-8 chunk to Kotlin; returns false to stop generation.
+    auto emit_chunk = [&](const std::string& chunk) -> bool {
+        if (chunk.empty()) return true;
+        jbyteArray arr = env->NewByteArray(static_cast<jsize>(chunk.size()));
+        if (!arr) return true;
+        env->SetByteArrayRegion(arr, 0, static_cast<jsize>(chunk.size()),
+                                reinterpret_cast<const jbyte*>(chunk.data()));
+        jboolean keep = env->CallBooleanMethod(callback, onTokenMethod, arr);
+        env->DeleteLocalRef(arr);
+        if (env->ExceptionCheck()) { env->ExceptionClear(); return false; }
+        return keep;
+    };
 
     auto tokens = tokenize_text(h->vocab, formatted, /*add_special=*/true);
     if (tokens.empty()) { LOGE("Tokenization failed"); return; }
@@ -190,20 +225,25 @@ static void run_generation(
 
     llama_token next_token = 0;
     int generated = 0;
+    std::string pending; // buffers bytes until they form a complete UTF-8 char
     while (generated < maxTokens) {
         if (llama_decode(h->ctx, batch) != 0) { LOGE("llama_decode failed"); break; }
         next_token = llama_sampler_sample(h->smpl, h->ctx, -1); // also accepts the token
         if (llama_vocab_is_eog(h->vocab, next_token)) { LOGI("EOG, stopping"); break; }
-        std::string piece = token_piece(h->vocab, next_token);
         ++generated;
-        if (!piece.empty()) {
-            jstring jpiece = env->NewStringUTF(piece.c_str());
-            jboolean keep = env->CallBooleanMethod(callback, onTokenMethod, jpiece);
-            env->DeleteLocalRef(jpiece);
-            if (env->ExceptionCheck()) { env->ExceptionClear(); break; }
-            if (!keep) { LOGI("Cancelled"); break; }
+        pending += token_piece(h->vocab, next_token);
+        size_t cut = utf8_complete_len(pending);
+        if (cut > 0) {
+            std::string chunk = pending.substr(0, cut);
+            pending.erase(0, cut);
+            if (!emit_chunk(chunk)) { LOGI("Cancelled"); break; }
         }
         batch = llama_batch_get_one(&next_token, 1);
+    }
+    // Flush any complete bytes left in the buffer (drop a trailing partial char).
+    if (!pending.empty()) {
+        size_t cut = utf8_complete_len(pending);
+        if (cut > 0) emit_chunk(pending.substr(0, cut));
     }
     LOGI("Done, generated=%d", generated);
     if (onCompleteMethod) {

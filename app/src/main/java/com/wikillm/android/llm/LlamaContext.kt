@@ -11,8 +11,12 @@ import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 
 interface TokenCallback {
-    /** Called for each generated token piece. Return false to stop generation. */
-    fun onToken(piece: String): Boolean
+    /**
+     * Called for each complete-UTF-8 chunk of generated text, as raw bytes.
+     * Native side buffers partial multi-byte chars, so [utf8] always decodes
+     * cleanly. Return false to stop generation.
+     */
+    fun onToken(utf8: ByteArray): Boolean
     /** Called once at the very end with exact token counts. */
     fun onComplete(promptTokens: Int, genTokens: Int)
 }
@@ -35,8 +39,8 @@ class LlamaContext private constructor(private val handle: Long) : AutoCloseable
             val promptTok  = AtomicInteger(0)
             val genTok     = AtomicInteger(0)
             val cb = object : TokenCallback {
-                override fun onToken(piece: String): Boolean {
-                    val r = trySend(LlmEvent.Token(piece))
+                override fun onToken(utf8: ByteArray): Boolean {
+                    val r = trySend(LlmEvent.Token(String(utf8, Charsets.UTF_8)))
                     if (r.isClosed) { cancelled.set(true); return false }
                     return !cancelled.get()
                 }
