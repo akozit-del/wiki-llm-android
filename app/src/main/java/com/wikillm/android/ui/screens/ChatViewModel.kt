@@ -15,6 +15,7 @@ import com.wikillm.android.diag.DiagLog
 import com.wikillm.android.rag.QueryExtractor
 import com.wikillm.android.rag.RagPromptBuilder
 import com.wikillm.android.rag.ZimSearchHolder
+import com.wikillm.android.settings.GenerationSettings
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -59,6 +60,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
 
     private val modelRepo = ModelRepository(app.applicationContext)
     private val llmRepo = LlmRepository()
+    private val genSettings = GenerationSettings(app.applicationContext)
 
     val downloadedModels: StateFlow<List<LocalModel>> = modelRepo.local
 
@@ -185,8 +187,14 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
             var stats: GenStats? = null
             try {
                 val history = buildHistory(previousMessages, userText.trim())
-                DiagLog.i(TAG, "Generating: ${history.size} msgs in history, maxTokens=$MAX_TOKENS")
-                llmRepo.generateChat(history, maxTokens = MAX_TOKENS).collect { ev ->
+                val sysPrompt = genSettings.currentSystemPrompt()
+                val temp = genSettings.currentTemperature()
+                val noThink = genSettings.currentNoThink()
+                DiagLog.i(TAG, "Generating: ${history.size} msgs, maxTokens=$MAX_TOKENS, temp=$temp, noThink=$noThink")
+                llmRepo.generateChat(
+                    history, maxTokens = MAX_TOKENS,
+                    systemPrompt = sysPrompt, temperature = temp, noThink = noThink,
+                ).collect { ev ->
                     when (ev) {
                         is LlmEvent.Token -> {
                             firstTokenMs.compareAndSet(0L, System.currentTimeMillis())

@@ -20,8 +20,34 @@ struct LlmHandle {
     const llama_vocab* vocab = nullptr;
     llama_context*     ctx   = nullptr;
     llama_sampler*     smpl  = nullptr;
-    int n_ctx = 2048;
+    int   n_ctx = 2048;
+    float temp  = 0.7f; // current sampler temperature
 };
+
+// Build the sampler chain: penalties → min_p → temp → dist.
+static llama_sampler* make_sampler(float temp) {
+    if (temp < 0.05f) temp = 0.05f;
+    auto sparams = llama_sampler_chain_default_params();
+    sparams.no_perf = true;
+    llama_sampler* s = llama_sampler_chain_init(sparams);
+    // Penalties first so they reshape the logits before temp/min_p.
+    llama_sampler_chain_add(s, llama_sampler_init_penalties(
+        /*penalty_last_n*/ 128, /*penalty_repeat*/ 1.15f,
+        /*penalty_freq*/   0.0f, /*penalty_present*/ 0.0f));
+    llama_sampler_chain_add(s, llama_sampler_init_min_p(0.05f, 1));
+    llama_sampler_chain_add(s, llama_sampler_init_temp(temp));
+    llama_sampler_chain_add(s, llama_sampler_init_dist(LLAMA_DEFAULT_SEED));
+    return s;
+}
+
+// Rebuild the sampler only when the requested temperature changed.
+static void ensure_temp(LlmHandle* h, float temp) {
+    if (temp < 0.05f) temp = 0.05f;
+    if (h->smpl && temp == h->temp) return;
+    if (h->smpl) llama_sampler_free(h->smpl);
+    h->smpl = make_sampler(temp);
+    h->temp = temp;
+}
 
 std::once_flag g_backend_once;
 
@@ -134,27 +160,32 @@ std::string apply_chat_template(const llama_model* model, const std::string& use
 }
 
 // Multi-turn: system + full history, with progressive fallbacks.
+// systemPrompt may be empty to omit the system message entirely.
 static std::string apply_chat_template_multi(
     const llama_model* model,
-    const std::vector<std::pair<std::string, std::string>>& history) {
+    const std::vector<std::pair<std::string, std::string>>& history,
+    const std::string& systemPrompt) {
 
     const char* tmpl = llama_model_chat_template(model, nullptr);
 
-    // With system message.
+    // With system message (if provided).
     std::vector<llama_chat_message> msgs;
     msgs.reserve(history.size() + 1);
-    msgs.push_back({"system", DEFAULT_SYSTEM_PROMPT});
+    if (!systemPrompt.empty())
+        msgs.push_back({"system", systemPrompt.c_str()});
     for (auto& [role, content] : history)
         msgs.push_back({role.c_str(), content.c_str()});
 
     auto res = run_template(tmpl, msgs);
     if (!res.empty()) return res;
 
-    // Retry without system.
-    LOGW("multi-turn template w/ system failed, retrying without");
-    msgs.erase(msgs.begin());
-    res = run_template(tmpl, msgs);
-    if (!res.empty()) return res;
+    // Retry without the system message (some templates reject the system role).
+    if (!systemPrompt.empty() && !msgs.empty() && std::string(msgs.front().role) == "system") {
+        LOGW("multi-turn template w/ system failed, retrying without");
+        msgs.erase(msgs.begin());
+        res = run_template(tmpl, msgs);
+        if (!res.empty()) return res;
+    }
 
     // Last resort: single-turn for the last user message.
     LOGW("multi-turn template failed, falling back to single-turn");
@@ -312,19 +343,8 @@ Java_com_wikillm_android_llm_LlamaContext_nativeLoad(
         return 0;
     }
 
-    auto sparams = llama_sampler_chain_default_params();
-    sparams.no_perf = true;
-    h->smpl = llama_sampler_chain_init(sparams);
-    // Penalties first so they reshape the logits before temp/min_p.
-    // penalty_last_n=128, penalty_repeat=1.15, no freq/presence penalties.
-    llama_sampler_chain_add(h->smpl, llama_sampler_init_penalties(
-        /*penalty_last_n*/ 128,
-        /*penalty_repeat*/ 1.15f,
-        /*penalty_freq*/   0.0f,
-        /*penalty_present*/ 0.0f));
-    llama_sampler_chain_add(h->smpl, llama_sampler_init_min_p(0.05f, 1));
-    llama_sampler_chain_add(h->smpl, llama_sampler_init_temp(0.7f));
-    llama_sampler_chain_add(h->smpl, llama_sampler_init_dist(LLAMA_DEFAULT_SEED));
+    h->temp = 0.7f;
+    h->smpl = make_sampler(h->temp);
 
     LOGI("Model loaded OK");
     return reinterpret_cast<jlong>(h);
@@ -368,14 +388,22 @@ Java_com_wikillm_android_llm_LlamaContext_nativeGenerate(
 }
 
 // Multi-turn chat: roles[] and contents[] are parallel String arrays.
+// systemPrompt, temperature and noThink come from the app's generation settings.
 extern "C" JNIEXPORT void JNICALL
 Java_com_wikillm_android_llm_LlamaContext_nativeGenerateChat(
     JNIEnv* env, jclass /*clazz*/, jlong handle,
     jobjectArray jroles, jobjectArray jcontents,
-    jint maxTokens, jobject callback) {
+    jint maxTokens, jstring jSystemPrompt, jfloat temperature, jboolean noThink,
+    jobject callback) {
 
     auto* h = reinterpret_cast<LlmHandle*>(handle);
     if (!h || !h->model || !h->ctx) return;
+
+    std::string systemPrompt;
+    if (jSystemPrompt) {
+        const char* sp = env->GetStringUTFChars(jSystemPrompt, nullptr);
+        if (sp) { systemPrompt = sp; env->ReleaseStringUTFChars(jSystemPrompt, sp); }
+    }
 
     jsize count = env->GetArrayLength(jroles);
     std::vector<std::pair<std::string, std::string>> history(count);
@@ -390,8 +418,11 @@ Java_com_wikillm_android_llm_LlamaContext_nativeGenerateChat(
         if (jc) env->DeleteLocalRef(jc);
     }
 
-    std::string formatted = apply_chat_template_multi(h->model, history);
-    maybe_suppress_thinking(h->model, formatted);
-    LOGI("nativeGenerateChat: %zu turns, formatted (%zu chars)", (size_t)count, formatted.size());
+    ensure_temp(h, temperature);
+
+    std::string formatted = apply_chat_template_multi(h->model, history, systemPrompt);
+    if (noThink) maybe_suppress_thinking(h->model, formatted);
+    LOGI("nativeGenerateChat: %zu turns, temp=%.2f, noThink=%d, formatted (%zu chars)",
+         (size_t)count, h->temp, (int)noThink, formatted.size());
     run_generation(env, h, formatted, maxTokens, callback);
 }

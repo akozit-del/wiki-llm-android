@@ -32,7 +32,13 @@ class LlamaContext private constructor(private val handle: Long) : AutoCloseable
     @Volatile private var closed = false
 
     /** Multi-turn chat: messages is a list of (role, content) pairs. */
-    fun generateChat(messages: List<Pair<String, String>>, maxTokens: Int = 512): Flow<LlmEvent> =
+    fun generateChat(
+        messages: List<Pair<String, String>>,
+        maxTokens: Int = 512,
+        systemPrompt: String,
+        temperature: Float,
+        noThink: Boolean,
+    ): Flow<LlmEvent> =
         channelFlow {
             if (closed) { close(); return@channelFlow }
             val cancelled  = AtomicBoolean(false)
@@ -52,7 +58,8 @@ class LlamaContext private constructor(private val handle: Long) : AutoCloseable
             val contents = messages.map { it.second }.toTypedArray()
             withContext(Dispatchers.IO) {
                 try {
-                    nativeGenerateChat(handle, roles, contents, maxTokens, cb)
+                    nativeGenerateChat(handle, roles, contents, maxTokens,
+                        systemPrompt, temperature, noThink, cb)
                 } catch (t: Throwable) { cancelled.set(true); throw t }
             }
             trySend(LlmEvent.Done(promptTok.get(), genTok.get()))
@@ -118,6 +125,9 @@ class LlamaContext private constructor(private val handle: Long) : AutoCloseable
             roles: Array<String>,
             contents: Array<String>,
             maxTokens: Int,
+            systemPrompt: String,
+            temperature: Float,
+            noThink: Boolean,
             callback: TokenCallback,
         )
         @JvmStatic external fun nativeLastError(): String

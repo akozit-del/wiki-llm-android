@@ -46,9 +46,15 @@ class LlmRepository {
         return ctx.generate(prompt, maxTokens)
     }
 
-    fun generateChat(messages: List<Pair<String, String>>, maxTokens: Int = 512): Flow<LlmEvent> {
+    fun generateChat(
+        messages: List<Pair<String, String>>,
+        maxTokens: Int = 512,
+        systemPrompt: String,
+        temperature: Float,
+        noThink: Boolean,
+    ): Flow<LlmEvent> {
         val ctx = synchronized(mutex) { current } ?: return emptyFlow()
-        return ctx.generateChat(messages, maxTokens)
+        return ctx.generateChat(messages, maxTokens, systemPrompt, temperature, noThink)
     }
 
     fun isLoaded(): Boolean = synchronized(mutex) { current != null }
