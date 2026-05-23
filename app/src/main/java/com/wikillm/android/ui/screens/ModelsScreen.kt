@@ -61,7 +61,7 @@ fun ModelsScreen(navController: NavController, vm: ModelsViewModel = viewModel()
                 value = query,
                 onValueChange = vm::onQueryChange,
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
-                label = { Text("Поиск GGUF · фильтр 1B–2B") },
+                label = { Text("Поиск GGUF · фильтр до 9B") },
                 singleLine = true,
                 trailingIcon = {
                     if (query.isNotEmpty()) {

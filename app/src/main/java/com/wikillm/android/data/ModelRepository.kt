@@ -111,12 +111,12 @@ class ModelRepository(private val context: Context) {
             .filter { matchesSizeFilter(it.name) }
     }
 
-    /** Keeps models whose name suggests 1.0B–2.5B parameters. */
+    /** Keeps models whose name suggests ~0.5B–9B parameters (fits a 12 GB phone). */
     private fun matchesSizeFilter(name: String): Boolean {
         val matches = SIZE_REGEX.findAll(name)
         for (m in matches) {
             val size = m.groupValues[1].toFloatOrNull() ?: continue
-            if (size in 1.0f..2.5f) return true
+            if (size in 0.5f..9.0f) return true
         }
         return false
     }
@@ -148,7 +148,8 @@ class ModelRepository(private val context: Context) {
     }
 
     companion object {
-        // Matches "1B", "1.5B", "2B", "2.5B" but not "10B" or "21B"
-        private val SIZE_REGEX = Regex("""(?<![\d.])([12](?:\.\d)?)B(?![\d])""", RegexOption.IGNORE_CASE)
+        // Matches a single-digit param count like "4B", "9B", "1.5B", "0.8B"
+        // but not "10B"/"27B"/"70B" — keeps the catalog to phone-sized models.
+        private val SIZE_REGEX = Regex("""(?<![\d.])([0-9](?:\.\d)?)B(?![\d])""", RegexOption.IGNORE_CASE)
     }
 }
