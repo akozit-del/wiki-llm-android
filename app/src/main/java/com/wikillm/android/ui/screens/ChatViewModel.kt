@@ -116,8 +116,10 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                     }
                 }
             } finally {
+                val finalText = builder.toString()
+                DiagLog.i(TAG, "Reply (${finalText.length} chars): ${finalText.take(1000).replace('\n', ' ')}")
                 _messages.value = _messages.value.map {
-                    if (it.id == assistantId) it.copy(text = builder.toString(), isStreaming = false) else it
+                    if (it.id == assistantId) it.copy(text = finalText, isStreaming = false) else it
                 }
                 _generating.value = false
             }

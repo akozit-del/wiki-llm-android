@@ -34,7 +34,16 @@ class RagPromptBuilder(private val searcher: ZimSearcher) {
     ): Result {
         val searchQuery = QueryExtractor.extract(question)
         DiagLog.i(TAG, "Query: '$question' -> ZIM keywords: '$searchQuery'")
-        val hits = searcher.search(searchQuery.ifBlank { question }, candidates)
+        var hits = searcher.search(searchQuery.ifBlank { question }, candidates)
+        if (hits.isEmpty()) {
+            // Fallback: try the longest single token (most likely a proper noun).
+            val longest = searchQuery.split(" ").filter { it.length >= 3 }.maxByOrNull { it.length }
+            if (!longest.isNullOrBlank()) {
+                DiagLog.i(TAG, "No hits, retrying with longest token: '$longest'")
+                hits = searcher.search(longest, candidates)
+                DiagLog.i(TAG, "Retry hits: ${hits.size}")
+            }
+        }
         DiagLog.i(TAG, "RAG: '$question' candidates=${hits.size}")
         if (hits.isEmpty()) {
             return Result(
