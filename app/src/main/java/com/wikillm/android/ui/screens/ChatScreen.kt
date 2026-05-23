@@ -1,5 +1,6 @@
 package com.wikillm.android.ui.screens
 
+import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -8,13 +9,8 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.MenuBook
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowDropDown
-import androidx.compose.material.icons.filled.BugReport
-import androidx.compose.material.icons.filled.Memory
-import androidx.compose.material.icons.filled.Menu
-import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Stop
@@ -24,13 +20,15 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 import com.wikillm.android.data.LocalModel
-import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -41,119 +39,61 @@ fun ChatScreen(navController: NavController, vm: ChatViewModel = viewModel()) {
     val generating by vm.generating.collectAsState()
     val genProgress by vm.genProgress.collectAsState()
 
-    val drawerState = rememberDrawerState(DrawerValue.Closed)
-    val scope = rememberCoroutineScope()
-
-    ModalNavigationDrawer(
-        drawerState = drawerState,
-        drawerContent = {
-            ChatDrawer(
-                onNavigate = { route ->
-                    scope.launch { drawerState.close() }
-                    navController.navigate(route)
-                }
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                navigationIcon = {
+                    IconButton(onClick = { navController.navigate("settings") }) {
+                        Icon(Icons.Default.Settings, contentDescription = "Настройки")
+                    }
+                },
+                title = {
+                    ModelSelector(
+                        loadState = loadState,
+                        downloaded = downloaded,
+                        onLoad = vm::loadModel,
+                        onRefresh = vm::refreshModels,
+                    )
+                },
+                actions = {
+                    if (messages.isNotEmpty()) {
+                        IconButton(onClick = { vm.clear() }) {
+                            Icon(Icons.Default.Add, contentDescription = "Новый чат")
+                        }
+                    }
+                },
             )
         },
-    ) {
-        Scaffold(
-            topBar = {
-                TopAppBar(
-                    navigationIcon = {
-                        IconButton(onClick = { scope.launch { drawerState.open() } }) {
-                            Icon(Icons.Default.Menu, contentDescription = "Меню")
-                        }
-                    },
-                    title = {
-                        ModelSelector(
-                            loadState = loadState,
-                            downloaded = downloaded,
-                            onLoad = vm::loadModel,
-                            onRefresh = vm::refreshModels,
-                        )
-                    },
-                    actions = {
-                        if (messages.isNotEmpty()) {
-                            IconButton(onClick = { vm.clear() }) {
-                                Icon(Icons.Default.Add, contentDescription = "Новый чат")
-                            }
-                        }
-                    },
-                )
-            },
-        ) { padding ->
-            Column(Modifier.padding(padding).fillMaxSize()) {
-                (loadState as? ModelLoadState.Failed)?.let { s ->
-                    ErrorBanner(s.message)
-                }
-
-                RagControls(vm)
-
-                val listState = rememberLazyListState()
-                LaunchedEffect(messages.size, messages.lastOrNull()?.text?.length) {
-                    if (messages.isNotEmpty()) listState.animateScrollToItem(messages.lastIndex)
-                }
-
-                LazyColumn(
-                    modifier = Modifier.weight(1f).fillMaxWidth(),
-                    state = listState,
-                    contentPadding = PaddingValues(12.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    if (messages.isEmpty()) {
-                        item { EmptyHint(loaded = loadState is ModelLoadState.Loaded) }
-                    }
-                    items(messages, key = { it.id }) { MessageBubble(it) }
-                }
-
-                if (generating) ThinkingBar(genProgress)
-
-                ChatInput(loadState is ModelLoadState.Loaded, generating, vm::send, vm::stop)
+    ) { padding ->
+        Column(Modifier.padding(padding).fillMaxSize()) {
+            (loadState as? ModelLoadState.Failed)?.let { s ->
+                ErrorBanner(s.message)
             }
+
+            RagControls(vm)
+
+            val listState = rememberLazyListState()
+            LaunchedEffect(messages.size, messages.lastOrNull()?.text?.length) {
+                if (messages.isNotEmpty()) listState.animateScrollToItem(messages.lastIndex)
+            }
+
+            LazyColumn(
+                modifier = Modifier.weight(1f).fillMaxWidth(),
+                state = listState,
+                contentPadding = PaddingValues(12.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                if (messages.isEmpty()) {
+                    item { EmptyHint(loaded = loadState is ModelLoadState.Loaded) }
+                }
+                items(messages, key = { it.id }) { MessageBubble(it) }
+            }
+
+            if (generating) ThinkingBar(genProgress)
+
+            ChatInput(loadState is ModelLoadState.Loaded, generating, vm::send, vm::stop)
         }
     }
-}
-
-@Composable
-private fun ChatDrawer(onNavigate: (String) -> Unit) {
-    ModalDrawerSheet {
-        Spacer(Modifier.height(16.dp))
-        Text(
-            "Wiki LLM",
-            style = MaterialTheme.typography.titleLarge,
-            fontWeight = FontWeight.Bold,
-            modifier = Modifier.padding(horizontal = 24.dp, vertical = 12.dp),
-        )
-        Text(
-            "Локальная нейросеть + Википедия офлайн",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(horizontal = 24.dp),
-        )
-        Spacer(Modifier.height(16.dp))
-        HorizontalDivider()
-        Spacer(Modifier.height(8.dp))
-
-        DrawerItem(Icons.Default.Memory, "Модели") { onNavigate("models") }
-        DrawerItem(Icons.Default.MenuBook, "Википедия") { onNavigate("wiki") }
-        DrawerItem(Icons.Default.Search, "Поиск в вики (тест)") { onNavigate("wikisearch") }
-        DrawerItem(Icons.Default.BugReport, "Диагностика") { onNavigate("diag") }
-        DrawerItem(Icons.Default.Settings, "Настройки") { onNavigate("settings") }
-    }
-}
-
-@Composable
-private fun DrawerItem(
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
-    label: String,
-    onClick: () -> Unit,
-) {
-    NavigationDrawerItem(
-        icon = { Icon(icon, contentDescription = null) },
-        label = { Text(label) },
-        selected = false,
-        onClick = onClick,
-        modifier = Modifier.padding(horizontal = 12.dp, vertical = 2.dp),
-    )
 }
 
 @Composable
@@ -190,7 +130,7 @@ private fun ModelSelector(
         DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
             if (downloaded.isEmpty()) {
                 DropdownMenuItem(
-                    text = { Text("Нет моделей — открой «Модели»") },
+                    text = { Text("Нет моделей — открой Настройки → Модели") },
                     onClick = { expanded = false },
                 )
             } else {
@@ -233,9 +173,9 @@ private fun ErrorBanner(message: String) {
 private fun EmptyHint(loaded: Boolean) {
     Text(
         if (loaded)
-            "Введи запрос ниже. История чата сохраняется в течение сессии. При включённом RAG ответы основаны на Википедии."
+            "Введи запрос ниже. История чата сохраняется в течение сессии. При включённом RAG ответы основаны на Википедии. Нажми на сообщение, чтобы скопировать."
         else
-            "Выбери модель сверху, чтобы начать. Скачать модели можно в меню → «Модели».",
+            "Выбери модель сверху, чтобы начать. Скачать модели можно в Настройках → «Модели».",
         color = MaterialTheme.colorScheme.onSurfaceVariant,
         style = MaterialTheme.typography.bodySmall,
         modifier = Modifier.padding(8.dp),
@@ -248,10 +188,19 @@ private fun MessageBubble(msg: ChatMessage) {
     val align = if (isUser) Alignment.End else Alignment.Start
     val bg = if (isUser) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant
     val fg = if (isUser) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface
+    val context = LocalContext.current
+    val clipboard = LocalClipboardManager.current
     Column(Modifier.fillMaxWidth()) {
         Box(
             Modifier.align(align).widthIn(max = 320.dp).clip(RoundedCornerShape(14.dp))
-                .background(bg).padding(horizontal = 12.dp, vertical = 8.dp)
+                .background(bg)
+                .clickable {
+                    if (msg.text.isNotBlank()) {
+                        clipboard.setText(AnnotatedString(msg.text))
+                        Toast.makeText(context, "Скопировано", Toast.LENGTH_SHORT).show()
+                    }
+                }
+                .padding(horizontal = 12.dp, vertical = 8.dp)
         ) {
             val text = if (msg.text.isEmpty() && msg.isStreaming) "…" else msg.text
             Text(text, color = fg)
