@@ -82,7 +82,7 @@ fun ChatScreen(navController: NavController, vm: ChatViewModel = viewModel()) {
                             if (freeMem > 0) {
                                 Spacer(Modifier.width(8.dp))
                                 Text(
-                                    "${String.format("%.1f", freeMem / 1073741824.0)} ГБ",
+                                    "free ram ${String.format("%.1f", freeMem / 1073741824.0)} GB",
                                     style = MaterialTheme.typography.labelMedium,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     maxLines = 1,

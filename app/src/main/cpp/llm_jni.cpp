@@ -258,20 +258,48 @@ static void run_generation(
 
     auto tokens = tokenize_text(h->vocab, formatted, /*add_special=*/true);
     if (tokens.empty()) { LOGE("Tokenization failed"); return; }
+
+    // --- Context-window guards (prevent native aborts) ---
+    // The KV cache holds at most n_ctx tokens and a single decode batch must not
+    // exceed n_batch. Without these guards a long RAG/history/agentic prompt
+    // overflows the cache or the batch and llama.cpp aborts the whole process
+    // (SIGABRT) instead of returning an error we could handle.
+    const int nCtx   = h->n_ctx > 0 ? h->n_ctx : 4096;
+    const int nBatch = 2048;            // must match cparams.n_batch
+    const int reserve = 16;             // leave a little headroom in the cache
+    if (static_cast<int>(tokens.size()) > nCtx - reserve) {
+        const int keep = nCtx - reserve;
+        LOGE("Prompt %zu tokens > ctx %d; keeping last %d",
+             tokens.size(), nCtx, keep);
+        tokens.erase(tokens.begin(), tokens.end() - keep);
+    }
     const int promptTokens = static_cast<int>(tokens.size());
-    LOGI("Prompt: %d tokens", promptTokens);
+    int genBudget = maxTokens;
+    if (promptTokens + genBudget > nCtx - reserve) genBudget = nCtx - reserve - promptTokens;
+    if (genBudget < 1) genBudget = 1;
+    LOGI("Prompt: %d tokens, ctx=%d, genBudget=%d", promptTokens, nCtx, genBudget);
 
     // Reset the KV cache; positions are tracked automatically by llama_decode
     // when batches come from llama_batch_get_one().
     llama_memory_clear(llama_get_memory(h->ctx), /*data=*/true);
 
-    llama_batch batch = llama_batch_get_one(tokens.data(), static_cast<int>(tokens.size()));
+    // Decode the prompt in n_batch-sized chunks so a single batch never exceeds
+    // n_batch (positions auto-increment across llama_batch_get_one calls).
+    bool prompt_ok = true;
+    for (int i = 0; i < promptTokens; i += nBatch) {
+        const int chunk = (promptTokens - i) < nBatch ? (promptTokens - i) : nBatch;
+        llama_batch pb = llama_batch_get_one(tokens.data() + i, chunk);
+        if (llama_decode(h->ctx, pb) != 0) {
+            LOGE("prompt decode failed at offset %d", i);
+            prompt_ok = false;
+            break;
+        }
+    }
 
     llama_token next_token = 0;
     int generated = 0;
     std::string pending; // buffers bytes until they form a complete UTF-8 char
-    while (generated < maxTokens) {
-        if (llama_decode(h->ctx, batch) != 0) { LOGE("llama_decode failed"); break; }
+    while (prompt_ok && generated < genBudget && (promptTokens + generated) < nCtx) {
         next_token = llama_sampler_sample(h->smpl, h->ctx, -1); // also accepts the token
         if (llama_vocab_is_eog(h->vocab, next_token)) { LOGI("EOG, stopping"); break; }
         ++generated;
@@ -282,7 +310,8 @@ static void run_generation(
             pending.erase(0, cut);
             if (!emit_chunk(chunk)) { LOGI("Cancelled"); break; }
         }
-        batch = llama_batch_get_one(&next_token, 1);
+        llama_batch batch = llama_batch_get_one(&next_token, 1);
+        if (llama_decode(h->ctx, batch) != 0) { LOGE("gen decode failed"); break; }
     }
     // Flush any complete bytes left in the buffer (drop a trailing partial char).
     if (!pending.empty()) {
