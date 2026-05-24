@@ -80,7 +80,7 @@ class RagPromptBuilder(private val searcher: ZimSearcher) {
             // Center the excerpt on where the query terms actually appear, so we
             // capture the relevant section (e.g. "Городская власть") instead of
             // just the article intro.
-            val chunk = relevantChunk(body, searchTerms, minOf(remaining, perArticle))
+            val chunk = relevantChunk(body, hit.title, searchTerms, minOf(remaining, perArticle))
             sb.append("=== ").append(hit.title).append(" ===\n")
                 .append(chunk)
                 .append("\n\n")
@@ -115,20 +115,30 @@ class RagPromptBuilder(private val searcher: ZimSearcher) {
     }
 
     /**
-     * Take a [cap]-char window of [body] centered on the earliest place a query
-     * term appears (matched loosely by a stem to survive Russian inflections).
-     * Falls back to the article start when no term is found.
+     * Take a [cap]-char window of [body] centered on the query terms (stem-matched
+     * for Russian inflections). The article's own title word appears everywhere in
+     * it, so we center on a NON-title term first (e.g. "мэр" in the Тольятти
+     * article) — that's what reaches the "Городская власть" section instead of the
+     * intro. Falls back to the start when nothing matches.
      */
-    private fun relevantChunk(body: String, terms: List<String>, cap: Int): String {
+    private fun relevantChunk(body: String, title: String, terms: List<String>, cap: Int): String {
         if (body.length <= cap) return body
         val lower = body.lowercase()
+        val titleLower = title.lowercase()
+        fun stem(t: String) = if (t.length >= 5) t.dropLast(2) else t
         var pos = -1
-        for (t in terms) {
-            val stem = if (t.length >= 5) t.dropLast(2) else t // мэров→мэр, города→горо
-            val i = lower.indexOf(stem)
-            if (i >= 0 && (pos < 0 || i < pos)) pos = i
+        // Pass 1: terms not in the title. Pass 2: any term.
+        for (preferNonTitle in listOf(true, false)) {
+            for (t in terms) {
+                val s = stem(t)
+                val inTitle = titleLower.contains(s)
+                if (preferNonTitle == inTitle) continue
+                val i = lower.indexOf(s)
+                if (i >= 0 && (pos < 0 || i < pos)) pos = i
+            }
+            if (pos >= 0) break
         }
-        if (pos < 200) return body.take(cap) // term near the start (or absent) — take intro
+        if (pos < 0) return body.take(cap)
         val start = (pos - 150).coerceIn(0, (body.length - cap).coerceAtLeast(0))
         return body.substring(start, (start + cap).coerceAtMost(body.length))
     }
