@@ -115,31 +115,41 @@ class RagPromptBuilder(private val searcher: ZimSearcher) {
     }
 
     /**
-     * Take a [cap]-char window of [body] centered on the query terms (stem-matched
-     * for Russian inflections). The article's own title word appears everywhere in
-     * it, so we center on a NON-title term first (e.g. "мэр" in the Тольятти
-     * article) — that's what reaches the "Городская власть" section instead of the
-     * intro. Falls back to the start when nothing matches.
+     * Take a [cap]-char window of [body] over the DENSEST cluster of query-term
+     * matches (stem-matched for Russian inflections). For "list all …" questions
+     * the answer sits where the relevant word repeats most (e.g. the "Городская
+     * власть" section full of "глава"), not at the first mention. The article's
+     * own title word is ignored (it's everywhere). Falls back to the start.
      */
     private fun relevantChunk(body: String, title: String, terms: List<String>, cap: Int): String {
         if (body.length <= cap) return body
         val lower = body.lowercase()
         val titleLower = title.lowercase()
         fun stem(t: String) = if (t.length >= 5) t.dropLast(2) else t
-        var pos = -1
-        // Pass 1: terms not in the title. Pass 2: any term.
-        for (preferNonTitle in listOf(true, false)) {
-            for (t in terms) {
-                val s = stem(t)
-                val inTitle = titleLower.contains(s)
-                if (preferNonTitle == inTitle) continue
-                val i = lower.indexOf(s)
-                if (i >= 0 && (pos < 0 || i < pos)) pos = i
-            }
-            if (pos >= 0) break
+
+        // Stems to anchor on: non-title query terms + leadership synonyms when the
+        // question is about city leadership (мэр/глава/руководитель…).
+        val stems = terms.map { stem(it) }.filter { !titleLower.contains(it) }.toMutableSet()
+        if (stems.any { it.startsWith("мэр") || it.startsWith("глав") || it.startsWith("руковод") || it.startsWith("градонач") || it.startsWith("губерн") }) {
+            stems += listOf("мэр", "глав", "градонач", "руковод")
         }
-        if (pos < 0) return body.take(cap)
-        val start = (pos - 150).coerceIn(0, (body.length - cap).coerceAtLeast(0))
+        if (stems.isEmpty()) return body.take(cap)
+
+        val anchors = ArrayList<Int>()
+        for (s in stems) {
+            var i = lower.indexOf(s)
+            while (i >= 0) { anchors.add(i); i = lower.indexOf(s, i + s.length) }
+        }
+        if (anchors.isEmpty()) return body.take(cap)
+        anchors.sort()
+        // Pick the window position covering the most anchors.
+        var bestStart = anchors[0]
+        var bestCount = -1
+        for (a in anchors) {
+            val count = anchors.count { it in a until (a + cap) }
+            if (count > bestCount) { bestCount = count; bestStart = a }
+        }
+        val start = (bestStart - 100).coerceIn(0, (body.length - cap).coerceAtLeast(0))
         return body.substring(start, (start + cap).coerceAtMost(body.length))
     }
 

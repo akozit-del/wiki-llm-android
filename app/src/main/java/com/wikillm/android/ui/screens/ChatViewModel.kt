@@ -356,8 +356,8 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
             val r = RagPromptBuilder(searcher).build(
                 question = question,
                 candidates = _ragCandidates.value,
-                topK = 5,
-                budgetChars = 3500,
+                topK = 4,
+                budgetChars = 4500,
             )
             DiagLog.i(TAG, "RAG ctx: ${r.sourcesUsed.size} articles from ${r.totalCandidates} candidates")
             r.prompt
