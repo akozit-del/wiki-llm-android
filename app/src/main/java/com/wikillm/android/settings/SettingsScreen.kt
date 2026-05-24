@@ -22,6 +22,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
 import com.wikillm.android.BuildConfig
+import com.wikillm.android.ui.theme.ThemePrefs
 import kotlin.math.roundToInt
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -33,6 +34,7 @@ fun SettingsScreen(navController: NavController) {
     val temp by gen.temperature.collectAsState()
     val thinking by gen.thinking.collectAsState()
     val words by gen.responseWords.collectAsState()
+    val themeMode by ThemePrefs.mode.collectAsState()
 
     Scaffold(
         topBar = {
@@ -77,6 +79,22 @@ fun SettingsScreen(navController: NavController) {
                 title = "Диагностика",
                 subtitle = "Логи и ошибки приложения",
             ) { navController.navigate("diag") }
+
+            Spacer(Modifier.height(8.dp))
+            HorizontalDivider()
+            Spacer(Modifier.height(8.dp))
+
+            SectionLabel("Оформление")
+            Text("Тема", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(start = 4.dp))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                ThemePrefs.Mode.entries.forEach { m ->
+                    FilterChip(
+                        selected = themeMode == m,
+                        onClick = { ThemePrefs.set(m) },
+                        label = { Text(themeLabel(m)) },
+                    )
+                }
+            }
 
             Spacer(Modifier.height(8.dp))
             HorizontalDivider()
@@ -164,6 +182,12 @@ fun SettingsScreen(navController: NavController) {
             )
         }
     }
+}
+
+private fun themeLabel(m: ThemePrefs.Mode): String = when (m) {
+    ThemePrefs.Mode.SYSTEM -> "Системная"
+    ThemePrefs.Mode.LIGHT -> "Светлая"
+    ThemePrefs.Mode.DARK -> "Тёмная"
 }
 
 @Composable

@@ -3,6 +3,7 @@ package com.wikillm.android
 import android.app.Application
 import com.getkeepsafe.relinker.ReLinker
 import com.wikillm.android.diag.DiagLog
+import com.wikillm.android.ui.theme.ThemePrefs
 
 /**
  * libkiwix's AAR ships FOUR native libraries that need to be loaded in order:
@@ -24,6 +25,7 @@ class WikiLLMApplication : Application() {
         super.onCreate()
         DiagLog.attach(this)
         DiagLog.installCrashHandler()
+        ThemePrefs.init(this)
         loadKiwixNatives()
     }
 
