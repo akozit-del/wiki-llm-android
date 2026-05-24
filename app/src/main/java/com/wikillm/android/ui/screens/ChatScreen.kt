@@ -45,6 +45,7 @@ fun ChatScreen(navController: NavController, vm: ChatViewModel = viewModel()) {
     val genProgress by vm.genProgress.collectAsState()
     val conversations by vm.conversations.collectAsState()
     val freeMem by vm.freeMemBytes.collectAsState()
+    val searchStep by vm.searchStep.collectAsState()
 
     val drawerState = rememberDrawerState(DrawerValue.Closed)
     val scope = rememberCoroutineScope()
@@ -119,7 +120,7 @@ fun ChatScreen(navController: NavController, vm: ChatViewModel = viewModel()) {
                     items(messages, key = { it.id }) { MessageBubble(it) }
                 }
 
-                if (generating) ThinkingBar(genProgress)
+                if (generating) ThinkingBar(genProgress, searchStep)
 
                 ChatInput(loadState is ModelLoadState.Loaded, generating, vm::send, vm::stop)
             }
@@ -317,7 +318,7 @@ private fun MessageBubble(msg: ChatMessage) {
 
 /** Fixed status row above the input while the model is thinking/generating. */
 @Composable
-private fun ThinkingBar(progress: GenProgress?) {
+private fun ThinkingBar(progress: GenProgress?, searchStep: String?) {
     Surface(color = MaterialTheme.colorScheme.surfaceVariant, modifier = Modifier.fillMaxWidth()) {
         Row(
             Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
@@ -326,7 +327,7 @@ private fun ThinkingBar(progress: GenProgress?) {
             CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
             Spacer(Modifier.width(10.dp))
             Text(
-                liveStatus(progress),
+                searchStep ?: liveStatus(progress), // show the agentic search step when active
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -400,6 +401,7 @@ private fun RagControls(vm: ChatViewModel) {
     val ragOn by vm.ragEnabled.collectAsState()
     val n by vm.ragCandidates.collectAsState()
     val zimState by vm.zimState.collectAsState()
+    val deep by vm.deepSearch.collectAsState()
 
     Card(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp)) {
         Column(Modifier.padding(12.dp)) {
@@ -429,6 +431,19 @@ private fun RagControls(vm: ChatViewModel) {
                             selected = n == v,
                             onClick = { vm.setRagCandidates(v) },
                             label = { Text(v.toString()) },
+                        )
+                    }
+                }
+                Spacer(Modifier.height(4.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Switch(checked = deep, onCheckedChange = vm::setDeepSearch)
+                    Spacer(Modifier.width(8.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text("Глубокий поиск", fontWeight = FontWeight.Medium)
+                        Text(
+                            "Модель сама ищет по цепочке (несколько шагов). Точнее для перечней, но медленнее.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
                 }

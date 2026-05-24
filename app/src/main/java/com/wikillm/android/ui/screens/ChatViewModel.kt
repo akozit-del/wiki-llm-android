@@ -97,6 +97,14 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     private val _ragCandidates = MutableStateFlow(20)
     val ragCandidates: StateFlow<Int> = _ragCandidates.asStateFlow()
 
+    // Agentic multi-hop RAG: the model issues follow-up searches itself.
+    private val _deepSearch = MutableStateFlow(false)
+    val deepSearch: StateFlow<Boolean> = _deepSearch.asStateFlow()
+
+    // Live "🔎 ищу …" status shown during agentic hops (null = not searching).
+    private val _searchStep = MutableStateFlow<String?>(null)
+    val searchStep: StateFlow<String?> = _searchStep.asStateFlow()
+
     val zimState: StateFlow<ZimSearchHolder.State> = ZimSearchHolder.state
 
     private var generationJob: Job? = null
@@ -139,6 +147,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
     fun setRagCandidates(v: Int) { _ragCandidates.value = v }
+    fun setDeepSearch(v: Boolean) { _deepSearch.value = v }
 
     fun refreshModels() = modelRepo.refreshLocal()
 
@@ -230,41 +239,56 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
             }
         }
 
+        val agentic = _ragEnabled.value && _deepSearch.value && ZimSearchHolder.searcher() != null
+
         generationJob = viewModelScope.launch {
             val builder = StringBuilder()
             var stats: GenStats? = null
+            val temp = genSettings.currentTemperature()
+            val noThink = genSettings.currentNoThink()
             try {
-                val history = buildHistory(previousMessages, userText.trim())
-                val sysPrompt = genSettings.effectiveSystemPrompt()
-                val temp = genSettings.currentTemperature()
-                val noThink = genSettings.currentNoThink()
-                DiagLog.i(TAG, "Generating: ${history.size} msgs, maxTokens=$maxTokens, temp=$temp, noThink=$noThink")
-                llmRepo.generateChat(
-                    history, maxTokens = maxTokens,
-                    systemPrompt = sysPrompt, temperature = temp, noThink = noThink,
-                ).collect { ev ->
-                    when (ev) {
-                        is LlmEvent.Token -> {
-                            firstTokenMs.compareAndSet(0L, System.currentTimeMillis())
-                            tokenCount.incrementAndGet()
-                            builder.append(ev.piece)
-                            val shown = stripThinking(builder.toString())
-                            _messages.value = _messages.value.map {
-                                if (it.id == assistantId) it.copy(text = shown) else it
+                if (agentic) {
+                    val res = runAgentic(
+                        question = userText.trim(),
+                        previous = previousMessages,
+                        temp = temp, noThink = noThink, maxTokens = maxTokens,
+                        onFirstToken = { firstTokenMs.compareAndSet(0L, System.currentTimeMillis()) },
+                        onToken = { tokenCount.incrementAndGet() },
+                    )
+                    builder.append(res.text)
+                    stats = GenStats(currentModelName(), System.currentTimeMillis() - startMs, res.genTokens, res.promptTokens)
+                } else {
+                    val history = buildHistory(previousMessages, userText.trim())
+                    val sysPrompt = genSettings.effectiveSystemPrompt()
+                    DiagLog.i(TAG, "Generating: ${history.size} msgs, maxTokens=$maxTokens, temp=$temp, noThink=$noThink")
+                    llmRepo.generateChat(
+                        history, maxTokens = maxTokens,
+                        systemPrompt = sysPrompt, temperature = temp, noThink = noThink,
+                    ).collect { ev ->
+                        when (ev) {
+                            is LlmEvent.Token -> {
+                                firstTokenMs.compareAndSet(0L, System.currentTimeMillis())
+                                tokenCount.incrementAndGet()
+                                builder.append(ev.piece)
+                                val shown = stripThinking(builder.toString())
+                                _messages.value = _messages.value.map {
+                                    if (it.id == assistantId) it.copy(text = shown) else it
+                                }
                             }
-                        }
-                        is LlmEvent.Done -> {
-                            stats = GenStats(
-                                model = currentModelName(),
-                                elapsedMs = System.currentTimeMillis() - startMs,
-                                genTokens = ev.genTokens,
-                                promptTokens = ev.promptTokens,
-                            )
+                            is LlmEvent.Done -> {
+                                stats = GenStats(
+                                    model = currentModelName(),
+                                    elapsedMs = System.currentTimeMillis() - startMs,
+                                    genTokens = ev.genTokens,
+                                    promptTokens = ev.promptTokens,
+                                )
+                            }
                         }
                     }
                 }
             } finally {
                 ticker.cancel()
+                _searchStep.value = null
                 _genProgress.value = null
                 val finalText = stripThinking(builder.toString())
                 val finalStats = stats ?: GenStats(
@@ -394,6 +418,77 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         return augmented
     }
 
+    private data class AgenticResult(val text: String, val genTokens: Int, val promptTokens: Int)
+
+    /**
+     * Agentic multi-hop RAG: the model gathers facts, and when they're not enough
+     * it emits a `ПОИСК: <query>` directive; we run that search, append the new
+     * excerpts and ask again — up to MAX_HOPS. Lets it follow chains (mayor →
+     * predecessor → …) for any question, without hardcoded logic.
+     */
+    private suspend fun runAgentic(
+        question: String,
+        previous: List<ChatMessage>,
+        temp: Float,
+        noThink: Boolean,
+        maxTokens: Int,
+        onFirstToken: () -> Unit,
+        onToken: () -> Unit,
+    ): AgenticResult {
+        val searcher = ZimSearchHolder.searcher() ?: return AgenticResult("ZIM не открыт.", 0, 0)
+        val rag = RagPromptBuilder(searcher)
+        val resolved = resolveCoreference(question, previous)
+        var context = rag.searchExcerpts(resolved, _ragCandidates.value, topK = 4, budgetChars = 4500).block
+        var totalGen = 0
+        var totalPrompt = 0
+        var lastText = ""
+
+        for (hop in 1..MAX_HOPS) {
+            val isLast = hop == MAX_HOPS
+            val out = StringBuilder()
+            llmRepo.generateChat(
+                listOf("user" to buildAgenticPrompt(question, context, isLast)),
+                maxTokens = maxTokens,
+                systemPrompt = AGENTIC_SYSTEM,
+                temperature = temp,
+                noThink = noThink,
+            ).collect { ev ->
+                when (ev) {
+                    is LlmEvent.Token -> { onFirstToken(); onToken(); out.append(ev.piece) }
+                    is LlmEvent.Done -> { totalGen += ev.genTokens; totalPrompt += ev.promptTokens }
+                }
+            }
+            val text = stripThinking(out.toString()).trim()
+            lastText = text
+            val query = if (isLast) null else parseSearchDirective(text)
+            if (query == null) {
+                return AgenticResult(text.ifBlank { "не знаю по приведённым выдержкам" }, totalGen, totalPrompt)
+            }
+            _searchStep.value = "🔎 Шаг $hop: ищу «$query»"
+            DiagLog.i(TAG, "Agentic hop $hop → search '$query'")
+            val more = rag.searchExcerpts(query, _ragCandidates.value, topK = 3, budgetChars = 2500).block
+            context += "\n\n--- Доп. поиск «$query» ---\n" + (more.ifBlank { "(ничего не найдено)" })
+        }
+        return AgenticResult(lastText.ifBlank { "не знаю по приведённым выдержкам" }, totalGen, totalPrompt)
+    }
+
+    private fun buildAgenticPrompt(question: String, context: String, isLast: Boolean): String = buildString {
+        append("Вопрос: ").append(question).append("\n\n")
+        append("=== СОБРАННЫЕ ВЫДЕРЖКИ ИЗ ВИКИПЕДИИ ===\n").append(context).append("\n=== КОНЕЦ ===\n\n")
+        if (isLast) {
+            append("Дай финальный ответ на русском (Markdown) строго по выдержкам. Новых поисков больше нет.")
+        } else {
+            append("Если фактов достаточно — дай полный ответ. Если нет — выдай РОВНО одну строку «ПОИСК: <запрос>».")
+        }
+    }
+
+    /** Returns the search query if the model's reply is a `ПОИСК:` directive. */
+    private fun parseSearchDirective(text: String): String? {
+        val first = text.lineSequence().map { it.trim() }.firstOrNull { it.isNotEmpty() } ?: return null
+        if (!first.startsWith("ПОИСК:", ignoreCase = true)) return null
+        return first.substringAfter(":").trim().trim('«', '»', '"').take(80).ifBlank { null }
+    }
+
     fun stop() { generationJob?.cancel() }
 
     /** Start a fresh chat. The previous one is already saved after each reply. */
@@ -406,6 +501,13 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     companion object {
         private const val TAG = "ChatVM"
         private const val KEY_LAST_MODEL = "last_model_path"
+        private const val MAX_HOPS = 3 // agentic search depth
+
+        private const val AGENTIC_SYSTEM =
+            "Ты — ассистент с доступом к офлайн-поиску по Википедии. Тебе дают собранные выдержки. " +
+            "Если для полного ответа не хватает фактов, ответь РОВНО одной строкой и больше ничего: " +
+            "«ПОИСК: <короткий запрос>». Когда фактов достаточно — дай полный ответ на русском в Markdown без слова ПОИСК. " +
+            "Чтобы собрать перечень за период, иди по цепочке: найди текущего, затем его предшественника, и так далее."
 
         /** Matches a complete <think>…</think> block (DOTALL). */
         private val THINK_BLOCK = Regex("(?s)<think>.*?</think>")
