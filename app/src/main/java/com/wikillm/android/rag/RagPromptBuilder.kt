@@ -77,7 +77,10 @@ class RagPromptBuilder(private val searcher: ZimSearcher) {
             val body = searcher.readArticleText(hit.path) ?: continue
             val remaining = budgetChars - used
             if (remaining <= 200) break
-            val chunk = body.take(minOf(remaining, perArticle))
+            // Center the excerpt on where the query terms actually appear, so we
+            // capture the relevant section (e.g. "Городская власть") instead of
+            // just the article intro.
+            val chunk = relevantChunk(body, searchTerms, minOf(remaining, perArticle))
             sb.append("=== ").append(hit.title).append(" ===\n")
                 .append(chunk)
                 .append("\n\n")
@@ -109,6 +112,25 @@ class RagPromptBuilder(private val searcher: ZimSearcher) {
         }
         DiagLog.i(TAG, "RAG prompt preview: " + prompt.take(500).replace('\n', ' '))
         return Result(prompt = prompt, sourcesUsed = titles, totalCandidates = hits.size)
+    }
+
+    /**
+     * Take a [cap]-char window of [body] centered on the earliest place a query
+     * term appears (matched loosely by a stem to survive Russian inflections).
+     * Falls back to the article start when no term is found.
+     */
+    private fun relevantChunk(body: String, terms: List<String>, cap: Int): String {
+        if (body.length <= cap) return body
+        val lower = body.lowercase()
+        var pos = -1
+        for (t in terms) {
+            val stem = if (t.length >= 5) t.dropLast(2) else t // мэров→мэр, города→горо
+            val i = lower.indexOf(stem)
+            if (i >= 0 && (pos < 0 || i < pos)) pos = i
+        }
+        if (pos < 200) return body.take(cap) // term near the start (or absent) — take intro
+        val start = (pos - 150).coerceIn(0, (body.length - cap).coerceAtLeast(0))
+        return body.substring(start, (start + cap).coerceAtMost(body.length))
     }
 
     companion object { private const val TAG = "RagPromptBuilder" }
