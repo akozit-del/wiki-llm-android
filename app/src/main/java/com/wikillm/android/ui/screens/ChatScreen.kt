@@ -32,6 +32,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 import com.wikillm.android.data.Conversation
 import com.wikillm.android.data.LocalModel
+import com.wikillm.android.ui.MarkdownText
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -297,8 +298,11 @@ private fun MessageBubble(msg: ChatMessage) {
                 }
                 .padding(horizontal = 12.dp, vertical = 8.dp)
         ) {
-            val text = if (msg.text.isEmpty() && msg.isStreaming) "…" else msg.text
-            Text(text, color = fg)
+            when {
+                msg.text.isEmpty() && msg.isStreaming -> Text("…", color = fg)
+                isUser -> Text(msg.text, color = fg)
+                else -> MarkdownText(msg.text, color = fg) // render assistant Markdown
+            }
         }
         msg.stats?.let { s ->
             Text(

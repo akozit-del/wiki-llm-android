@@ -357,7 +357,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                 question = question,
                 candidates = _ragCandidates.value,
                 topK = 5,
-                budgetChars = 2000,
+                budgetChars = 3500,
             )
             DiagLog.i(TAG, "RAG ctx: ${r.sourcesUsed.size} articles from ${r.totalCandidates} candidates")
             r.prompt
@@ -377,7 +377,10 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
             .replace(Regex("[\\p{Punct}«»“”\"]"), " ")
             .split(Regex("\\s+"))
         val hasPronoun = tokens.any { it in PRONOUNS }
-        if (userText.length >= 50 && !hasPronoun) return userText
+        // Only borrow the previous topic for genuinely context-dependent follow-ups:
+        // a pronoun/locative, or a very short question. Self-contained questions
+        // (like "Перечисли всех мэров города…") must not be polluted.
+        if (userText.length >= 25 && !hasPronoun) return userText
 
         val topic = QueryExtractor.extract(lastUser)
         if (topic.isBlank()) return userText

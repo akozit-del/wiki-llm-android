@@ -59,12 +59,13 @@ class GenerationSettings(context: Context) {
     fun currentNoThink(): Boolean = !prefs.getBoolean(KEY_THINK, false)
     fun currentResponseWords(): Int = prefs.getInt(KEY_WORDS, DEFAULT_WORDS)
 
-    /** System prompt actually sent: the user's prompt plus a length directive. */
+    /** System prompt actually sent: the user's prompt plus length + formatting directives. */
     fun effectiveSystemPrompt(): String {
         val words = currentResponseWords()
         return currentSystemPrompt().trimEnd() +
             "\n\nДай развёрнутый, законченный ответ объёмом примерно $words слов " +
-            "(не обрывай на полуслове)."
+            "(не обрывай на полуслове). Структурируй ответ в Markdown: короткие абзацы, " +
+            "при необходимости подзаголовки (##), маркированные списки и **жирным** выделяй ключевое."
     }
 
     /** Token budget scaled to the requested length (Russian ~2.5 tokens/word + buffer). */

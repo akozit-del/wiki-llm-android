@@ -44,13 +44,18 @@ class RagPromptBuilder(private val searcher: ZimSearcher) {
                 DiagLog.i(TAG, "Retry hits: ${hits.size}")
             }
         }
-        // Title-boost: articles whose title contains a search keyword rank first.
-        // Fixes cases where an off-topic article that merely mentions the term
-        // outscores the primary article in Xapian's ranking.
-        val searchTerms = searchQuery.split(" ").filter { it.length >= 2 }.map { it.lowercase() }
+        // Title-boost: rank the primary article first. Prefer an exact title match,
+        // then title-starts-with, then contains; shorter titles win ties (the
+        // central "Тольятти" beats "Памятники Тольятти").
+        val searchTerms = searchQuery.split(" ").filter { it.length >= 3 }.map { it.lowercase() }
         if (searchTerms.isNotEmpty()) {
             hits = hits.sortedWith(compareByDescending { hit ->
-                searchTerms.any { term -> hit.title.lowercase().contains(term) }
+                val title = hit.title.lowercase()
+                var score = 0
+                if (searchTerms.any { it == title }) score += 100
+                if (searchTerms.any { title.startsWith(it) }) score += 20
+                if (searchTerms.any { title.contains(it) }) score += 10
+                score - title.length / 20 // prefer shorter (more central) titles
             })
         }
 
@@ -66,11 +71,13 @@ class RagPromptBuilder(private val searcher: ZimSearcher) {
         val sb = StringBuilder()
         val titles = mutableListOf<String>()
         var used = 0
+        // Cap each article so several fit (breadth) instead of one filling the budget.
+        val perArticle = (budgetChars / topK).coerceAtLeast(500)
         for (hit in hits.take(topK)) {
             val body = searcher.readArticleText(hit.path) ?: continue
             val remaining = budgetChars - used
             if (remaining <= 200) break
-            val chunk = body.take(remaining)
+            val chunk = body.take(minOf(remaining, perArticle))
             sb.append("=== ").append(hit.title).append(" ===\n")
                 .append(chunk)
                 .append("\n\n")
@@ -91,9 +98,10 @@ class RagPromptBuilder(private val searcher: ZimSearcher) {
         }
 
         val prompt = buildString {
-            append("Тебе даны выдержки из Википедии. Отвечай ТОЛЬКО по ним. ")
-            append("Если в выдержках нет ответа — скажи «не знаю по приведённым выдержкам». ")
-            append("Отвечай кратко и на русском языке.\n\n")
+            append("Тебе даны выдержки из Википедии. Отвечай на их основе. ")
+            append("Извлеки и собери ВСЕ относящиеся к вопросу факты из выдержек, даже частичные ")
+            append("(имена, даты, перечни). Если в выдержках совсем нет нужной информации — ")
+            append("скажи «не знаю по приведённым выдержкам». Отвечай на русском языке.\n\n")
             append("=== ВЫДЕРЖКИ ИЗ ВИКИ ===\n")
             append(sb)
             append("=== КОНЕЦ ВЫДЕРЖЕК ===\n\n")
