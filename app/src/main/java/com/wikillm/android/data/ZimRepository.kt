@@ -41,12 +41,20 @@ class ZimRepository(private val context: Context) {
     private fun zimRoot(): File =
         File(context.filesDir, "zim").apply { mkdirs() }
 
+    /** Both ZIM folders we scan: internal (in-app downloads) + the app's external
+     *  files dir, which `adb push` can write to (handy for side-loading big ZIMs). */
+    private fun zimRoots(): List<File> = listOfNotNull(
+        File(context.filesDir, "zim"),
+        context.getExternalFilesDir("zim"),
+    ).onEach { it.mkdirs() }
+
     fun refreshDownloaded() {
-        val list = zimRoot().listFiles()
-            ?.filter { it.isFile && it.name.endsWith(".zim", ignoreCase = true) }
-            ?.map { DownloadedZim(it.name, it.absolutePath, it.length()) }
-            ?.sortedBy { it.filename }
-            ?: emptyList()
+        val list = zimRoots().flatMap { root ->
+            root.listFiles()
+                ?.filter { it.isFile && it.name.endsWith(".zim", ignoreCase = true) }
+                ?.map { DownloadedZim(it.name, it.absolutePath, it.length()) }
+                ?: emptyList()
+        }.distinctBy { it.absolutePath }.sortedBy { it.filename }
         _downloaded.value = list
     }
 
