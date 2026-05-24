@@ -462,7 +462,11 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
             lastText = text
             val query = if (isLast) null else parseSearchDirective(text)
             if (query == null) {
-                return AgenticResult(text.ifBlank { "не знаю по приведённым выдержкам" }, totalGen, totalPrompt)
+                // Final answer — drop any stray ПОИСК lines the model may have added.
+                val answer = text.lineSequence()
+                    .filterNot { it.trim().startsWith("ПОИСК:", ignoreCase = true) }
+                    .joinToString("\n").trim()
+                return AgenticResult(answer.ifBlank { "не знаю по приведённым выдержкам" }, totalGen, totalPrompt)
             }
             _searchStep.value = "🔎 Шаг $hop: ищу «$query»"
             DiagLog.i(TAG, "Agentic hop $hop → search '$query'")
@@ -482,11 +486,13 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    /** Returns the search query if the model's reply is a `ПОИСК:` directive. */
+    /** Returns the search query if the model's reply contains a `ПОИСК:` directive
+     *  on any line (small models often add an explanation before it). */
     private fun parseSearchDirective(text: String): String? {
-        val first = text.lineSequence().map { it.trim() }.firstOrNull { it.isNotEmpty() } ?: return null
-        if (!first.startsWith("ПОИСК:", ignoreCase = true)) return null
-        return first.substringAfter(":").trim().trim('«', '»', '"').take(80).ifBlank { null }
+        val line = text.lineSequence()
+            .map { it.trim() }
+            .firstOrNull { it.startsWith("ПОИСК:", ignoreCase = true) } ?: return null
+        return line.substringAfter(":").trim().trim('«', '»', '"', '*', '`').take(80).ifBlank { null }
     }
 
     fun stop() { generationJob?.cancel() }
