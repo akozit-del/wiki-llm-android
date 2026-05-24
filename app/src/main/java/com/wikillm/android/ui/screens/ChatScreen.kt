@@ -43,6 +43,7 @@ fun ChatScreen(navController: NavController, vm: ChatViewModel = viewModel()) {
     val generating by vm.generating.collectAsState()
     val genProgress by vm.genProgress.collectAsState()
     val conversations by vm.conversations.collectAsState()
+    val freeMem by vm.freeMemBytes.collectAsState()
 
     val drawerState = rememberDrawerState(DrawerValue.Closed)
     val scope = rememberCoroutineScope()
@@ -69,12 +70,23 @@ fun ChatScreen(navController: NavController, vm: ChatViewModel = viewModel()) {
                         }
                     },
                     title = {
-                        ModelSelector(
-                            loadState = loadState,
-                            downloaded = downloaded,
-                            onLoad = vm::loadModel,
-                            onRefresh = vm::refreshModels,
-                        )
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            ModelSelector(
+                                loadState = loadState,
+                                downloaded = downloaded,
+                                onLoad = vm::loadModel,
+                                onRefresh = vm::refreshModels,
+                            )
+                            if (freeMem > 0) {
+                                Spacer(Modifier.width(8.dp))
+                                Text(
+                                    "${String.format("%.1f", freeMem / 1073741824.0)} ГБ",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 1,
+                                )
+                            }
+                        }
                     },
                     actions = {
                         IconButton(onClick = { vm.clear() }) {
@@ -206,7 +218,7 @@ private fun ModelSelector(
                 fontWeight = FontWeight.SemiBold,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.widthIn(max = 220.dp),
+                modifier = Modifier.widthIn(max = 150.dp),
             )
             Icon(Icons.Default.ArrowDropDown, contentDescription = "Выбрать модель")
         }

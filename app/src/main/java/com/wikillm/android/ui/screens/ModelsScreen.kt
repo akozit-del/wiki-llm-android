@@ -21,9 +21,14 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
@@ -45,6 +50,8 @@ fun ModelsScreen(navController: NavController, vm: ModelsViewModel = viewModel()
     val progress by vm.progress.collectAsState()
     val errors by vm.errors.collectAsState()
     val partials by vm.partials.collectAsState()
+    val minB by vm.minB.collectAsState()
+    val maxB by vm.maxB.collectAsState()
 
     Scaffold(
         topBar = {
@@ -71,6 +78,14 @@ fun ModelsScreen(navController: NavController, vm: ModelsViewModel = viewModel()
                     }
                 }
             )
+
+            Row(
+                Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                SizeBoundField("Не менее, B", minB, vm::setMinB, Modifier.weight(1f))
+                SizeBoundField("Не более, B", maxB, vm::setMaxB, Modifier.weight(1f))
+            }
 
             LazyColumn(modifier = Modifier.fillMaxSize()) {
                 if (local.isNotEmpty()) {
@@ -130,6 +145,30 @@ fun ModelsScreen(navController: NavController, vm: ModelsViewModel = viewModel()
         }
     }
 }
+
+@Composable
+private fun SizeBoundField(
+    label: String,
+    value: Float,
+    onApply: (Float) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    var text by remember { mutableStateOf(formatB(value)) }
+    OutlinedTextField(
+        value = text,
+        onValueChange = { s ->
+            text = s
+            s.replace(',', '.').toFloatOrNull()?.let { if (it > 0f) onApply(it) }
+        },
+        label = { Text(label) },
+        singleLine = true,
+        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+        modifier = modifier,
+    )
+}
+
+private fun formatB(v: Float): String =
+    if (v == v.toInt().toFloat()) v.toInt().toString() else v.toString()
 
 @Composable
 private fun SectionHeader(text: String) {

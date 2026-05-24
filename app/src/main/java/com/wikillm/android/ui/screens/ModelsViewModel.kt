@@ -38,6 +38,12 @@ class ModelsViewModel(app: Application) : AndroidViewModel(app) {
     private val _query = MutableStateFlow("")
     val query: StateFlow<String> = _query.asStateFlow()
 
+    // Size filter (billions of params): "не менее" / "не более".
+    private val _minB = MutableStateFlow(0.5f)
+    val minB: StateFlow<Float> = _minB.asStateFlow()
+    private val _maxB = MutableStateFlow(9.0f)
+    val maxB: StateFlow<Float> = _maxB.asStateFlow()
+
     private val _state = MutableStateFlow<SearchState>(SearchState.Idle)
     val state: StateFlow<SearchState> = _state.asStateFlow()
 
@@ -75,12 +81,15 @@ class ModelsViewModel(app: Application) : AndroidViewModel(app) {
         searchJob = viewModelScope.launch {
             _state.value = SearchState.Loading
             try {
-                _state.value = SearchState.Loaded(repo.search(text))
+                _state.value = SearchState.Loaded(repo.search(text, _minB.value, _maxB.value))
             } catch (e: Exception) {
                 _state.value = SearchState.Error(e.message ?: "Не удалось загрузить каталог")
             }
         }
     }
+
+    fun setMinB(v: Float) { _minB.value = v; runSearch(_query.value) }
+    fun setMaxB(v: Float) { _maxB.value = v; runSearch(_query.value) }
 
     fun retrySearch() {
         runSearch(_query.value)

@@ -1,5 +1,6 @@
 package com.wikillm.android.ui.screens
 
+import android.app.ActivityManager
 import android.app.Application
 import android.content.Context
 import androidx.lifecycle.AndroidViewModel
@@ -67,6 +68,11 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     private val genSettings = GenerationSettings(app.applicationContext)
     private val historyStore = ChatHistoryStore(app.applicationContext)
     private val prefs = app.getSharedPreferences("wikillm_chat", Context.MODE_PRIVATE)
+    private val activityManager = app.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
+
+    /** Free device RAM in bytes, refreshed periodically for the top bar. */
+    private val _freeMemBytes = MutableStateFlow(0L)
+    val freeMemBytes: StateFlow<Long> = _freeMemBytes.asStateFlow()
 
     /** Saved conversations (OpenWebUI-style history), newest first. */
     val conversations: StateFlow<List<Conversation>> = historyStore.conversations
@@ -102,6 +108,18 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         // ZIM is opened lazily only when RAG is switched on (see setRagEnabled),
         // so its ~14 GB mmap doesn't compete with the model when RAG is off.
         autoLoadLastModel()
+        viewModelScope.launch {
+            while (isActive) {
+                _freeMemBytes.value = readFreeMem()
+                delay(2000)
+            }
+        }
+    }
+
+    private fun readFreeMem(): Long {
+        val mi = ActivityManager.MemoryInfo()
+        activityManager.getMemoryInfo(mi)
+        return mi.availMem
     }
 
     /** Re-load the model used last session so the user doesn't pick it every launch. */

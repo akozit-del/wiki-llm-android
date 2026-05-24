@@ -99,7 +99,7 @@ class ModelRepository(private val context: Context) {
         refreshLocal()
     }
 
-    suspend fun search(query: String): List<RemoteModel> {
+    suspend fun search(query: String, minB: Float = 0.5f, maxB: Float = 9.0f): List<RemoteModel> {
         return api.searchModels(query, limit = 50)
             .map { hf ->
                 val id = hf.id
@@ -108,15 +108,15 @@ class ModelRepository(private val context: Context) {
                 val name = if (parts.size == 2) parts[1] else id
                 RemoteModel(id, author, name, hf.downloads, hf.likes)
             }
-            .filter { matchesSizeFilter(it.name) }
+            .filter { matchesSizeFilter(it.name, minB, maxB) }
     }
 
-    /** Keeps models whose name suggests ~0.5B–9B parameters (fits a 12 GB phone). */
-    private fun matchesSizeFilter(name: String): Boolean {
+    /** Keeps models whose name suggests a param count within [minB, maxB] billions. */
+    private fun matchesSizeFilter(name: String, minB: Float, maxB: Float): Boolean {
         val matches = SIZE_REGEX.findAll(name)
         for (m in matches) {
             val size = m.groupValues[1].toFloatOrNull() ?: continue
-            if (size in 0.5f..9.0f) return true
+            if (size in minB..maxB) return true
         }
         return false
     }
