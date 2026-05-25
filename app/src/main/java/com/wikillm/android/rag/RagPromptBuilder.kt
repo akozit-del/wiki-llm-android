@@ -71,15 +71,30 @@ class RagPromptBuilder(private val searcher: ZimSearcher) {
     ): Excerpts {
         val searchQuery = QueryExtractor.extract(question)
         DiagLog.i(TAG, "Query: '$question' -> ZIM keywords: '$searchQuery'")
+        val tokens = searchQuery.split(" ").filter { it.length >= 3 }
         var hits = searcher.search(searchQuery.ifBlank { question }, candidates)
+        // Also pull the head-entity article on its own. When the query mixes an
+        // attribute with an entity ("мэр Тольятти"), the bare entity page
+        // ("Тольятти") gets crowded out of the candidates by "<Entity>ский/ская…"
+        // pages — so it never reaches the prompt. Searching the entity term alone
+        // guarantees it's a candidate; the title-boost below then floats it to #1.
+        val entity = tokens.filter { it.length >= 4 }.maxByOrNull { it.length }
+        if (!entity.isNullOrBlank() && !entity.equals(searchQuery, ignoreCase = true)) {
+            val have = hits.mapTo(HashSet()) { it.path }
+            val extra = searcher.search(entity, candidates).filter { it.path !in have }
+            if (extra.isNotEmpty()) {
+                DiagLog.i(TAG, "Entity merge '$entity': +${extra.size} candidates")
+                hits = hits + extra
+            }
+        }
         if (hits.isEmpty()) {
-            val longest = searchQuery.split(" ").filter { it.length >= 3 }.maxByOrNull { it.length }
+            val longest = tokens.maxByOrNull { it.length }
             if (!longest.isNullOrBlank()) {
                 DiagLog.i(TAG, "No hits, retrying with longest token: '$longest'")
                 hits = searcher.search(longest, candidates)
             }
         }
-        val searchTerms = searchQuery.split(" ").filter { it.length >= 3 }.map { it.lowercase() }
+        val searchTerms = tokens.map { it.lowercase() }
         if (searchTerms.isNotEmpty()) {
             hits = hits.sortedWith(compareByDescending { hit ->
                 val title = hit.title.lowercase()
