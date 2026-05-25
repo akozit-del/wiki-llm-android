@@ -460,12 +460,29 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
             return seed + "\n…\n" + trail.takeLast(room)
         }
 
+        // Jump-start chains the small model won't begin on its own: for "перечисли…"
+        // questions where the seed card names the current office-holder, fetch that
+        // person first — their article carries «Предшественник» to walk back.
+        val holder = OFFICE_HOLDER.find(seed)?.groupValues?.get(1)?.trim()
+        val wantsList = LIST_WORDS.any { question.lowercase().contains(it) }
+        if (wantsList && !holder.isNullOrBlank()) {
+            triedQueries += normalizeQuery(holder)
+            _searchStep.value = "🔎 Текущий глава: «$holder»"
+            DiagLog.i(TAG, "Agentic seed-chain → search holder '$holder'")
+            val more = rag.searchExcerpts(holder, _ragCandidates.value, topK = 2, budgetChars = 1800, excludeTitles = usedTitles)
+            usedTitles += more.titles
+            if (more.block.isNotBlank()) trail += "\n\n--- Текущий глава «$holder» (для цепочки) ---\n" + more.block
+        }
+
         for (hop in 1..MAX_HOPS) {
             val isLast = hop == MAX_HOPS
+            // Intermediate hops only emit a short «ПОИСК: …» directive — cap their
+            // tokens so each chain step is fast; the final answer gets full budget.
+            val hopTokens = if (isLast) maxTokens else minOf(maxTokens, 96)
             val out = StringBuilder()
             llmRepo.generateChat(
                 listOf("user" to buildAgenticPrompt(question, context(), isLast)),
-                maxTokens = maxTokens,
+                maxTokens = hopTokens,
                 systemPrompt = AGENTIC_SYSTEM,
                 temperature = temp,
                 noThink = noThink,
@@ -479,9 +496,9 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
             lastText = text
             val query = if (isLast) null else parseSearchDirective(text)
             if (query == null) {
-                // Final answer — drop any stray ПОИСК lines the model may have added.
+                // Final answer — drop any stray ПОИСК directive lines (incl. markdown-wrapped).
                 val answer = text.lineSequence()
-                    .filterNot { it.trim().startsWith("ПОИСК:", ignoreCase = true) }
+                    .filterNot { isSearchDirectiveLine(it) }
                     .joinToString("\n").trim()
                 return AgenticResult(answer.ifBlank { "не знаю по приведённым выдержкам" }, totalGen, totalPrompt)
             }
@@ -518,13 +535,23 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    /** Returns the search query if the model's reply contains a `ПОИСК:` directive
-     *  on any line (small models often add an explanation before it). */
+    /** Returns the search query if the reply contains a `ПОИСК: …` directive on any
+     *  line, tolerant of markdown the model wraps it in ("**ПОИСК:**", "ПОИСК — …"). */
     private fun parseSearchDirective(text: String): String? {
-        val line = text.lineSequence()
-            .map { it.trim() }
-            .firstOrNull { it.startsWith("ПОИСК:", ignoreCase = true) } ?: return null
-        return line.substringAfter(":").trim().trim('«', '»', '"', '*', '`').take(80).ifBlank { null }
+        for (raw in text.lineSequence()) {
+            if (!isSearchDirectiveLine(raw)) continue
+            val line = raw.trim().trim('*', '#', '>', '`', ' ', '"')
+            val q = SEARCH_DIRECTIVE.find(line)?.groupValues?.get(1)
+                ?.trim()?.trim('«', '»', '"', '*', '`', '_')?.take(80)
+            if (!q.isNullOrBlank()) return q
+        }
+        return null
+    }
+
+    /** A line that is (after stripping markdown) a `ПОИСК:` directive. */
+    private fun isSearchDirectiveLine(raw: String): Boolean {
+        val line = raw.trim().trim('*', '#', '>', '`', ' ', '"')
+        return line.lowercase().startsWith("поиск") && SEARCH_DIRECTIVE.containsMatchIn(line)
     }
 
     fun stop() { generationJob?.cancel() }
@@ -544,11 +571,22 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
 
         private const val AGENTIC_SYSTEM =
             "Ты — ассистент с доступом к офлайн-поиску по Википедии. Тебе дают собранные выдержки с карточками статей. " +
-            "В карточке часто есть поля «Предшественник» и «Преемник» — используй их, чтобы идти по цепочке " +
-            "(текущий → предыдущий → и так далее) при сборе перечня за период. " +
-            "Если для полного ответа не хватает фактов, ответь РОВНО одной строкой и больше ничего: " +
-            "«ПОИСК: <короткий запрос>» (имя человека или точное название статьи). Не повторяй уже выполненные запросы. " +
-            "Когда фактов достаточно — дай полный ответ на русском в Markdown без слова ПОИСК; для перечня собери все найденные пункты списком."
+            "Чтобы собрать перечень должностных лиц за период, НЕ ищи «список …» — такой статьи нет. " +
+            "Вместо этого иди по цепочке через карточки: возьми имя человека, в его персональной статье найди поле " +
+            "«Предшественник», затем тем же приёмом найди его предшественника, и так далее вглубь. " +
+            "Когда нужен новый человек, ответь РОВНО одной строкой и больше ничего: «ПОИСК: Фамилия Имя» " +
+            "(только имя человека, без лишних слов и без markdown). Не повторяй уже выполненные запросы. " +
+            "Когда цепочка собрана — дай финальный ответ на русском в Markdown маркированным списком, без слова ПОИСК."
+
+        /** Pulls the current office-holder's name out of a seed card line. */
+        private val OFFICE_HOLDER =
+            Regex("(?im)^(?:Глава/мэр|Мэр|Президент|Губернатор|Глава)\\s*:\\s*(.+)$")
+
+        /** Question asks to enumerate (so we jump-start the predecessor chain). */
+        private val LIST_WORDS = listOf("перечисл", "список", "все ", "всех", "назови", "по годам")
+
+        /** A `ПОИСК: <query>` directive (after markdown is stripped from the line). */
+        private val SEARCH_DIRECTIVE = Regex("(?i)поиск\\s*[:：．.\\-—]\\s*(.+)")
 
         /** Matches a complete <think>…</think> block (DOTALL). */
         private val THINK_BLOCK = Regex("(?s)<think>.*?</think>")
