@@ -67,6 +67,7 @@ class RagPromptBuilder(private val searcher: ZimSearcher) {
         candidates: Int,
         topK: Int,
         budgetChars: Int,
+        excludeTitles: Set<String> = emptySet(),
     ): Excerpts {
         val searchQuery = QueryExtractor.extract(question)
         DiagLog.i(TAG, "Query: '$question' -> ZIM keywords: '$searchQuery'")
@@ -88,6 +89,9 @@ class RagPromptBuilder(private val searcher: ZimSearcher) {
                 if (searchTerms.any { title.contains(it) }) score += 10
                 score - title.length / 20
             })
+        }
+        if (excludeTitles.isNotEmpty()) {
+            hits = hits.filter { it.title !in excludeTitles }
         }
         DiagLog.i(TAG, "RAG: '$question' candidates=${hits.size}")
         if (hits.isEmpty()) return Excerpts("", emptyList(), 0)

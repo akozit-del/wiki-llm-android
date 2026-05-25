@@ -150,6 +150,11 @@ adb shell am start -n com.wikillm.android.debug/com.wikillm.android.MainActivity
   на `<th>метка</th><td>значение</td>`. `ZimSearcher.readArticleHtml` отдаёт сырой
   HTML; `InfoboxExtractor.bodyText` чистит тело (jsoup) для `relevantChunk`.
   Работает и в single-shot, и в агентном «Глубоком поиске».
+  - **Слой C — агентные цепочки/списки.** `runAgentic` дедуплицирует статьи между
+    шагами (`searchExcerpts(excludeTitles=…)`), глушит повтор одинаковых запросов,
+    ограничивает накопленный контекст под nCtx (seed + хвост, `AGENTIC_CTX_CAP`),
+    `MAX_HOPS 3→5`. Системный промпт велит идти по полям карточки
+    «Предшественник»/«Преемник» и собирать перечень списком.
 
 - **Stage 9 — OpenWebUI-редизайн + докачка моделей.**
   - 9a: `ModelDownloader` хранит `.part` при отмене/ошибке и докачивает через

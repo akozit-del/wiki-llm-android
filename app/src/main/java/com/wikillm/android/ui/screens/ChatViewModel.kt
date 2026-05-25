@@ -438,16 +438,33 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         val searcher = ZimSearchHolder.searcher() ?: return AgenticResult("ZIM не открыт.", 0, 0)
         val rag = RagPromptBuilder(searcher)
         val resolved = resolveCoreference(question, previous)
-        var context = rag.searchExcerpts(resolved, _ragCandidates.value, topK = 4, budgetChars = 4500).block
+
+        // Track what we've already pulled/searched so hops add new info, not loops.
+        val usedTitles = LinkedHashSet<String>()
+        val triedQueries = HashSet<String>()
         var totalGen = 0
         var totalPrompt = 0
         var lastText = ""
+
+        val seedEx = rag.searchExcerpts(resolved, _ragCandidates.value, topK = 4, budgetChars = 3500)
+        usedTitles += seedEx.titles
+        triedQueries += normalizeQuery(resolved)
+        val seed = seedEx.block
+        var trail = "" // excerpts gathered across follow-up hops
+
+        // Keep the seed article plus the most recent hops, bounded to fit nCtx.
+        fun context(): String {
+            val full = seed + trail
+            if (full.length <= AGENTIC_CTX_CAP) return full
+            val room = (AGENTIC_CTX_CAP - seed.length).coerceAtLeast(800)
+            return seed + "\n…\n" + trail.takeLast(room)
+        }
 
         for (hop in 1..MAX_HOPS) {
             val isLast = hop == MAX_HOPS
             val out = StringBuilder()
             llmRepo.generateChat(
-                listOf("user" to buildAgenticPrompt(question, context, isLast)),
+                listOf("user" to buildAgenticPrompt(question, context(), isLast)),
                 maxTokens = maxTokens,
                 systemPrompt = AGENTIC_SYSTEM,
                 temperature = temp,
@@ -468,13 +485,28 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                     .joinToString("\n").trim()
                 return AgenticResult(answer.ifBlank { "не знаю по приведённым выдержкам" }, totalGen, totalPrompt)
             }
+            if (normalizeQuery(query) in triedQueries) {
+                // The model is repeating itself — nudge it to answer instead of looping.
+                DiagLog.i(TAG, "Agentic hop $hop → repeat query '$query', skipping")
+                trail += "\n\n(Запрос «$query» уже выполнялся. Если данных достаточно — дай финальный ответ.)"
+                continue
+            }
+            triedQueries += normalizeQuery(query)
             _searchStep.value = "🔎 Шаг $hop: ищу «$query»"
             DiagLog.i(TAG, "Agentic hop $hop → search '$query'")
-            val more = rag.searchExcerpts(query, _ragCandidates.value, topK = 3, budgetChars = 2500).block
-            context += "\n\n--- Доп. поиск «$query» ---\n" + (more.ifBlank { "(ничего не найдено)" })
+            val more = rag.searchExcerpts(
+                query, _ragCandidates.value, topK = 2, budgetChars = 1800, excludeTitles = usedTitles,
+            )
+            usedTitles += more.titles
+            trail += if (more.block.isBlank()) "\n\n--- Доп. поиск «$query»: ничего нового ---"
+            else "\n\n--- Доп. поиск «$query» ---\n" + more.block
         }
         return AgenticResult(lastText.ifBlank { "не знаю по приведённым выдержкам" }, totalGen, totalPrompt)
     }
+
+    /** Normalize a search query for dedup (lowercase, strip punctuation/spaces). */
+    private fun normalizeQuery(q: String): String =
+        q.lowercase().replace(Regex("[\\p{Punct}«»\"]"), " ").replace(Regex("\\s+"), " ").trim()
 
     private fun buildAgenticPrompt(question: String, context: String, isLast: Boolean): String = buildString {
         append("Вопрос: ").append(question).append("\n\n")
@@ -507,13 +539,16 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     companion object {
         private const val TAG = "ChatVM"
         private const val KEY_LAST_MODEL = "last_model_path"
-        private const val MAX_HOPS = 3 // agentic search depth
+        private const val MAX_HOPS = 5 // agentic search depth
+        private const val AGENTIC_CTX_CAP = 4000 // chars of accumulated context (keep within nCtx)
 
         private const val AGENTIC_SYSTEM =
-            "Ты — ассистент с доступом к офлайн-поиску по Википедии. Тебе дают собранные выдержки. " +
+            "Ты — ассистент с доступом к офлайн-поиску по Википедии. Тебе дают собранные выдержки с карточками статей. " +
+            "В карточке часто есть поля «Предшественник» и «Преемник» — используй их, чтобы идти по цепочке " +
+            "(текущий → предыдущий → и так далее) при сборе перечня за период. " +
             "Если для полного ответа не хватает фактов, ответь РОВНО одной строкой и больше ничего: " +
-            "«ПОИСК: <короткий запрос>». Когда фактов достаточно — дай полный ответ на русском в Markdown без слова ПОИСК. " +
-            "Чтобы собрать перечень за период, иди по цепочке: найди текущего, затем его предшественника, и так далее."
+            "«ПОИСК: <короткий запрос>» (имя человека или точное название статьи). Не повторяй уже выполненные запросы. " +
+            "Когда фактов достаточно — дай полный ответ на русском в Markdown без слова ПОИСК; для перечня собери все найденные пункты списком."
 
         /** Matches a complete <think>…</think> block (DOTALL). */
         private val THINK_BLOCK = Regex("(?s)<think>.*?</think>")
