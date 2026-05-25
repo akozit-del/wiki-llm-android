@@ -116,6 +116,9 @@ dependencies {
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.1")
 
+    // HTML parsing for RAG infobox extraction (Wikidata property-id + th/td rows).
+    implementation("org.jsoup:jsoup:1.18.1")
+
     // Stage 5: libkiwix AAR bundles libzim + libkiwix .so for all Android ABIs.
     // The .so files live in jniLibs/<abi>/libzim/ and jniLibs/<abi>/libkiwix/
     // sub-dirs, so a plain System.loadLibrary won't find them — use ReLinker.

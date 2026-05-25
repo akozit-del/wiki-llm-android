@@ -50,13 +50,16 @@ class ZimSearcher private constructor(
         }
 
     suspend fun readArticleText(path: String): String? = withContext(Dispatchers.IO) {
+        readArticleHtml(path)?.let { htmlToPlainText(it) }
+    }
+
+    /** Raw article HTML — RAG needs it to extract the infobox before flattening. */
+    suspend fun readArticleHtml(path: String): String? = withContext(Dispatchers.IO) {
         runCatching {
             val entry = archive.getEntryByPath(path)
             val item = entry.getItem(true)
-            val blob = item.data
-            val html = String(blob.data, Charsets.UTF_8)
-            htmlToPlainText(html)
-        }.onFailure { DiagLog.w(TAG, "readArticleText failed for $path", it) }
+            String(item.data.data, Charsets.UTF_8)
+        }.onFailure { DiagLog.w(TAG, "readArticleHtml failed for $path", it) }
             .getOrNull()
     }
 

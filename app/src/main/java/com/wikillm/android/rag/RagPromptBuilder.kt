@@ -97,13 +97,20 @@ class RagPromptBuilder(private val searcher: ZimSearcher) {
         var used = 0
         val perArticle = (budgetChars / topK).coerceAtLeast(500)
         for (hit in hits.take(topK)) {
-            val body = searcher.readArticleText(hit.path) ?: continue
+            val html = searcher.readArticleHtml(hit.path) ?: continue
             val remaining = budgetChars - used
             if (remaining <= 200) break
+            val card = InfoboxExtractor.extract(html, hit.title)
+            val body = InfoboxExtractor.bodyText(html)
             val chunk = relevantChunk(body, hit.title, searchTerms, minOf(remaining, perArticle))
-            sb.append("=== ").append(hit.title).append(" ===\n").append(chunk).append("\n\n")
+            val section = buildString {
+                append("=== ").append(hit.title).append(" ===\n")
+                if (!card.isEmpty) append(card.block()).append("\n")
+                append(chunk).append("\n\n")
+            }
+            sb.append(section)
             titles += hit.title
-            used += chunk.length + 40
+            used += section.length
         }
         if (sb.isEmpty()) {
             for (hit in hits.take(topK)) {
