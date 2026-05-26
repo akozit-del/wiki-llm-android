@@ -48,6 +48,11 @@ object InfoboxExtractor {
     data class Card(val title: String, val lines: List<String>) {
         val isEmpty get() = lines.isEmpty()
         fun block(): String = if (lines.isEmpty()) "" else "Карточка:\n" + lines.joinToString("\n")
+        /** Value for the first line whose label equals [label] (case-insensitive). */
+        fun field(label: String): String? = lines
+            .firstOrNull { it.substringBefore(":").trim().equals(label, ignoreCase = true) }
+            ?.substringAfter(":")?.trim()
+            ?.takeIf { it.isNotBlank() }
     }
 
     /** Extract the first infobox as priority-ordered "Метка: значение" lines. */

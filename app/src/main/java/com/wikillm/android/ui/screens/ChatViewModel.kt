@@ -460,18 +460,38 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
             return seed + "\n…\n" + trail.takeLast(room)
         }
 
-        // Jump-start chains the small model won't begin on its own: for "перечисли…"
-        // questions where the seed card names the current office-holder, fetch that
-        // person first — their article carries «Предшественник» to walk back.
+        // For enumeration questions the 4B model hallucinates predecessor names if
+        // asked to emit each search query itself (verified on device: it parroted
+        // the system-prompt placeholder and invented Mельников/Волков). So we walk
+        // the «Предшественник» chain in code and only ask the LLM to format the
+        // final list — a task it can't get wrong.
         val holder = OFFICE_HOLDER.find(seed)?.groupValues?.get(1)?.trim()
         val wantsList = LIST_WORDS.any { question.lowercase().contains(it) }
         if (wantsList && !holder.isNullOrBlank()) {
-            triedQueries += normalizeQuery(holder)
-            _searchStep.value = "🔎 Текущий глава: «$holder»"
-            DiagLog.i(TAG, "Agentic seed-chain → search holder '$holder'")
-            val more = rag.searchExcerpts(holder, _ragCandidates.value, topK = 2, budgetChars = 1800, excludeTitles = usedTitles)
-            usedTitles += more.titles
-            if (more.block.isNotBlank()) trail += "\n\n--- Текущий глава «$holder» (для цепочки) ---\n" + more.block
+            val chain = walkPredecessorChain(searcher, holder, _ragCandidates.value)
+            DiagLog.i(TAG, "Predecessor chain (${chain.size}): " + chain.joinToString(" -> "))
+            val factual = chain.joinToString("\n") { "- $it" }
+            val formatPrompt =
+                "Дан фактологический перечень людей (от текущего к более ранним), занимавших одну и ту же " +
+                "должность. Просто перепиши его как аккуратный Markdown-список (маркированный), сохранив порядок. " +
+                "НЕ добавляй своих имён, НЕ выдумывай, НЕ комментируй, НЕ переставляй. Только переоформи.\n\n" +
+                "Перечень:\n$factual\n\nГотовый ответ:"
+            val out = StringBuilder()
+            llmRepo.generateChat(
+                listOf("user" to formatPrompt),
+                maxTokens = maxTokens,
+                systemPrompt = "Ты аккуратно форматируешь данный перечень в Markdown. Никаких дополнений или выдумок.",
+                temperature = temp,
+                noThink = noThink,
+            ).collect { ev ->
+                when (ev) {
+                    is LlmEvent.Token -> { onFirstToken(); onToken(); out.append(ev.piece) }
+                    is LlmEvent.Done -> { totalGen += ev.genTokens; totalPrompt += ev.promptTokens }
+                }
+            }
+            val text = stripThinking(out.toString()).trim()
+            // If the model misbehaves, fall back to the deterministic list.
+            return AgenticResult(text.ifBlank { factual }, totalGen, totalPrompt)
         }
 
         for (hop in 1..MAX_HOPS) {
@@ -525,6 +545,56 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     private fun normalizeQuery(q: String): String =
         q.lowercase().replace(Regex("[\\p{Punct}«»\"]"), " ").replace(Regex("\\s+"), " ").trim()
 
+    /**
+     * Walk the «Предшественник» chain in code, starting from [holder]:
+     *   search → first matching person article → read its card → take
+     *   «Предшественник» → search → … until empty / duplicate / MAX_HOPS.
+     *
+     * This is the deterministic core of layer C — the small LLM only gets the
+     * resulting list to format, so it can't invent predecessor names.
+     */
+    private suspend fun walkPredecessorChain(
+        searcher: com.wikillm.android.rag.ZimSearcher,
+        holder: String,
+        candidates: Int,
+    ): List<String> {
+        val chain = mutableListOf(holder)
+        val visited = hashSetOf(normalizeQuery(holder))
+        var current = holder
+        for (step in 1..MAX_HOPS) {
+            _searchStep.value = "🔎 Цепочка: «$current»"
+            val hits = searcher.search(current, candidates)
+            val hit = pickBestNameHit(hits, current) ?: break
+            DiagLog.i(TAG, "Chain step $step: '$current' → '${hit.title}'")
+            val html = searcher.readArticleHtml(hit.path) ?: break
+            val card = com.wikillm.android.rag.InfoboxExtractor.extract(html, hit.title)
+            val pred = card.field("Предшественник") ?: break
+            val next = pred.substringBefore("(").substringBefore("[").trim()
+            if (next.isBlank()) break
+            val key = normalizeQuery(next)
+            if (key in visited) break
+            visited += key
+            chain += next
+            current = next
+        }
+        return chain
+    }
+
+    /** Pick the hit whose title shares the most tokens with [name] (handles
+     *  "Сухих, Илья Геннадьевич" vs "Илья Геннадьевич Сухих"). */
+    private fun pickBestNameHit(
+        hits: List<com.wikillm.android.rag.ZimSearcher.Hit>,
+        name: String,
+    ): com.wikillm.android.rag.ZimSearcher.Hit? {
+        if (hits.isEmpty()) return null
+        val tokens = name.lowercase().split(Regex("[\\s,.]+")).filter { it.length >= 3 }.toSet()
+        if (tokens.isEmpty()) return hits.first()
+        return hits.maxByOrNull { hit ->
+            val titleTokens = hit.title.lowercase().split(Regex("[\\s,.]+")).toSet()
+            tokens.count { it in titleTokens }
+        }
+    }
+
     private fun buildAgenticPrompt(question: String, context: String, isLast: Boolean): String = buildString {
         append("Вопрос: ").append(question).append("\n\n")
         append("=== СОБРАННЫЕ ВЫДЕРЖКИ ИЗ ВИКИПЕДИИ ===\n").append(context).append("\n=== КОНЕЦ ===\n\n")
@@ -574,8 +644,8 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
             "Чтобы собрать перечень должностных лиц за период, НЕ ищи «список …» — такой статьи нет. " +
             "Вместо этого иди по цепочке через карточки: возьми имя человека, в его персональной статье найди поле " +
             "«Предшественник», затем тем же приёмом найди его предшественника, и так далее вглубь. " +
-            "Когда нужен новый человек, ответь РОВНО одной строкой и больше ничего: «ПОИСК: Фамилия Имя» " +
-            "(только имя человека, без лишних слов и без markdown). Не повторяй уже выполненные запросы. " +
+            "Если нужно дочитать что-то, ответь РОВНО одной строкой и больше ничего: «ПОИСК: <запрос>» " +
+            "(имя человека или точное название статьи, без лишних слов и без markdown). Не повторяй уже выполненные запросы. " +
             "Когда цепочка собрана — дай финальный ответ на русском в Markdown маркированным списком, без слова ПОИСК."
 
         /** Pulls the current office-holder's name out of a seed card line. */
