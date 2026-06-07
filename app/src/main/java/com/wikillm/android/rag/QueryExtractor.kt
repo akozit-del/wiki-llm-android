@@ -68,10 +68,24 @@ object QueryExtractor {
             "Губернатор", "Губернаторы", "Министр", "Министры", "Король", "Короли",
             "Премьер", "Премьеры", "Депутат", "Депутаты", "Лидер", "Лидеры",
         )
+        // Instruction verbs sitting at the start of the sentence ("Перечисли…",
+        // "Назови…") also start capitalised, beating the real entity in length.
+        // Drop them by lemma stem (covers all morphology forms).
+        val instructionStems = listOf(
+            "перечисл", "назов", "расскаж", "опиш", "напиш",
+            "скаж", "ответ", "покаж", "помог", "приведи", "приведит",
+        )
+        fun isInstruction(t: String): Boolean {
+            val tl = t.lowercase()
+            return instructionStems.any { tl.startsWith(it) }
+        }
         val tokens = question
             .replace(Regex("[\\p{Punct}«»“”\"]"), " ")
             .split(Regex("\\s+"))
-            .filter { it.length >= 4 && it.first().isUpperCase() && it !in roleWords }
+            .filter {
+                it.length >= 4 && it.first().isUpperCase() &&
+                    it !in roleWords && !isInstruction(it)
+            }
         return tokens.maxByOrNull { it.length }
     }
 
