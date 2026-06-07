@@ -77,19 +77,21 @@ class ZimSearcher private constructor(
     suspend fun findByTitlePrefix(prefix: String, limit: Int): List<Hit> =
         withContext(Dispatchers.IO) {
             runCatching {
-                val it = archive.findByTitle(prefix)
+                // EntryIterator is `java.util.Iterator<Entry>` — next() RETURNS
+                // the Entry; the iterator itself has no title/path getters.
+                val iter = archive.findByTitle(prefix)
                 val out = ArrayList<Hit>(limit)
                 var n = 0
-                while (n < limit && (safe { it.hasNext() } ?: false)) {
-                    val t = safe { it.title } ?: ""
-                    val p = safe { it.path } ?: ""
-                    if (t.isBlank()) { runCatching { it.next() }; n++; continue }
+                while (n < limit && (safe { iter.hasNext() } ?: false)) {
+                    val entry = safe { iter.next() } ?: break
+                    val t = safe { entry.title } ?: ""
+                    val p = safe { entry.path } ?: ""
+                    n++
+                    if (t.isBlank()) continue
                     // findByTitle returns entries in title order starting >= prefix;
                     // first non-matching title means we've walked past the prefix run.
                     if (!t.startsWith(prefix, ignoreCase = true)) break
                     out += Hit(title = t, path = p, snippet = "", score = 800)
-                    runCatching { it.next() }
-                    n++
                 }
                 out
             }.getOrElse {
