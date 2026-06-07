@@ -49,6 +49,55 @@ class ZimSearcher private constructor(
             }
         }
 
+    /**
+     * Exact-title probe via libzim's `getEntryByTitle` — O(1) lookup in the
+     * title index (separate from the Xapian full-text one). Lets us land on
+     * canonical list articles ("Главы Тольятти", "Список глав Тольятти")
+     * directly, without fighting BM25 ranking 700 candidates.
+     */
+    suspend fun lookupExactTitle(title: String): Hit? = withContext(Dispatchers.IO) {
+        runCatching {
+            val entry = archive.getEntryByTitle(title)
+            Hit(
+                title = safe { entry.title } ?: title,
+                path = safe { entry.path } ?: "",
+                snippet = "",
+                score = 1000,
+            )
+        }.getOrNull() // EntryNotFoundException → null (common case)
+    }
+
+    /**
+     * Title-prefix scan via libzim's `findByTitle`. Returns up to [limit]
+     * entries whose title starts with [prefix] (case-insensitive), in title
+     * order. Used by `ListIntentPipeline` to enumerate "Главы Тольятти…",
+     * "Список глав Тольятти…", "Категория:Главы Тольятти" candidates without
+     * any LLM planning.
+     */
+    suspend fun findByTitlePrefix(prefix: String, limit: Int): List<Hit> =
+        withContext(Dispatchers.IO) {
+            runCatching {
+                val it = archive.findByTitle(prefix)
+                val out = ArrayList<Hit>(limit)
+                var n = 0
+                while (n < limit && (safe { it.hasNext() } ?: false)) {
+                    val t = safe { it.title } ?: ""
+                    val p = safe { it.path } ?: ""
+                    if (t.isBlank()) { runCatching { it.next() }; n++; continue }
+                    // findByTitle returns entries in title order starting >= prefix;
+                    // first non-matching title means we've walked past the prefix run.
+                    if (!t.startsWith(prefix, ignoreCase = true)) break
+                    out += Hit(title = t, path = p, snippet = "", score = 800)
+                    runCatching { it.next() }
+                    n++
+                }
+                out
+            }.getOrElse {
+                DiagLog.w(TAG, "findByTitlePrefix('$prefix') failed", it)
+                emptyList()
+            }
+        }
+
     suspend fun readArticleText(path: String): String? = withContext(Dispatchers.IO) {
         readArticleHtml(path)?.let { htmlToPlainText(it) }
     }

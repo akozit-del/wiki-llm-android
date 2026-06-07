@@ -42,4 +42,59 @@ object QueryExtractor {
         if (tokens.isEmpty()) return question.trim() // fallback — search whole thing
         return tokens.joinToString(" ")
     }
+
+    // ---- List-intent detection (build-61) ----
+
+    private val LIST_MARKERS = listOf(
+        "перечисли", "перечислите", "список", "спиши", "спишите", "назови всех",
+        "назовите всех", "все ", "всех ", "всю ", "какие ", "кто из",
+    )
+
+    /** True iff the question asks for a list/enumeration of entities. */
+    fun isListIntent(question: String): Boolean {
+        val q = question.lowercase()
+        return LIST_MARKERS.any { q.contains(it) }
+    }
+
+    /**
+     * Pull the "main entity" out of the question — the proper-noun-shaped token
+     * the list is *about* ("Тольятти" in "перечисли мэров Тольятти"). Heuristic:
+     * longest capitalised token in the original question that isn't a generic
+     * role word. We work on [question] verbatim to keep original casing.
+     */
+    fun extractEntity(question: String): String? {
+        val roleWords = setOf(
+            "Мэр", "Мэры", "Глава", "Главы", "Президент", "Президенты",
+            "Губернатор", "Губернаторы", "Министр", "Министры", "Король", "Короли",
+            "Премьер", "Премьеры", "Депутат", "Депутаты", "Лидер", "Лидеры",
+        )
+        val tokens = question
+            .replace(Regex("[\\p{Punct}«»“”\"]"), " ")
+            .split(Regex("\\s+"))
+            .filter { it.length >= 4 && it.first().isUpperCase() && it !in roleWords }
+        return tokens.maxByOrNull { it.length }
+    }
+
+    /**
+     * "Plural role" the question asks about — "Главы" / "Мэры" / "Президенты".
+     * Used to template title probes ("Главы X", "Мэры X", "Категория:Главы X").
+     */
+    fun extractRolePlural(question: String): String? {
+        val q = question.lowercase()
+        val map = listOf(
+            "мэр" to "Мэры",
+            "глав" to "Главы",
+            "градонач" to "Градоначальники",
+            "руковод" to "Руководители",
+            "президент" to "Президенты",
+            "губернат" to "Губернаторы",
+            "министр" to "Министры",
+            "лидер" to "Лидеры",
+            "король" to "Короли",
+        )
+        for ((stem, label) in map) {
+            if (q.contains(stem)) return label
+        }
+        return null
+    }
 }

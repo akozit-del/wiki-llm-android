@@ -47,17 +47,27 @@ class RagPromptBuilder(private val searcher: ZimSearcher) {
                 totalCandidates = 0,
             )
         }
+        val listIntent = QueryExtractor.isListIntent(question)
         val prompt = buildString {
-            append("Тебе даны выдержки из Википедии. Отвечай на их основе. ")
-            append("Извлеки и собери ВСЕ относящиеся к вопросу факты из выдержек, даже частичные ")
-            append("(имена, даты, перечни). Если в выдержках совсем нет нужной информации — ")
-            append("скажи «не знаю по приведённым выдержкам». Отвечай на русском языке.\n\n")
+            if (listIntent) {
+                append("Тебе даны выдержки из Википедии, содержащие списки/перечни. ")
+                append("Извлеки ВСЕ имена/пункты из этих списков, относящиеся к вопросу, ")
+                append("даже короткие упоминания. Формат ответа — Markdown-список «Имя — годы», ")
+                append("по одному пункту в строке. НЕ пропускай ни одного кандидата из выдержек. ")
+                append("Если совсем ничего нет — скажи «не знаю по приведённым выдержкам». ")
+                append("Отвечай на русском.\n\n")
+            } else {
+                append("Тебе даны выдержки из Википедии. Отвечай на их основе. ")
+                append("Извлеки и собери ВСЕ относящиеся к вопросу факты из выдержек, даже частичные ")
+                append("(имена, даты, перечни). Если в выдержках совсем нет нужной информации — ")
+                append("скажи «не знаю по приведённым выдержкам». Отвечай на русском языке.\n\n")
+            }
             append("=== ВЫДЕРЖКИ ИЗ ВИКИ ===\n")
             append(ex.block)
             append("=== КОНЕЦ ВЫДЕРЖЕК ===\n\n")
             append("Вопрос: ").append(question)
         }
-        DiagLog.i(TAG, "RAG prompt preview: " + prompt.take(500).replace('\n', ' '))
+        DiagLog.i(TAG, "RAG prompt preview (listIntent=$listIntent): " + prompt.take(500).replace('\n', ' '))
         return Result(prompt = prompt, sourcesUsed = ex.titles, totalCandidates = ex.totalCandidates)
     }
 
@@ -72,7 +82,33 @@ class RagPromptBuilder(private val searcher: ZimSearcher) {
         val searchQuery = QueryExtractor.extract(question)
         DiagLog.i(TAG, "Query: '$question' -> ZIM keywords: '$searchQuery'")
         val tokens = searchQuery.split(" ").filter { it.length >= 3 }
+
+        // --- build-61: List-intent title-probe lane (runs BEFORE Xapian) ---
+        // For "перечисли мэров Тольятти" the answer lives in articles like
+        // "Главы Тольятти" / "Список глав Тольятти" / "Категория:Главы Тольятти".
+        // BM25 buries those under 700 mentions of «Тольятти + мэр». libzim's
+        // title index (getEntryByTitle / findByTitle) lets us land directly.
+        // Pinned at score 800–1000 so title-boost sort floats them to the top.
+        val titleProbeHits = if (QueryExtractor.isListIntent(question)) {
+            val entity = QueryExtractor.extractEntity(question)
+            val role = QueryExtractor.extractRolePlural(question)
+            if (!entity.isNullOrBlank()) {
+                listAwareTitleProbes(entity, role).also { probes ->
+                    if (probes.isNotEmpty()) {
+                        DiagLog.i(TAG, "List probes (entity='$entity', role='$role'): " +
+                            probes.joinToString { it.title })
+                    } else {
+                        DiagLog.i(TAG, "List-intent: no title probes for entity='$entity' role='$role'")
+                    }
+                }
+            } else emptyList()
+        } else emptyList()
+
         var hits = searcher.search(searchQuery.ifBlank { question }, candidates)
+        if (titleProbeHits.isNotEmpty()) {
+            val have = hits.mapTo(HashSet()) { it.path }
+            hits = titleProbeHits.filter { it.path !in have } + hits
+        }
         // Also pull the head-entity article on its own. When the query mixes an
         // attribute with an entity ("мэр Тольятти"), the bare entity page
         // ("Тольятти") gets crowded out of the candidates by "<Entity>ский/ская…"
@@ -98,7 +134,10 @@ class RagPromptBuilder(private val searcher: ZimSearcher) {
         if (searchTerms.isNotEmpty()) {
             hits = hits.sortedWith(compareByDescending { hit ->
                 val title = hit.title.lowercase()
-                var score = 0
+                // Start from the pinned base score (1000 for exact-title probes,
+                // 800 for prefix probes, 0/small for Xapian hits) — without this,
+                // the list-aware probes get re-buried by an "exact entity" article.
+                var score = hit.score
                 if (searchTerms.any { it == title }) score += 100
                 if (searchTerms.any { title.startsWith(it) }) score += 20
                 if (searchTerms.any { title.contains(it) }) score += 10
@@ -179,6 +218,57 @@ class RagPromptBuilder(private val searcher: ZimSearcher) {
         }
         val start = (bestStart - 100).coerceIn(0, (body.length - cap).coerceAtLeast(0))
         return body.substring(start, (start + cap).coerceAtMost(body.length))
+    }
+
+    /**
+     * For list-style questions, probe libzim's title index directly for the
+     * canonical list/category articles about [entity]. We try exact-title
+     * lookups first (cheapest, single dict probe) and a short title-prefix
+     * scan for "Категория:Главы …" — these reliably exist in ru.wiki ZIMs and
+     * are exactly what answers questions like "перечисли мэров Тольятти".
+     *
+     * Returned hits carry path/title only — bodies are read later in the
+     * normal excerpt-building loop, so this stays cheap (~few µs per probe).
+     */
+    private suspend fun listAwareTitleProbes(entity: String, role: String?): List<ZimSearcher.Hit> {
+        val templates = mutableListOf<String>()
+        // Role-specific templates first (more precise).
+        if (role != null) {
+            templates += "$role $entity"
+            templates += "Список ${role.lowercase()} $entity"
+            templates += "Список ${role.lowercase()} города $entity"
+        }
+        // Generic leadership templates (cover the common ru.wiki naming patterns).
+        templates += listOf(
+            "Главы $entity",
+            "Список глав $entity",
+            "Список глав города $entity",
+            "Мэры $entity",
+            "Список мэров $entity",
+            "Руководители $entity",
+            "Градоначальники $entity",
+        )
+
+        val hits = mutableListOf<ZimSearcher.Hit>()
+        val seenPaths = HashSet<String>()
+        // Tier A: exact-title lookup for each template.
+        for (t in templates.distinct()) {
+            val h = searcher.lookupExactTitle(t) ?: continue
+            if (h.path.isBlank() || h.path in seenPaths) continue
+            hits += h
+            seenPaths += h.path
+        }
+        // Tier B: title-prefix scan for "Категория:" + role + entity (the canonical
+        // Wikipedia category page that lists every biography we care about).
+        if (role != null) {
+            val catPrefix = "Категория:$role $entity"
+            for (h in searcher.findByTitlePrefix(catPrefix, limit = 3)) {
+                if (h.path.isBlank() || h.path in seenPaths) continue
+                hits += h
+                seenPaths += h.path
+            }
+        }
+        return hits
     }
 
     companion object { private const val TAG = "RagPromptBuilder" }
