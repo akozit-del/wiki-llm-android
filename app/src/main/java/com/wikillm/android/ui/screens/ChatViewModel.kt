@@ -239,7 +239,14 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
             }
         }
 
-        val agentic = _ragEnabled.value && _deepSearch.value && ZimSearchHolder.searcher() != null
+        // Sprint 3: list-intent already gets a deterministic chain-walker via
+        // Sprint 2's InfoboxGraphWalker at single-shot time, so the agentic
+        // loop on top of it just burns wall-time re-asking for the same data
+        // (documented 4B failure mode — "collapse to user query paraphrase").
+        // Skip agentic for list-intent regardless of the Deep Search toggle.
+        val listIntent = QueryExtractor.isListIntent(userText)
+        val agentic = !listIntent &&
+            _ragEnabled.value && _deepSearch.value && ZimSearchHolder.searcher() != null
 
         generationJob = viewModelScope.launch {
             val builder = StringBuilder()
@@ -636,7 +643,12 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     companion object {
         private const val TAG = "ChatVM"
         private const val KEY_LAST_MODEL = "last_model_path"
-        private const val MAX_HOPS = 5 // agentic search depth
+        // Sprint 3: dropped from 5. SOTA agentic-RAG papers for ≤8B models
+        // (PRISM 2510.14278, Search-o1 EMNLP-2025) converge on a 3-hop ceiling —
+        // beyond that, 4B models start paraphrasing the user query instead of
+        // emitting novel sub-questions, and wall-time gets dominated by retries.
+        private const val MAX_HOPS = 3
+
         private const val AGENTIC_CTX_CAP = 4000 // chars of accumulated context (keep within nCtx)
 
         private const val AGENTIC_SYSTEM =
