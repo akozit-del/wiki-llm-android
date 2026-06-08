@@ -91,6 +91,55 @@ object InfoboxExtractor {
         return Card(title, byLabel.entries.take(maxLines).map { "${it.key}: ${it.value}" })
     }
 
+    /**
+     * Wikilink returned by [extractWikilinks]: the property the link came from
+     * (P6/P1365/…), the visible text of the link, and the ZIM-relative href
+     * (e.g. `A/Жилкин,_Сергей_Фёдорович`). The href is what we feed back into
+     * `Archive.getEntryByPath`.
+     */
+    data class WikiLink(val propertyId: String, val text: String, val href: String)
+
+    /**
+     * Extract wikilinks from the first infobox for the specified Wikidata
+     * property ids. Used by chain-walker to follow P1365 (предшественник) /
+     * P1366 (преемник) / P6 (глава) / P39 (должность) and build a list of
+     * "next-hop" article paths without involving the LLM at all.
+     *
+     * Returns links in the order they appear in the infobox. Duplicates are
+     * de-duplicated by href.
+     */
+    fun extractWikilinks(html: String, propertyIds: Set<String>): List<WikiLink> {
+        if (propertyIds.isEmpty()) return emptyList()
+        val doc = runCatching { Jsoup.parse(html) }.getOrNull() ?: return emptyList()
+        val ib = doc.selectFirst("table.infobox") ?: return emptyList()
+        val seen = HashSet<String>()
+        val out = mutableListOf<WikiLink>()
+        for (pid in propertyIds) {
+            // Some infoboxes wrap the value cell with `data-wikidata-property-id`;
+            // others put it on the <a> directly. Cover both.
+            val cells = ib.select(
+                "td[data-wikidata-property-id=$pid], " +
+                    "tr td[data-wikidata-property-id=$pid], " +
+                    "[data-wikidata-property-id=$pid]",
+            )
+            for (cell in cells) {
+                for (a in cell.select("a[href]")) {
+                    var href = a.attr("href").trim()
+                    // ZIM/mwoffliner emits relative hrefs like "Иванов" or "A/Иванов".
+                    // Normalise: strip leading "./" or "../". Skip external links.
+                    if (href.startsWith("http")) continue
+                    if (href.startsWith("./")) href = href.drop(2)
+                    if (href.startsWith("../")) href = href.drop(3)
+                    if (href.isEmpty()) continue
+                    val key = "$pid|$href"
+                    if (!seen.add(key)) continue
+                    out += WikiLink(propertyId = pid, text = clean(a.text()), href = href)
+                }
+            }
+        }
+        return out
+    }
+
     /** Article body as plain text, with infobox, references and chrome removed. */
     fun bodyText(html: String): String {
         val doc = runCatching { Jsoup.parse(html) }.getOrNull() ?: return ""

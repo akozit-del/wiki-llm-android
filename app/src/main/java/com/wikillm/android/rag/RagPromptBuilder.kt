@@ -148,14 +148,28 @@ class RagPromptBuilder(private val searcher: ZimSearcher) {
             hits = hits.filter { it.title !in excludeTitles }
         }
         DiagLog.i(TAG, "RAG: '$question' candidates=${hits.size}")
+        // build-69 diag: top of the candidate list after re-sort, with paths,
+        // so we can see when a pinned probe lost the join or its path is wrong.
+        if (hits.isNotEmpty()) {
+            DiagLog.i(TAG, "Top hits: " + hits.take(5).joinToString(" | ") {
+                "${it.title}(s=${it.score})[${it.path}]"
+            })
+        }
         if (hits.isEmpty()) return Excerpts("", emptyList(), 0)
 
+        // build-69: list questions need a wider window (city article + list article
+        // + biographies). Bump topK and per-article cap when intent is list.
+        val effectiveTopK = if (QueryExtractor.isListIntent(question)) maxOf(topK, 5) else topK
         val sb = StringBuilder()
         val titles = mutableListOf<String>()
         var used = 0
-        val perArticle = (budgetChars / topK).coerceAtLeast(500)
-        for (hit in hits.take(topK)) {
-            val html = searcher.readArticleHtml(hit.path) ?: continue
+        val perArticle = (budgetChars / effectiveTopK).coerceAtLeast(500)
+        for (hit in hits.take(effectiveTopK)) {
+            val html = searcher.readArticleHtml(hit.path)
+            if (html == null) {
+                DiagLog.w(TAG, "skip '${hit.title}' — readArticleHtml null for path=${hit.path}")
+                continue
+            }
             val remaining = budgetChars - used
             if (remaining <= 200) break
             val card = InfoboxExtractor.extract(html, hit.title)
@@ -268,7 +282,61 @@ class RagPromptBuilder(private val searcher: ZimSearcher) {
                 seenPaths += h.path
             }
         }
+        // Tier C: chain-walker over the seed entity's infobox.
+        // For "перечисли мэров Тольятти" the seed article "Тольятти" has P6
+        // (current head) pointing at the current mayor's bio. From there we
+        // chain through P1365 (предшественник) / P1366 (преемник) to assemble
+        // the full historical list without any LLM planning.
+        val seed = searcher.lookupExactTitle(entity)
+        if (seed != null && seed.path.isNotBlank() && seed.path !in seenPaths) {
+            // Add the seed itself with the same pinned score so the city/article
+            // page is guaranteed in the excerpt set (it carries P6 = current head).
+            hits += seed
+            seenPaths += seed.path
+        }
+        if (seed != null && seed.path.isNotBlank()) {
+            val chainHrefs = InfoboxGraphWalker.walk(
+                searcher = searcher,
+                seedPath = seed.path,
+                propertyIds = CHAIN_PROPS,
+                maxNodes = 6,
+                maxDepth = 4,
+            )
+            for (href in chainHrefs) {
+                if (href in seenPaths) continue
+                hits += ZimSearcher.Hit(
+                    title = decodeHrefAsTitle(href),
+                    path = href,
+                    snippet = "",
+                    // Slightly below exact-title hits so a real list article wins,
+                    // but still well above BM25 noise.
+                    score = 900,
+                )
+                seenPaths += href
+            }
+        }
         return hits
+    }
+
+    /**
+     * Wikidata properties walked by Tier C — head of government, predecessor,
+     * successor, position-held. Together they cover the most common chain
+     * questions over Wikipedia infoboxes (мэр→предшественник→…, депутат→…,
+     * монарх→предшественник, …).
+     */
+    private val CHAIN_PROPS = setOf("P6", "P1365", "P1366", "P39", "P166")
+
+    /**
+     * Decode a ZIM href like "A/Жилкин,_Сергей_Фёдорович" into a human title
+     * "Жилкин, Сергей Фёдорович" so logs and the prompt are readable. The
+     * actual article body is read later via the path verbatim.
+     */
+    private fun decodeHrefAsTitle(href: String): String {
+        val tail = href.substringAfterLast('/')
+        val decoded = try {
+            java.net.URLDecoder.decode(tail, Charsets.UTF_8)
+        } catch (_: Throwable) { tail }
+        return decoded.replace('_', ' ')
     }
 
     companion object { private const val TAG = "RagPromptBuilder" }

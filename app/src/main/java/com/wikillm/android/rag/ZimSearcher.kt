@@ -57,7 +57,17 @@ class ZimSearcher private constructor(
      */
     suspend fun lookupExactTitle(title: String): Hit? = withContext(Dispatchers.IO) {
         runCatching {
-            val entry = archive.getEntryByTitle(title)
+            var entry = archive.getEntryByTitle(title)
+            // ru.wiki ZIMs often store "Градоначальники Тольятти" as a redirect
+            // stub that points to "Главы Тольятти". Without following the
+            // redirect we get a title-only entry whose body is empty, so RAG
+            // silently drops it. Follow up to 3 hops (chains are rare).
+            var hops = 0
+            while (hops < 3 && (safe { entry.isRedirect } == true)) {
+                val next = safe { entry.redirectEntry } ?: break
+                entry = next
+                hops++
+            }
             Hit(
                 title = safe { entry.title } ?: title,
                 path = safe { entry.path } ?: "",
