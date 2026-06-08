@@ -78,7 +78,13 @@ class LlamaContext private constructor(private val handle: Long) : AutoCloseable
 
         class LoadException(message: String) : RuntimeException(message)
 
-        suspend fun load(path: String, nCtx: Int = 4096): LlamaContext =
+        // Sprint 20: bump default context from 4096 → 6144. KV q8_0 (Sprint 4)
+        // halved KV-cache memory, so 6k tokens fits inside the same 3.7-4.0 GB
+        // free RAM on S23. With Sprint 19's wider 6500-char prompt budget for
+        // list questions, 4096 was getting truncated; 6144 gives the model
+        // enough room for the chain + a full answer. n_ctx is still a hard
+        // ceiling — the JNI guard truncates from the head on overshoot.
+        suspend fun load(path: String, nCtx: Int = 6144): LlamaContext =
             withContext(Dispatchers.IO) {
                 val h = nativeLoad(path, nCtx)
                 if (h == 0L) {
