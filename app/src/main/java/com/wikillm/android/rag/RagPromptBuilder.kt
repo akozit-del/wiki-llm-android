@@ -532,13 +532,13 @@ class RagPromptBuilder(private val searcher: ZimSearcher) {
 
     private fun chainPropsFor(question: String): Set<String> {
         val q = question.lowercase()
-        // Sprint 24: drop P39 (должность) from the governance profile.
-        // Walker through P39 pulled "первый заместитель губернатора" from
-        // Sukhikh's bio, which led to Vyacheslav Fedorishchev (the Samara
-        // governor) being added to the mayors list in build-85. The strict
-        // governance chain only needs head-of/predecessor/successor + a few
-        // place/organisation rels.
-        val governance = setOf("P6", "P1365", "P1366", "P36", "P159", "P127", "P112")
+        // Sprint 27: drop P36/P159/P127/P112 too. Sprint 25's deeper walk
+        // (depth 8) made walker hop through P36 (столица) from Тольятти →
+        // Самара → mayors/governors of Самара (Тархов, Меркушкин, Федорищев)
+        // and through P159 (штаб-квартира) into corporate biographies. For
+        // "перечисли мэров X" we only want the strict head-of chain of one
+        // city: P6 head, P1365 предшественник, P1366 преемник.
+        val governance = setOf("P6", "P1365", "P1366")
         val family = setOf("P26", "P22", "P25", "P40", "P3373", "P1365", "P1366")
         val awards = setOf("P166", "P39", "P1365", "P1366")
         val creative = setOf("P50", "P57", "P58", "P162", "P175", "P800", "P1365", "P1366")
