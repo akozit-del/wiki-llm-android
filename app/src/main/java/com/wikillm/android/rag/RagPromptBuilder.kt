@@ -89,6 +89,7 @@ class RagPromptBuilder(private val searcher: ZimSearcher) {
         // BM25 buries those under 700 mentions of «Тольятти + мэр». libzim's
         // title index (getEntryByTitle / findByTitle) lets us land directly.
         // Pinned at score 800–1000 so title-boost sort floats them to the top.
+        // build-61/68: List-intent title probes — only for "перечисли/список" questions.
         val titleProbeHits = if (QueryExtractor.isListIntent(question)) {
             val entity = QueryExtractor.extractEntity(question)
             val role = QueryExtractor.extractRolePlural(question)
@@ -104,10 +105,31 @@ class RagPromptBuilder(private val searcher: ZimSearcher) {
             } else emptyList()
         } else emptyList()
 
+        // Sprint 6: chain-walker — runs for ANY entity-bearing question, not
+        // just lists. For factoid ("кто отец Жилкина?") the walker hits the
+        // biography and pulls P22; for chains ("преемник Брежнева") it BFS's
+        // by P1366. Bounded to 6 nodes / 4 hops so cost stays low even on
+        // single-shot. Disjoint from titleProbeHits (no path overlap by design).
+        val walkerProbeHits = run {
+            val entity = QueryExtractor.extractEntity(question)
+            if (!entity.isNullOrBlank()) {
+                chainWalkerProbes(entity).also { probes ->
+                    if (probes.isNotEmpty()) {
+                        DiagLog.i(TAG, "Walker probes (entity='$entity'): " +
+                            probes.joinToString { it.title })
+                    }
+                }
+            } else emptyList()
+        }
+
         var hits = searcher.search(searchQuery.ifBlank { question }, candidates)
         if (titleProbeHits.isNotEmpty()) {
             val have = hits.mapTo(HashSet()) { it.path }
             hits = titleProbeHits.filter { it.path !in have } + hits
+        }
+        if (walkerProbeHits.isNotEmpty()) {
+            val have = hits.mapTo(HashSet()) { it.path }
+            hits = walkerProbeHits.filter { it.path !in have } + hits
         }
         // Also pull the head-entity article on its own. When the query mixes an
         // attribute with an entity ("мэр Тольятти"), the bare entity page
@@ -282,38 +304,42 @@ class RagPromptBuilder(private val searcher: ZimSearcher) {
                 seenPaths += h.path
             }
         }
-        // Tier C: chain-walker over the seed entity's infobox.
-        // For "перечисли мэров Тольятти" the seed article "Тольятти" has P6
-        // (current head) pointing at the current mayor's bio. From there we
-        // chain through P1365 (предшественник) / P1366 (преемник) to assemble
-        // the full historical list without any LLM planning.
-        val seed = searcher.lookupExactTitle(entity)
-        if (seed != null && seed.path.isNotBlank() && seed.path !in seenPaths) {
-            // Add the seed itself with the same pinned score so the city/article
-            // page is guaranteed in the excerpt set (it carries P6 = current head).
-            hits += seed
-            seenPaths += seed.path
-        }
-        if (seed != null && seed.path.isNotBlank()) {
-            val chainHrefs = InfoboxGraphWalker.walk(
-                searcher = searcher,
-                seedPath = seed.path,
-                propertyIds = CHAIN_PROPS,
-                maxNodes = 6,
-                maxDepth = 4,
+        // Tier C (chain-walker) lives in chainWalkerProbes now — it runs
+        // unconditionally for any entity-bearing question, not just lists.
+        return hits
+    }
+
+    /**
+     * Sprint 6: run the deterministic infobox chain-walker for [entity].
+     * Used for factoid questions ("кто отец Жилкина?") and chain questions
+     * ("преемник Брежнева"), in addition to list questions. Returns the
+     * seed article itself (so the prompt always sees its infobox), plus
+     * everything the walker discovers via CHAIN_PROPS.
+     */
+    private suspend fun chainWalkerProbes(entity: String): List<ZimSearcher.Hit> {
+        val seed = searcher.lookupExactTitle(entity) ?: return emptyList()
+        if (seed.path.isBlank()) return emptyList()
+        val hits = mutableListOf<ZimSearcher.Hit>()
+        val seenPaths = HashSet<String>()
+        hits += seed
+        seenPaths += seed.path
+        val chainHrefs = InfoboxGraphWalker.walk(
+            searcher = searcher,
+            seedPath = seed.path,
+            propertyIds = CHAIN_PROPS,
+            maxNodes = 6,
+            maxDepth = 4,
+        )
+        for (href in chainHrefs) {
+            if (href in seenPaths) continue
+            hits += ZimSearcher.Hit(
+                title = decodeHrefAsTitle(href),
+                path = href,
+                snippet = "",
+                // Below exact-title list hits (1000) but above BM25 noise.
+                score = 900,
             )
-            for (href in chainHrefs) {
-                if (href in seenPaths) continue
-                hits += ZimSearcher.Hit(
-                    title = decodeHrefAsTitle(href),
-                    path = href,
-                    snippet = "",
-                    // Slightly below exact-title hits so a real list article wins,
-                    // but still well above BM25 noise.
-                    score = 900,
-                )
-                seenPaths += href
-            }
+            seenPaths += href
         }
         return hits
     }
