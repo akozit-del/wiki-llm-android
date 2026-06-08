@@ -248,8 +248,32 @@ class RagPromptBuilder(private val searcher: ZimSearcher) {
         // Stems to anchor on: non-title query terms + leadership synonyms when the
         // question is about city leadership (мэр/глава/руководитель…).
         val stems = terms.map { stem(it) }.filter { !titleLower.contains(it) }.toMutableSet()
-        if (stems.any { it.startsWith("мэр") || it.startsWith("глав") || it.startsWith("руковод") || it.startsWith("градонач") || it.startsWith("губерн") }) {
-            stems += listOf("мэр", "глав", "градонач", "руковод")
+        // Sprint 14: anchor synonyms grouped by domain. Each group widens
+        // relevantChunk on related role words so dense clusters get picked
+        // up even when the user used a near-synonym ("главы" vs "руководители",
+        // "лауреаты" vs "обладатели"). Add the canonical stems for each
+        // domain that *any* original stem already hit.
+        val GROUPS = listOf(
+            // Government
+            listOf("мэр", "глав", "градонач", "руковод", "губерн") to
+                listOf("мэр", "глав", "градонач", "руковод"),
+            // Awards
+            listOf("лауреат", "обладат", "номинант") to
+                listOf("лауреат", "обладат", "награж"),
+            // Sport
+            listOf("чемпион", "победит", "призёр", "призер", "финалист") to
+                listOf("чемпион", "победит", "призёр", "финалист"),
+            // Films / books
+            listOf("автор", "режисс", "сценарист", "продюсер", "композитор") to
+                listOf("автор", "режисс", "сценарист", "продюсер"),
+            // Family
+            listOf("отец", "мать", "сын", "дочь", "ребён", "ребен", "супруг", "брат", "сестр") to
+                listOf("отец", "мать", "сын", "дочь", "супруг"),
+        )
+        for ((triggers, additions) in GROUPS) {
+            if (stems.any { s -> triggers.any { t -> s.startsWith(t) } }) {
+                stems += additions
+            }
         }
         if (stems.isEmpty()) return body.take(cap)
 

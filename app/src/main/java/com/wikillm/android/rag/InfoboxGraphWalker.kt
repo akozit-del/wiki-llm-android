@@ -1,6 +1,9 @@
 package com.wikillm.android.rag
 
 import com.wikillm.android.diag.DiagLog
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 
 /**
  * Programmatic BFS over Wikipedia's infobox link graph — no LLM involved.
@@ -42,42 +45,53 @@ object InfoboxGraphWalker {
         propertyIds: Set<String>,
         maxNodes: Int = 12,
         maxDepth: Int = 5,
-    ): List<WalkedNode> {
-        if (seedPath.isBlank() || propertyIds.isEmpty() || maxNodes <= 0) return emptyList()
+    ): List<WalkedNode> = coroutineScope {
+        if (seedPath.isBlank() || propertyIds.isEmpty() || maxNodes <= 0) return@coroutineScope emptyList()
         val visited = HashSet<String>()
         visited += seedPath
         val out = mutableListOf<WalkedNode>()
-        val queue = ArrayDeque<Pair<String, Int>>() // (path, depth)
-        queue += seedPath to 0
-        while (queue.isNotEmpty() && out.size < maxNodes) {
-            val (path, depth) = queue.removeFirst()
-            if (depth >= maxDepth) continue
-            val html = searcher.readArticleHtml(path)
-            if (html == null) {
-                DiagLog.w(TAG, "walk: readArticleHtml null for path=$path (depth=$depth)")
-                continue
-            }
-            val links = InfoboxExtractor.extractWikilinks(html, propertyIds)
-            if (links.isEmpty()) {
-                DiagLog.i(TAG, "walk: 0 wikilinks in '$path' (depth=$depth)")
-                continue
-            }
-            for (link in links) {
+        // Sprint 15: BFS by depth-level, with all reads at a level fired in
+        // parallel. ZimSearcher.readArticleHtml is a suspending IO call (a few
+        // ms each but they add up — sequentially 12 nodes was ~600 ms). On a
+        // single-shot the user is staring at a "Думаю…" spinner, so trimming
+        // that wins perceptible time.
+        var current: List<String> = listOf(seedPath)
+        var depth = 0
+        while (current.isNotEmpty() && out.size < maxNodes && depth < maxDepth) {
+            val results = current.map { path ->
+                async { path to searcher.readArticleHtml(path) }
+            }.awaitAll()
+            val nextLevel = mutableListOf<String>()
+            for ((path, html) in results) {
+                if (html == null) {
+                    DiagLog.w(TAG, "walk: readArticleHtml null for path=$path (depth=$depth)")
+                    continue
+                }
+                val links = InfoboxExtractor.extractWikilinks(html, propertyIds)
+                if (links.isEmpty()) {
+                    DiagLog.i(TAG, "walk: 0 wikilinks in '$path' (depth=$depth)")
+                    continue
+                }
+                for (link in links) {
+                    if (out.size >= maxNodes) break
+                    val href = link.href
+                    if (href in visited) continue
+                    visited += href
+                    out += WalkedNode(
+                        path = href,
+                        depth = depth + 1,
+                        viaProperty = link.propertyId,
+                        viaLabel = link.text,
+                        fromPath = path,
+                    )
+                    nextLevel += href
+                }
                 if (out.size >= maxNodes) break
-                val href = link.href
-                if (href in visited) continue
-                visited += href
-                out += WalkedNode(
-                    path = href,
-                    depth = depth + 1,
-                    viaProperty = link.propertyId,
-                    viaLabel = link.text,
-                    fromPath = path,
-                )
-                queue += href to (depth + 1)
             }
+            current = nextLevel
+            depth++
         }
         DiagLog.i(TAG, "walk seed=$seedPath props=$propertyIds → ${out.size} nodes")
-        return out
+        out
     }
 }
