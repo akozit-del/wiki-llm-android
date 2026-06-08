@@ -61,19 +61,17 @@ class RagPromptBuilder(private val searcher: ZimSearcher) {
         val listIntent = QueryExtractor.isListIntent(question)
         val prompt = buildString {
             if (listIntent) {
-                append("Тебе даны выдержки из Википедии, содержащие списки/перечни. ")
-                append("Извлеки ВСЕ имена/пункты из этих списков, ТОЧНО относящиеся к вопросу, ")
-                append("даже короткие упоминания. Формат ответа — Markdown-список «Имя — годы», ")
-                append("по одному пункту в строке. ")
-                // Sprint 23: explicit negative guidance. build-85 inflated the
-                // list with "Вячеслав Федорищев — губернатор Самарской области"
-                // because the wider budget surfaced biographies mentioning
-                // other top officials. Tell the model what NOT to include.
-                append("ВНИМАНИЕ: если вопрос про мэров/глав ГОРОДА — НЕ включай губернаторов, ")
-                append("президентов, министров; если про губернаторов — НЕ включай мэров и президентов. ")
-                append("Различай должность точно по контексту выдержки. ")
-                append("НЕ пропускай ни одного кандидата подходящей роли. ")
-                append("Если совсем ничего нет — скажи «не знаю по приведённым выдержкам». ")
+                append("Тебе даны выдержки из Википедии. Собери список всех имён, ")
+                append("которые в выдержках названы соответствующей должностью из вопроса. ")
+                append("Формат ответа — Markdown-список «Имя — годы», по пункту в строке. ")
+                // Sprint 26: dial the negative back. build-86 went too far —
+                // model said "only one matches" and refused walker hits it
+                // had seen. Give a one-sentence disambiguation hint, not a
+                // long blocklist that pushes the model into refusing names.
+                append("Если в выдержке человек назван иной должностью (губернатор, президент, ")
+                append("министр и т.п.), а вопрос про мэров — не записывай его в результат, ")
+                append("даже если он связан с городом. Включай ВСЕХ имён правильной должности. ")
+                append("Если совсем ничего подходящего нет — скажи «не знаю по приведённым выдержкам». ")
                 append("Отвечай на русском.\n\n")
             } else {
                 append("Тебе даны выдержки из Википедии. Отвечай на их основе. ")
