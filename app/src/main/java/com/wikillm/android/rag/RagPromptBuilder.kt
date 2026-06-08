@@ -62,9 +62,17 @@ class RagPromptBuilder(private val searcher: ZimSearcher) {
         val prompt = buildString {
             if (listIntent) {
                 append("Тебе даны выдержки из Википедии, содержащие списки/перечни. ")
-                append("Извлеки ВСЕ имена/пункты из этих списков, относящиеся к вопросу, ")
+                append("Извлеки ВСЕ имена/пункты из этих списков, ТОЧНО относящиеся к вопросу, ")
                 append("даже короткие упоминания. Формат ответа — Markdown-список «Имя — годы», ")
-                append("по одному пункту в строке. НЕ пропускай ни одного кандидата из выдержек. ")
+                append("по одному пункту в строке. ")
+                // Sprint 23: explicit negative guidance. build-85 inflated the
+                // list with "Вячеслав Федорищев — губернатор Самарской области"
+                // because the wider budget surfaced biographies mentioning
+                // other top officials. Tell the model what NOT to include.
+                append("ВНИМАНИЕ: если вопрос про мэров/глав ГОРОДА — НЕ включай губернаторов, ")
+                append("президентов, министров; если про губернаторов — НЕ включай мэров и президентов. ")
+                append("Различай должность точно по контексту выдержки. ")
+                append("НЕ пропускай ни одного кандидата подходящей роли. ")
                 append("Если совсем ничего нет — скажи «не знаю по приведённым выдержкам». ")
                 append("Отвечай на русском.\n\n")
             } else {
@@ -218,11 +226,13 @@ class RagPromptBuilder(private val searcher: ZimSearcher) {
         // a much bigger window so relevantChunk can pull that section in full;
         // share the remaining budget between the chain-walker biographies.
         val perArticle = (budgetChars / effectiveTopK).coerceAtLeast(500)
-        // Sprint 21: cut the seed slice from 60 % to 45 %. The seed often
-        // ate so much space that walker biographies didn't fit, even after
-        // budget bumps. Section-anchor extraction (Sprint 17) is precise
-        // enough that the seed doesn't need that much room.
-        val seedBudget = if (isList) (budgetChars * 45 / 100).coerceAtLeast(1500) else perArticle
+        // Sprint 23: dial back to 55 %. Sprint 21's 45 % was too tight —
+        // ru.wiki's "Городская власть" section in the city seed often holds
+        // half the historical mayors, and trimming it dropped names like
+        // Жилкин from the prompt. With Sprint 19/21 widening the overall
+        // budget to 9000 chars, 55 % of seed is ~4900 chars (≈1900 tokens)
+        // — enough for the full leadership section.
+        val seedBudget = if (isList) (budgetChars * 55 / 100).coerceAtLeast(1500) else perArticle
         for ((idx, hit) in hits.take(effectiveTopK).withIndex()) {
             val html = searcher.readArticleHtml(hit.path)
             if (html == null) {
