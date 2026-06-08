@@ -370,9 +370,9 @@ Java_com_wikillm_android_llm_LlamaContext_nativeLoad(
     //     was the actual root of the OOM crashes the build-60 guards were
     //     papering over. Q8_0 is essentially lossless; Q4_0 V-cache hurts
     //     thinking models, so we don't go below Q8.
-    cparams.flash_attn = true;
-    cparams.type_k     = GGML_TYPE_Q8_0;
-    cparams.type_v     = GGML_TYPE_Q8_0;
+    cparams.flash_attn_type = LLAMA_FLASH_ATTN_TYPE_ENABLED;
+    cparams.type_k          = GGML_TYPE_Q8_0;
+    cparams.type_v          = GGML_TYPE_Q8_0;
 
     h->ctx = llama_init_from_model(h->model, cparams);
     if (!h->ctx) {
