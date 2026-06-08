@@ -24,6 +24,24 @@ set(GGML_HIPBLAS         OFF CACHE BOOL "" FORCE)
 set(GGML_METAL           OFF CACHE BOOL "" FORCE)
 set(GGML_CCACHE          OFF CACHE BOOL "" FORCE)
 
+# Sprint 4 (build-71): arm64 CPU speedups.
+#
+# - GGML_CPU_AARCH64=ON enables ggml's runtime Q4_0 online repack into the
+#   4x8 / 8x8 layouts the CPU dot-product kernels expect. With this on,
+#   a plain Q4_0 GGUF loaded via mmap is repacked once at startup into the
+#   optimal layout for the host CPU (FEAT_DotProd / FEAT_I8MM).
+# - GGML_CPU_KLEIDIAI=ON pulls in Arm's KleidiAI micro-kernels (i8mm/sme2),
+#   a large bump on Snapdragon 8 Gen 3/Elite (S26 = i8mm), smaller on
+#   Snapdragon 8 Gen 2 (S23 = dotprod only).
+# - `-march=armv8.7a` enables the compile-time codegen path for i8mm/bf16
+#   on capable CPUs. ggml still runtime-checks before dispatching, so a
+#   single APK runs safely on both S23 (8 Gen 2) and S26 (8 Elite/Gen4).
+if(ANDROID AND CMAKE_ANDROID_ARCH_ABI STREQUAL "arm64-v8a")
+    add_compile_options(-march=armv8.7a)
+endif()
+set(GGML_CPU_KLEIDIAI    ON  CACHE BOOL "" FORCE)
+set(GGML_CPU_AARCH64     ON  CACHE BOOL "" FORCE)
+
 include(FetchContent)
 FetchContent_Declare(
     llama_cpp

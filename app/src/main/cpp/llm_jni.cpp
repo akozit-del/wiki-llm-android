@@ -362,6 +362,18 @@ Java_com_wikillm_android_llm_LlamaContext_nativeLoad(
     cparams.n_batch = 2048;
     cparams.no_perf = true;
 
+    // Sprint 4 (build-71): flash-attention + Q8_0 KV cache.
+    //   - flash_attn=true cuts attention memory ~half on long contexts and
+    //     is required for the quantized KV-cache path.
+    //   - type_k/type_v = Q8_0 quantize the KV cache, freeing ~1 GB at
+    //     n_ctx=4096 for a 4B model (we run with only 3-4 GB free) — this
+    //     was the actual root of the OOM crashes the build-60 guards were
+    //     papering over. Q8_0 is essentially lossless; Q4_0 V-cache hurts
+    //     thinking models, so we don't go below Q8.
+    cparams.flash_attn = true;
+    cparams.type_k     = GGML_TYPE_Q8_0;
+    cparams.type_v     = GGML_TYPE_Q8_0;
+
     h->ctx = llama_init_from_model(h->model, cparams);
     if (!h->ctx) {
         LOGE("llama_init_from_model failed");
