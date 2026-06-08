@@ -39,7 +39,15 @@ class RagPromptBuilder(private val searcher: ZimSearcher) {
         topK: Int = 3,
         budgetChars: Int = 4000,
     ): Result {
-        val ex = searchExcerpts(question, candidates, topK, budgetChars)
+        // Sprint 19: list questions naturally need to fit more articles in
+        // the prompt — the seed + the chain-walker biographies + maybe a
+        // list-article. The 4000-char default smothers half of them before
+        // they reach the LLM. Stretch the budget for list-intent so the
+        // walker hits stay visible. n_ctx=4096 in JNI is the hard cap; ~6000
+        // chars of context plus the prompt frame and answer still fit safely.
+        val isListBuild = QueryExtractor.isListIntent(question)
+        val effectiveBudget = if (isListBuild) maxOf(budgetChars, 6500) else budgetChars
+        val ex = searchExcerpts(question, candidates, topK, effectiveBudget)
         if (ex.block.isBlank()) {
             return Result(
                 prompt = "В Википедии не нашлось статей по запросу. Ответь общим знанием, но кратко.\n\nВопрос: $question",
