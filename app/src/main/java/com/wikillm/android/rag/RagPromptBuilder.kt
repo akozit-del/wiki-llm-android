@@ -46,7 +46,10 @@ class RagPromptBuilder(private val searcher: ZimSearcher) {
         // walker hits stay visible. n_ctx=4096 in JNI is the hard cap; ~6000
         // chars of context plus the prompt frame and answer still fit safely.
         val isListBuild = QueryExtractor.isListIntent(question)
-        val effectiveBudget = if (isListBuild) maxOf(budgetChars, 6500) else budgetChars
+        // Sprint 21: n_ctx=6144 (Sprint 20) plus KV q8_0 (Sprint 4) gives us
+        // enough room to widen the list-question budget further. 9000 chars
+        // (~3600 RU tokens) still leaves comfortable space for the answer.
+        val effectiveBudget = if (isListBuild) maxOf(budgetChars, 9000) else budgetChars
         val ex = searchExcerpts(question, candidates, topK, effectiveBudget)
         if (ex.block.isBlank()) {
             return Result(
@@ -215,7 +218,11 @@ class RagPromptBuilder(private val searcher: ZimSearcher) {
         // a much bigger window so relevantChunk can pull that section in full;
         // share the remaining budget between the chain-walker biographies.
         val perArticle = (budgetChars / effectiveTopK).coerceAtLeast(500)
-        val seedBudget = if (isList) (budgetChars * 6 / 10).coerceAtLeast(1500) else perArticle
+        // Sprint 21: cut the seed slice from 60 % to 45 %. The seed often
+        // ate so much space that walker biographies didn't fit, even after
+        // budget bumps. Section-anchor extraction (Sprint 17) is precise
+        // enough that the seed doesn't need that much room.
+        val seedBudget = if (isList) (budgetChars * 45 / 100).coerceAtLeast(1500) else perArticle
         for ((idx, hit) in hits.take(effectiveTopK).withIndex()) {
             val html = searcher.readArticleHtml(hit.path)
             if (html == null) {

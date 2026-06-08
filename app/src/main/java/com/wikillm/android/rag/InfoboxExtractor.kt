@@ -84,7 +84,10 @@ object InfoboxExtractor {
     /** Extract the first infobox as priority-ordered "Метка: значение" lines. */
     fun extract(html: String, title: String, maxLines: Int = 12, maxValueLen: Int = 140): Card {
         val doc = runCatching { Jsoup.parse(html) }.getOrNull() ?: return Card(title, emptyList())
-        val ib = doc.selectFirst("table.infobox") ?: return Card(title, emptyList())
+        // Sprint 22: ru.wiki uses several variant classes for infoboxes.
+        // Cover the most common ones explicitly — picks up cards on
+        // persons, organisations, films, books, etc.
+        val ib = doc.selectFirst(INFOBOX_SELECTOR) ?: return Card(title, emptyList())
 
         val byLabel = LinkedHashMap<String, String>() // ordered, deduped by label
         val seenValues = HashSet<String>()
@@ -297,6 +300,13 @@ object InfoboxExtractor {
         if (h.startsWith("A/")) h = h.drop(2)
         return h.trim()
     }
+
+    // Sprint 22: cover ru.wiki's main infobox variants. "infobox" is the
+    // canonical class, but Parsoid emits "infobox-vcard" for person bios,
+    // and a few cards use "infobox-mw" / "cards" / "wikitable infobox".
+    private const val INFOBOX_SELECTOR =
+        "table.infobox, table.infobox-vcard, table.infobox-mw, " +
+            "table.cards, table.wikitable.infobox, .infobox"
 
     private val REF = Regex("\\[\\s*\\d+\\s*]")
     private val ARROWS = Regex("[\\u2190-\\u21FF]")
