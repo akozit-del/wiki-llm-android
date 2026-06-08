@@ -134,6 +134,33 @@ object InfoboxExtractor {
      * Returns links in the order they appear in the infobox. Duplicates are
      * de-duplicated by href.
      */
+    /**
+     * Russian labels mapped to the Wikidata property they correspond to —
+     * used by the Tier-2 fallback in extractWikilinks when an infobox has
+     * no `data-wikidata-property-id` attributes at all (lots of older or
+     * hand-rolled cards in ru.wiki land this way). Keep keys lowercase.
+     */
+    private val LABEL_TO_PROP: Map<String, String> = mapOf(
+        "глава" to "P6", "мэр" to "P6", "градоначальник" to "P6",
+        "предшественник" to "P1365", "предыдущий" to "P1365",
+        "преемник" to "P1366", "следующий" to "P1366",
+        "супруг" to "P26", "супруга" to "P26", "жена" to "P26", "муж" to "P26",
+        "отец" to "P22",
+        "мать" to "P25",
+        "дети" to "P40", "ребёнок" to "P40", "ребенок" to "P40",
+        "автор" to "P50", "авторы" to "P50",
+        "режиссёр" to "P57", "режиссер" to "P57",
+        "сценарист" to "P58",
+        "продюсер" to "P162",
+        "исполнитель" to "P175",
+        "научный руководитель" to "P184",
+        "должность" to "P39",
+        "столица" to "P36",
+        "штаб-квартира" to "P159",
+        "владелец" to "P127",
+        "основатель" to "P112",
+    )
+
     fun extractWikilinks(html: String, propertyIds: Set<String>): List<WikiLink> {
         if (propertyIds.isEmpty()) return emptyList()
         val doc = runCatching { Jsoup.parse(html) }.getOrNull() ?: return emptyList()
@@ -164,6 +191,32 @@ object InfoboxExtractor {
                     if (!seen.add(key)) continue
                     out += WikiLink(propertyId = pid, text = clean(a.text()), href = href)
                 }
+            }
+        }
+
+        // Sprint 13: Tier-2 fallback — many ru.wiki infoboxes (especially
+        // person-bios that were updated by editors rather than re-rendered from
+        // Wikidata) have NO data-wikidata-property-id at all. Walk th/td rows
+        // and match the label text against LABEL_TO_PROP. Only emit if the
+        // mapped property is in the requested set, so we don't pollute with
+        // links the caller didn't ask for.
+        for (tr in ib.select("tr")) {
+            val th = tr.selectFirst("th") ?: continue
+            val td = tr.selectFirst("td") ?: continue
+            val label = clean(th.text()).lowercase()
+            if (label.isBlank()) continue
+            val pid = LABEL_TO_PROP[label]
+                ?: LABEL_TO_PROP.entries.firstOrNull { label.contains(it.key) }?.value
+                ?: continue
+            if (pid !in propertyIds) continue
+            for (a in td.select("a[href]")) {
+                val raw = a.attr("href").trim()
+                if (raw.startsWith("http")) continue
+                val href = normaliseZimHref(raw)
+                if (href.isEmpty()) continue
+                val key = "$pid|$href"
+                if (!seen.add(key)) continue
+                out += WikiLink(propertyId = pid, text = clean(a.text()), href = href)
             }
         }
         return out

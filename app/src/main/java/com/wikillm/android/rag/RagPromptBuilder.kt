@@ -182,11 +182,19 @@ class RagPromptBuilder(private val searcher: ZimSearcher) {
         // build-69: list questions need a wider window (city article + list article
         // + biographies). Bump topK and per-article cap when intent is list.
         val effectiveTopK = if (QueryExtractor.isListIntent(question)) maxOf(topK, 5) else topK
+        val isList = QueryExtractor.isListIntent(question)
         val sb = StringBuilder()
         val titles = mutableListOf<String>()
         var used = 0
+        // Sprint 12: when the question is a list AND no dedicated list article
+        // exists in this ZIM (very common — ru.wiki redirects "Главы X" back to
+        // "X"), the city/topic article is where the list actually lives, often
+        // in a "Городская власть" / "Главы" section. Give the first (seed) hit
+        // a much bigger window so relevantChunk can pull that section in full;
+        // share the remaining budget between the chain-walker biographies.
         val perArticle = (budgetChars / effectiveTopK).coerceAtLeast(500)
-        for (hit in hits.take(effectiveTopK)) {
+        val seedBudget = if (isList) (budgetChars * 6 / 10).coerceAtLeast(1500) else perArticle
+        for ((idx, hit) in hits.take(effectiveTopK).withIndex()) {
             val html = searcher.readArticleHtml(hit.path)
             if (html == null) {
                 DiagLog.w(TAG, "skip '${hit.title}' — readArticleHtml null for path=${hit.path}")
@@ -196,7 +204,8 @@ class RagPromptBuilder(private val searcher: ZimSearcher) {
             if (remaining <= 200) break
             val card = InfoboxExtractor.extract(html, hit.title)
             val body = InfoboxExtractor.bodyText(html)
-            val chunk = relevantChunk(body, hit.title, searchTerms, minOf(remaining, perArticle))
+            val cap = if (idx == 0) minOf(remaining, seedBudget) else minOf(remaining, perArticle)
+            val chunk = relevantChunk(body, hit.title, searchTerms, cap)
             val section = buildString {
                 append("=== ").append(hit.title).append(" ===\n")
                 // Sprint 8: chain-walker provenance — lets the LLM see *why*
