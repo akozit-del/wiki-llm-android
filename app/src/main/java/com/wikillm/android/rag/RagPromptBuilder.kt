@@ -323,23 +323,27 @@ class RagPromptBuilder(private val searcher: ZimSearcher) {
         val seenPaths = HashSet<String>()
         hits += seed
         seenPaths += seed.path
-        val chainHrefs = InfoboxGraphWalker.walk(
+        val walked = InfoboxGraphWalker.walk(
             searcher = searcher,
             seedPath = seed.path,
             propertyIds = CHAIN_PROPS,
-            maxNodes = 6,
-            maxDepth = 4,
+            maxNodes = 12,
+            maxDepth = 5,
         )
-        for (href in chainHrefs) {
-            if (href in seenPaths) continue
+        for (w in walked) {
+            if (w.path in seenPaths) continue
+            // Prefer the link's visible text as title (it's already clean Russian
+            // like "Жилкин С. Ф."); fall back to decoding the href.
+            val title = w.viaLabel.takeIf { it.isNotBlank() } ?: decodeHrefAsTitle(w.path)
             hits += ZimSearcher.Hit(
-                title = decodeHrefAsTitle(href),
-                path = href,
+                title = title,
+                path = w.path,
                 snippet = "",
-                // Below exact-title list hits (1000) but above BM25 noise.
-                score = 900,
+                // Deeper nodes get a tiny score nudge down so closer chains
+                // dominate when the prompt budget is tight.
+                score = 900 - w.depth,
             )
-            seenPaths += href
+            seenPaths += w.path
         }
         return hits
     }

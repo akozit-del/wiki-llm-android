@@ -27,17 +27,26 @@ object InfoboxGraphWalker {
      * Wikidata property id is in [propertyIds]. Returns the visited paths in
      * BFS order (the seed is NOT included), up to [maxNodes].
      */
+    /** A node discovered by the walker, with the link metadata that found it. */
+    data class WalkedNode(
+        val path: String,
+        val depth: Int,
+        val viaProperty: String,    // wikidata property id
+        val viaLabel: String,       // human label of the link ("Жилкин С. Ф.")
+        val fromPath: String,       // article that contained the link
+    )
+
     suspend fun walk(
         searcher: ZimSearcher,
         seedPath: String,
         propertyIds: Set<String>,
-        maxNodes: Int = 8,
-        maxDepth: Int = 4,
-    ): List<String> {
+        maxNodes: Int = 12,
+        maxDepth: Int = 5,
+    ): List<WalkedNode> {
         if (seedPath.isBlank() || propertyIds.isEmpty() || maxNodes <= 0) return emptyList()
         val visited = HashSet<String>()
         visited += seedPath
-        val out = mutableListOf<String>()
+        val out = mutableListOf<WalkedNode>()
         val queue = ArrayDeque<Pair<String, Int>>() // (path, depth)
         queue += seedPath to 0
         while (queue.isNotEmpty() && out.size < maxNodes) {
@@ -58,7 +67,13 @@ object InfoboxGraphWalker {
                 val href = link.href
                 if (href in visited) continue
                 visited += href
-                out += href
+                out += WalkedNode(
+                    path = href,
+                    depth = depth + 1,
+                    viaProperty = link.propertyId,
+                    viaLabel = link.text,
+                    fromPath = path,
+                )
                 queue += href to (depth + 1)
             }
         }
