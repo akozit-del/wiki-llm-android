@@ -7,6 +7,7 @@ import kotlinx.coroutines.withContext
 import org.kiwix.libzim.Archive
 import org.kiwix.libzim.Query
 import org.kiwix.libzim.Searcher
+import org.kiwix.libzim.SuggestionSearcher
 import java.io.File
 
 class ZimSearcher private constructor(
@@ -56,12 +57,9 @@ class ZimSearcher private constructor(
      * directly, without fighting BM25 ranking 700 candidates.
      */
     suspend fun lookupExactTitle(title: String): Hit? = withContext(Dispatchers.IO) {
-        runCatching {
+        // Tier 1: O(1) exact-title lookup.
+        val exact = runCatching {
             var entry = archive.getEntryByTitle(title)
-            // ru.wiki ZIMs often store "Градоначальники Тольятти" as a redirect
-            // stub that points to "Главы Тольятти". Without following the
-            // redirect we get a title-only entry whose body is empty, so RAG
-            // silently drops it. Follow up to 3 hops (chains are rare).
             var hops = 0
             while (hops < 3 && (safe { entry.isRedirect } == true)) {
                 val next = safe { entry.redirectEntry } ?: break
@@ -74,7 +72,35 @@ class ZimSearcher private constructor(
                 snippet = "",
                 score = 1000,
             )
-        }.getOrNull() // EntryNotFoundException → null (common case)
+        }.getOrNull()
+        if (exact != null && exact.path.isNotBlank()) return@withContext exact
+
+        // Tier 2 (build-73): SuggestionSearcher fallback. ru.wiki's title
+        // index normalises case + diacritics, so "толятти" / "Тольятти " /
+        // "Толятти, Самара" all match. This is the same index Kiwix's
+        // search-bar autocomplete uses. Returns the best hit only.
+        runCatching {
+            val ss = SuggestionSearcher(archive)
+            val s = ss.suggest(title)
+            try {
+                val total = safe { s.estimatedMatches } ?: 0L
+                if (total == 0L) return@runCatching null
+                val it = s.getResults(0, 1)
+                if (safe { it.hasNext() } != true) return@runCatching null
+                val item = safe { it.next() } ?: return@runCatching null
+                Hit(
+                    title = safe { item.title } ?: title,
+                    path = safe { item.path } ?: "",
+                    snippet = safe { item.snippet } ?: "",
+                    // Slightly below exact-title (1000) so a real exact match
+                    // always wins, but well above BM25 noise (~20-50).
+                    score = 950,
+                )
+            } finally {
+                runCatching { s.dispose() }
+                runCatching { ss.dispose() }
+            }
+        }.getOrNull()
     }
 
     /**

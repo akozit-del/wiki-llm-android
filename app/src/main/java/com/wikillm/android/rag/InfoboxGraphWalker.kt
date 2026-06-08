@@ -43,9 +43,16 @@ object InfoboxGraphWalker {
         while (queue.isNotEmpty() && out.size < maxNodes) {
             val (path, depth) = queue.removeFirst()
             if (depth >= maxDepth) continue
-            val html = searcher.readArticleHtml(path) ?: continue
+            val html = searcher.readArticleHtml(path)
+            if (html == null) {
+                DiagLog.w(TAG, "walk: readArticleHtml null for path=$path (depth=$depth)")
+                continue
+            }
             val links = InfoboxExtractor.extractWikilinks(html, propertyIds)
-            if (links.isEmpty()) continue
+            if (links.isEmpty()) {
+                DiagLog.i(TAG, "walk: 0 wikilinks in '$path' (depth=$depth)")
+                continue
+            }
             for (link in links) {
                 if (out.size >= maxNodes) break
                 val href = link.href
