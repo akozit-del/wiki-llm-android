@@ -22,6 +22,13 @@ class ZimSearcher private constructor(
         val path: String,
         val snippet: String,
         val score: Int,
+        /**
+         * Optional provenance for chain-walker results: free-form Russian like
+         * "по P1366 (преемник) из «Сухих, Илья Геннадьевич»". When set, the
+         * prompt-builder prepends it as a one-line excerpt header so the LLM
+         * sees the link between articles, not just their bodies.
+         */
+        val sourceTag: String? = null,
     )
 
     suspend fun search(query: String, maxResults: Int): List<Hit> =

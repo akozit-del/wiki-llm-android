@@ -22,20 +22,46 @@ object InfoboxExtractor {
 
     /** Curated, high-value properties surfaced first, with canonical RU labels. */
     private val PRIORITY = linkedMapOf(
+        // Places — administrative + geographic basics
         "P6" to "Глава/мэр",
         "P1082" to "Население",
         "P2046" to "Площадь",
         "P571" to "Основан",
         "P17" to "Страна",
         "P131" to "Регион",
+        "P36" to "Столица",
+        "P30" to "Континент",
+        "P38" to "Валюта",
+        "P122" to "Форма правления",
+        "P194" to "Законодательный орган",
+        "P159" to "Штаб-квартира",
+        "P421" to "Часовой пояс",
+        // Person — political/career basics
         "P39" to "Должность",
         "P569" to "Дата рождения",
         "P570" to "Дата смерти",
         "P19" to "Место рождения",
+        "P20" to "Место смерти",
         "P102" to "Партия",
         "P69" to "Образование",
+        "P106" to "Род занятий",
+        "P166" to "Награды",
+        "P184" to "Научный руководитель",
         "P1365" to "Предшественник",
         "P1366" to "Преемник",
+        // Person — family
+        "P26" to "Супруг(а)",
+        "P22" to "Отец",
+        "P25" to "Мать",
+        "P40" to "Дети",
+        // Works — books / films / music
+        "P50" to "Автор",
+        "P57" to "Режиссёр",
+        "P58" to "Сценарист",
+        "P175" to "Исполнитель",
+        "P162" to "Продюсер",
+        "P136" to "Жанр",
+        "P577" to "Дата публикации",
     )
 
     /** th/td rows whose label is noise for QA (icons, codes, coordinates…). */

@@ -199,6 +199,12 @@ class RagPromptBuilder(private val searcher: ZimSearcher) {
             val chunk = relevantChunk(body, hit.title, searchTerms, minOf(remaining, perArticle))
             val section = buildString {
                 append("=== ").append(hit.title).append(" ===\n")
+                // Sprint 8: chain-walker provenance — lets the LLM see *why*
+                // this article is here ("предшественник Сухих", "сын Жилкина")
+                // instead of having to guess from text alone.
+                if (!hit.sourceTag.isNullOrBlank()) {
+                    append("(найдено ").append(hit.sourceTag).append(")\n")
+                }
                 if (!card.isEmpty) append(card.block()).append("\n")
                 append(chunk).append("\n\n")
             }
@@ -270,11 +276,18 @@ class RagPromptBuilder(private val searcher: ZimSearcher) {
         val templates = mutableListOf<String>()
         // Role-specific templates first (more precise).
         if (role != null) {
+            val low = role.lowercase()
             templates += "$role $entity"
-            templates += "Список ${role.lowercase()} $entity"
-            templates += "Список ${role.lowercase()} города $entity"
+            templates += "Список $low $entity"
+            templates += "Список $low города $entity"
+            templates += "Список $low страны $entity"
+            templates += "$role $entity по годам"
+            // ru.wiki list-articles with various prepositions
+            templates += "$role по $entity"          // «Чемпионы по боксу»
+            templates += "$role $entity (хронология)"
         }
-        // Generic leadership templates (cover the common ru.wiki naming patterns).
+        // Generic leadership templates — catch list pages we still miss when
+        // role detection lands on something close but not perfect.
         templates += listOf(
             "Главы $entity",
             "Список глав $entity",
@@ -283,6 +296,10 @@ class RagPromptBuilder(private val searcher: ZimSearcher) {
             "Список мэров $entity",
             "Руководители $entity",
             "Градоначальники $entity",
+            // Generic "history of"/"timeline" article — often holds chronological
+            // chains the LLM can mine for full-list answers.
+            "История $entity",
+            "Хронология $entity",
         )
 
         val hits = mutableListOf<ZimSearcher.Hit>()
@@ -335,6 +352,9 @@ class RagPromptBuilder(private val searcher: ZimSearcher) {
             // Prefer the link's visible text as title (it's already clean Russian
             // like "Жилкин С. Ф."); fall back to decoding the href.
             val title = w.viaLabel.takeIf { it.isNotBlank() } ?: decodeHrefAsTitle(w.path)
+            val fromTitle = decodeHrefAsTitle(w.fromPath)
+            val propLabel = PROP_LABELS[w.viaProperty] ?: w.viaProperty
+            val tag = "по $propLabel из «$fromTitle»"
             hits += ZimSearcher.Hit(
                 title = title,
                 path = w.path,
@@ -342,11 +362,39 @@ class RagPromptBuilder(private val searcher: ZimSearcher) {
                 // Deeper nodes get a tiny score nudge down so closer chains
                 // dominate when the prompt budget is tight.
                 score = 900 - w.depth,
+                sourceTag = tag,
             )
             seenPaths += w.path
         }
         return hits
     }
+
+    /** Compact RU labels for the chain-walker source tag — same vocabulary
+     *  as InfoboxExtractor's PRIORITY so the prompt stays consistent. */
+    private val PROP_LABELS = mapOf(
+        "P6" to "P6 (глава)",
+        "P1365" to "P1365 (предшественник)",
+        "P1366" to "P1366 (преемник)",
+        "P39" to "P39 (должность)",
+        "P166" to "P166 (награда)",
+        "P26" to "P26 (супруг)",
+        "P22" to "P22 (отец)",
+        "P25" to "P25 (мать)",
+        "P40" to "P40 (ребёнок)",
+        "P3373" to "P3373 (брат/сестра)",
+        "P50" to "P50 (автор)",
+        "P175" to "P175 (исполнитель)",
+        "P800" to "P800 (заметная работа)",
+        "P184" to "P184 (научный руководитель)",
+        "P802" to "P802 (студент)",
+        "P57" to "P57 (режиссёр)",
+        "P58" to "P58 (сценарист)",
+        "P162" to "P162 (продюсер)",
+        "P36" to "P36 (столица)",
+        "P159" to "P159 (штаб-квартира)",
+        "P127" to "P127 (владелец)",
+        "P112" to "P112 (основатель)",
+    )
 
     /**
      * Wikidata properties walked by Tier C — chosen so a single BFS covers all
@@ -366,9 +414,22 @@ class RagPromptBuilder(private val searcher: ZimSearcher) {
      *   P800  заметные работы                 (учёный → работы)
      */
     private val CHAIN_PROPS = setOf(
+        // Government / authority chain
         "P6", "P1365", "P1366", "P39", "P166",
+        // Family chain
         "P26", "P40", "P22", "P25", "P3373",
+        // Creative works chain
         "P50", "P175", "P800",
+        // Sprint 10: academic + creative + place chains
+        "P184",  // научный руководитель  → defended-under
+        "P802",  // студенты              → mentored
+        "P57",   // режиссёр              → film → director
+        "P58",   // сценарист             → film → screenwriter
+        "P162",  // продюсер              → film → producer
+        "P36",   // столица               → country → capital
+        "P159",  // штаб-квартира         → organisation → HQ
+        "P127",  // владелец              → company → owner
+        "P112",  // основатель            → company/team → founder
     )
 
     /**
