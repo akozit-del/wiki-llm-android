@@ -233,6 +233,48 @@ object InfoboxExtractor {
     }
 
     /**
+     * Sprint 17: pull text from sections whose H2/H3 heading text contains
+     * any of [anchors]. Returns text from "Городская власть", "Главы города",
+     * "Руководство" etc. — the sections where ru.wiki actually keeps lists
+     * of mayors / governors / heads-of-government — concatenated in order,
+     * capped at [maxChars]. Returns empty if no matching section was found,
+     * so the caller can fall back to bodyText().
+     */
+    fun sectionsByAnchor(html: String, anchors: List<String>, maxChars: Int = 4000): String {
+        if (anchors.isEmpty()) return ""
+        val doc = runCatching { Jsoup.parse(html) }.getOrNull() ?: return ""
+        // Drop the same chrome we drop from bodyText.
+        doc.select(
+            "script, style, table.infobox, sup.reference, .reference, " +
+                ".mw-editsection, .noprint, .navbox, .metadata",
+        ).remove()
+
+        val anchorLowered = anchors.map { it.lowercase() }
+        val sb = StringBuilder()
+        // Walk H2/H3 headings in document order. For each match, collect
+        // following siblings until the next H2/H3 (sections are flat in
+        // mw-output HTML, not nested).
+        for (h in doc.select("h2, h3")) {
+            val headText = clean(h.text()).lowercase()
+            if (headText.isBlank()) continue
+            if (anchorLowered.none { headText.contains(it) }) continue
+            sb.append("[").append(clean(h.text())).append("] ")
+            var sib = h.nextElementSibling()
+            while (sib != null && sib.tagName().lowercase() !in setOf("h2", "h3")) {
+                val t = clean(sib.text())
+                if (t.isNotBlank()) {
+                    sb.append(t).append(" ")
+                    if (sb.length >= maxChars) break
+                }
+                sib = sib.nextElementSibling()
+            }
+            sb.append("\n\n")
+            if (sb.length >= maxChars) break
+        }
+        return clean(sb.toString()).take(maxChars)
+    }
+
+    /**
      * Normalise a ZIM href as emitted by jsoup into the form libzim expects
      * for `Archive.getEntryByPath`:
      *   • drop "./" / "../" Parsoid prefixes

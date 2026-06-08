@@ -113,9 +113,16 @@ class RagPromptBuilder(private val searcher: ZimSearcher) {
         val walkerProbeHits = run {
             val entity = QueryExtractor.extractEntity(question)
             if (!entity.isNullOrBlank()) {
-                chainWalkerProbes(entity).also { probes ->
+                // Sprint 16: narrow CHAIN_PROPS by question context. For a
+                // mayor/leader question we don't want the walker to drift
+                // through P166 (awards) and start dragging in "Заслуженный
+                // врач РФ" or P184 (научный руководитель). Each profile
+                // contains exactly the properties that are relevant for
+                // that kind of chain.
+                val props = chainPropsFor(question)
+                chainWalkerProbes(entity, props).also { probes ->
                     if (probes.isNotEmpty()) {
-                        DiagLog.i(TAG, "Walker probes (entity='$entity'): " +
+                        DiagLog.i(TAG, "Walker probes (entity='$entity', props=${props.size}): " +
                             probes.joinToString { it.title })
                     }
                 }
@@ -179,9 +186,16 @@ class RagPromptBuilder(private val searcher: ZimSearcher) {
         }
         if (hits.isEmpty()) return Excerpts("", emptyList(), 0)
 
-        // build-69: list questions need a wider window (city article + list article
-        // + biographies). Bump topK and per-article cap when intent is list.
-        val effectiveTopK = if (QueryExtractor.isListIntent(question)) maxOf(topK, 5) else topK
+        // Sprint 18: when the chain-walker found a deep chain (e.g. all
+        // historical mayors of a city), keep topK wide enough so the LLM
+        // sees every link in the chain, not just the first 2-3. We grow
+        // topK to fit `seed + walker_hits` but cap at 12 so the budget
+        // doesn't smear thin. relevantChunk + per-article cap still bound
+        // the total prompt size.
+        val effectiveTopK = if (QueryExtractor.isListIntent(question)) {
+            val walkerCount = walkerProbeHits.size  // includes the seed
+            maxOf(topK, 5, walkerCount + 2).coerceAtMost(12)
+        } else topK
         val isList = QueryExtractor.isListIntent(question)
         val sb = StringBuilder()
         val titles = mutableListOf<String>()
@@ -205,7 +219,19 @@ class RagPromptBuilder(private val searcher: ZimSearcher) {
             val card = InfoboxExtractor.extract(html, hit.title)
             val body = InfoboxExtractor.bodyText(html)
             val cap = if (idx == 0) minOf(remaining, seedBudget) else minOf(remaining, perArticle)
-            val chunk = relevantChunk(body, hit.title, searchTerms, cap)
+            // Sprint 17: for the seed article on a list question, try to grab
+            // the section whose header matches the user's role ("Городская
+            // власть", "Главы города", "Руководство") rather than just the
+            // densest text cluster. Falls back to relevantChunk if no section
+            // header matches.
+            val chunk = if (idx == 0 && isList) {
+                val anchors = sectionAnchorsFor(question)
+                val section = InfoboxExtractor.sectionsByAnchor(html, anchors, cap)
+                if (section.isNotBlank()) section
+                else relevantChunk(body, hit.title, searchTerms, cap)
+            } else {
+                relevantChunk(body, hit.title, searchTerms, cap)
+            }
             val section = buildString {
                 append("=== ").append(hit.title).append(" ===\n")
                 // Sprint 8: chain-walker provenance — lets the LLM see *why*
@@ -366,7 +392,10 @@ class RagPromptBuilder(private val searcher: ZimSearcher) {
      * seed article itself (so the prompt always sees its infobox), plus
      * everything the walker discovers via CHAIN_PROPS.
      */
-    private suspend fun chainWalkerProbes(entity: String): List<ZimSearcher.Hit> {
+    private suspend fun chainWalkerProbes(
+        entity: String,
+        props: Set<String> = CHAIN_PROPS,
+    ): List<ZimSearcher.Hit> {
         val seed = searcher.lookupExactTitle(entity) ?: return emptyList()
         if (seed.path.isBlank()) return emptyList()
         val hits = mutableListOf<ZimSearcher.Hit>()
@@ -376,7 +405,7 @@ class RagPromptBuilder(private val searcher: ZimSearcher) {
         val walked = InfoboxGraphWalker.walk(
             searcher = searcher,
             seedPath = seed.path,
-            propertyIds = CHAIN_PROPS,
+            propertyIds = props,
             maxNodes = 12,
             maxDepth = 5,
         )
@@ -446,6 +475,64 @@ class RagPromptBuilder(private val searcher: ZimSearcher) {
      *   P175  исполнитель                     (роль → актёр → другие роли)
      *   P800  заметные работы                 (учёный → работы)
      */
+    /**
+     * Sprint 16: pick the chain-walker property profile by question keywords.
+     * Each profile contains only the properties that are actually relevant
+     * for that kind of chain. Default: the broad CHAIN_PROPS set.
+     */
+    /**
+     * Sprint 17: pick section-header anchors for [question]. Used by the
+     * seed-article excerpt extractor to grab "Городская власть" / "Главы
+     * города" sections from ru.wiki rather than the densest text cluster.
+     */
+    private fun sectionAnchorsFor(question: String): List<String> {
+        val q = question.lowercase()
+        return when {
+            listOf("мэр", "глав", "руковод", "градонач", "губерн").any { q.contains(it) } ->
+                listOf("городская власть", "главы города", "руководство",
+                       "руководители", "главы", "мэры", "градоначальники", "власти", "управление")
+            listOf("президент", "правительств").any { q.contains(it) } ->
+                listOf("президенты", "правительство", "главы государства", "руководство")
+            listOf("лауреат", "награ", "обладат", "медал").any { q.contains(it) } ->
+                listOf("награды", "лауреаты", "обладатели")
+            listOf("чемпион", "победит", "призёр").any { q.contains(it) } ->
+                listOf("чемпионы", "победители", "призёры")
+            listOf("режиссёр", "режиссер", "сценарист", "продюсер").any { q.contains(it) } ->
+                listOf("создатели", "съёмочная группа", "режиссёры")
+            else -> emptyList()
+        }
+    }
+
+    private fun chainPropsFor(question: String): Set<String> {
+        val q = question.lowercase()
+        val governance = setOf("P6", "P1365", "P1366", "P39", "P36", "P159", "P127", "P112")
+        val family = setOf("P26", "P22", "P25", "P40", "P3373", "P1365", "P1366")
+        val awards = setOf("P166", "P39", "P1365", "P1366")
+        val creative = setOf("P50", "P57", "P58", "P162", "P175", "P800", "P1365", "P1366")
+        val academic = setOf("P184", "P802", "P39", "P166", "P1365", "P1366")
+        return when {
+            // Governance / authority
+            listOf("мэр", "глава", "глав", "руковод", "градонач", "губерн",
+                   "президент", "министр", "канцлер", "лидер", "патриарх",
+                   "царь", "король", "корол", "хан", "султан", "император",
+                   "столица", "правлен", "власт").any { q.contains(it) } -> governance
+            // Family / heirs
+            listOf("отец", "мать", "сын", "дочь", "ребён", "ребен", "супруг",
+                   "жена", "муж", "брат", "сестр", "родствен", "семья").any { q.contains(it) } -> family
+            // Awards / honours
+            listOf("лауреат", "награ", "обладат", "номинант",
+                   "премия", "медал", "орден").any { q.contains(it) } -> awards
+            // Films / books / music
+            listOf("режиссёр", "режиссер", "сценарист", "продюсер",
+                   "автор", "исполнит", "композитор", "писател", "поэт",
+                   "фильм", "книг", "альбом", "сериал").any { q.contains(it) } -> creative
+            // Academic
+            listOf("учён", "учен", "научн", "профессор", "академик",
+                   "доктор", "диссертац").any { q.contains(it) } -> academic
+            else -> CHAIN_PROPS
+        }
+    }
+
     private val CHAIN_PROPS = setOf(
         // Government / authority chain
         "P6", "P1365", "P1366", "P39", "P166",
