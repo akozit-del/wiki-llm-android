@@ -39,7 +39,12 @@ set(GGML_CCACHE          OFF CACHE BOOL "" FORCE)
 if(ANDROID AND CMAKE_ANDROID_ARCH_ABI STREQUAL "arm64-v8a")
     add_compile_options(-march=armv8.7a)
 endif()
-set(GGML_CPU_KLEIDIAI    ON  CACHE BOOL "" FORCE)
+# GGML_CPU_KLEIDIAI=ON in b9296 + NDK 26 misses some kai_* kernel symbols
+# at link time (FetchContent doesn't pull every ukernels TU). Re-enable when
+# we either bump llama.cpp past the KleidiAI fix or pin a specific KleidiAI
+# revision via FetchContent_Declare. AARCH64 alone still gives us the
+# Q4_0 online repack into the dot-product layout — most of the speedup.
+set(GGML_CPU_KLEIDIAI    OFF CACHE BOOL "" FORCE)
 set(GGML_CPU_AARCH64     ON  CACHE BOOL "" FORCE)
 
 include(FetchContent)
