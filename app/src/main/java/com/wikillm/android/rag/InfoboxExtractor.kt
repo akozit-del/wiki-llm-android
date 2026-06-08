@@ -115,21 +115,24 @@ object InfoboxExtractor {
         val seen = HashSet<String>()
         val out = mutableListOf<WikiLink>()
         for (pid in propertyIds) {
-            // Some infoboxes wrap the value cell with `data-wikidata-property-id`;
-            // others put it on the <a> directly. Cover both.
-            val cells = ib.select(
-                "td[data-wikidata-property-id=$pid], " +
-                    "tr td[data-wikidata-property-id=$pid], " +
-                    "[data-wikidata-property-id=$pid]",
-            )
+            // Some infoboxes wrap the value cell with `data-wikidata-property-id`
+            // and put `<a>` inside; others put `data-wikidata-property-id`
+            // directly on the `<a>`; others still put it on a `<span>` wrapping
+            // the link. Walk both: for each property-tagged element, treat the
+            // element itself as a link if it's an `<a>`, otherwise scan its
+            // descendant `<a>` tags. Same dedup either way.
+            val cells = ib.select("[data-wikidata-property-id=$pid]")
             for (cell in cells) {
-                for (a in cell.select("a[href]")) {
-                    var href = a.attr("href").trim()
-                    // ZIM/mwoffliner emits relative hrefs like "Иванов" or "A/Иванов".
-                    // Normalise: strip leading "./" or "../". Skip external links.
-                    if (href.startsWith("http")) continue
-                    if (href.startsWith("./")) href = href.drop(2)
-                    if (href.startsWith("../")) href = href.drop(3)
+                val anchors: List<org.jsoup.nodes.Element> =
+                    if (cell.tagName().equals("a", ignoreCase = true) && cell.hasAttr("href")) {
+                        listOf(cell)
+                    } else {
+                        cell.select("a[href]").toList()
+                    }
+                for (a in anchors) {
+                    val raw = a.attr("href").trim()
+                    if (raw.startsWith("http")) continue
+                    val href = normaliseZimHref(raw)
                     if (href.isEmpty()) continue
                     val key = "$pid|$href"
                     if (!seen.add(key)) continue
@@ -148,6 +151,30 @@ object InfoboxExtractor {
                 ".mw-editsection, .noprint, .navbox, .metadata",
         ).remove()
         return clean(doc.body().text())
+    }
+
+    /**
+     * Normalise a ZIM href as emitted by jsoup into the form libzim expects
+     * for `Archive.getEntryByPath`:
+     *   • drop "./" / "../" Parsoid prefixes
+     *   • drop legacy "A/" namespace prefix (modern ZIM7+ stores entries
+     *     without it; passing it makes getEntryByPath return null)
+     *   • URL-decode percent-escapes — jsoup gives us
+     *     "%D0%A1%D1%83%D1%85%D0%B8%D1%85", libzim expects "Сухих" verbatim
+     *   • split off any fragment ("#section") — libzim ignores it but it
+     *     skews equality checks for dedup
+     */
+    fun normaliseZimHref(raw: String): String {
+        var h = raw.trim()
+        if (h.isEmpty()) return ""
+        if (h.startsWith("./")) h = h.drop(2)
+        if (h.startsWith("../")) h = h.drop(3)
+        // Strip fragment if present
+        val hashIdx = h.indexOf('#')
+        if (hashIdx >= 0) h = h.substring(0, hashIdx)
+        h = try { java.net.URLDecoder.decode(h, Charsets.UTF_8) } catch (_: Throwable) { h }
+        if (h.startsWith("A/")) h = h.drop(2)
+        return h.trim()
     }
 
     private val REF = Regex("\\[\\s*\\d+\\s*]")
