@@ -61,16 +61,21 @@ class RagPromptBuilder(private val searcher: ZimSearcher) {
         val listIntent = QueryExtractor.isListIntent(question)
         val prompt = buildString {
             if (listIntent) {
-                append("Тебе даны выдержки из Википедии. Собери список всех имён, ")
-                append("которые в выдержках названы соответствующей должностью из вопроса. ")
+                append("Тебе даны выдержки из Википедии. Собери список ВСЕХ имён, ")
+                append("которые в выдержках были на соответствующей должности из вопроса ")
+                append("(даже если в той же биографии упомянуты и другие, более поздние должности). ")
                 append("Формат ответа — Markdown-список «Имя — годы», по пункту в строке. ")
-                // Sprint 26: dial the negative back. build-86 went too far —
-                // model said "only one matches" and refused walker hits it
-                // had seen. Give a one-sentence disambiguation hint, not a
-                // long blocklist that pushes the model into refusing names.
-                append("Если в выдержке человек назван иной должностью (губернатор, президент, ")
-                append("министр и т.п.), а вопрос про мэров — не записывай его в результат, ")
-                append("даже если он связан с городом. Включай ВСЕХ имён правильной должности. ")
+                // Sprint 30: emphasise inclusion over exclusion. Build-92 went
+                // too narrow: the model dropped Сергей Андреев (real Тольятти
+                // mayor 2012-2017) because his bio also mentioned later roles
+                // in Самара. Make explicit that holding *another* role later
+                // doesn't disqualify a name — the question is who EVER served
+                // in the asked role.
+                append("ВАЖНО: если человек был на запрошенной должности (например, мэром Тольятти), ")
+                append("включай его в список — даже если потом стал губернатором, министром, ")
+                append("депутатом или служил в других городах. Должность позже или роль в другом ")
+                append("месте — это НЕ повод исключать. Включай каждого, чья биография подтверждает ")
+                append("службу в запрошенной роли в указанный период. ")
                 append("Если совсем ничего подходящего нет — скажи «не знаю по приведённым выдержкам». ")
                 append("Отвечай на русском.\n\n")
             } else {
