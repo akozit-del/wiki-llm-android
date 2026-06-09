@@ -429,15 +429,14 @@ class RagPromptBuilder(private val searcher: ZimSearcher) {
             searcher = searcher,
             seedPath = seed.path,
             propertyIds = props,
-            // Sprint 28: depth 8 → 6. Sprint 25's depth 8 walker drifted
-            // beyond the city's mayor chain into the *governor* chain of
-            // the next-up region: Azarov's P1366 link leaves him as Тольятти
-            // mayor and lands on his successor as Самара governor (Меркушкин),
-            // who then hops to Федорищев etc. Wikidata's P1365/P1366 don't
-            // partition by role, so we bound the BFS instead. Depth 6 covers
-            // a 30-year city (~6 mayors, one per hop) without bleeding into
-            // adjacent careers.
-            maxNodes = 12,
+            // Sprint 29: maxNodes 12 → 8. The previous 12-node cap filled
+            // up before depth 6 ever mattered — the city infobox often emits
+            // 3-5 outgoing P6 wikilinks (current head + recent ones), and
+            // walker BFSs into governor chains for each. Tighten the cap
+            // to "seed + ~6 mayors". For a 30-year city this fits the
+            // straight predecessor chain (Сухих → Ренц → Анташев → Андреев
+            // → Пушков → Азаров) and stops before Самара governors enter.
+            maxNodes = 8,
             maxDepth = 6,
         )
         for (w in walked) {
