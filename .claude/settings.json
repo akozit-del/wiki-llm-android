@@ -1,0 +1,32 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(adb shell input *)",
+      "Bash(adb shell run-as com.wikillm.android.debug *)",
+      "Bash(adb exec-out screencap *)",
+      "Bash(adb shell am *)",
+      "Bash(adb shell pm *)",
+      "Bash(adb shell dumpsys *)",
+      "Bash(adb shell settings *)",
+      "Bash(adb shell ime *)",
+      "Bash(adb shell getprop *)",
+      "Bash(adb shell ls *)",
+      "Bash(adb install *)",
+      "Bash(adb devices)",
+      "Bash(adb devices *)",
+      "Bash(adb mdns *)",
+      "Bash(adb connect *)",
+      "Bash(adb disconnect *)",
+      "Bash(adb reconnect *)",
+      "Bash(adb kill-server)",
+      "Bash(adb start-server)",
+      "Bash(adb get-state)",
+      "Bash(adb pull *)",
+      "Bash(gh release download *)",
+      "Bash(gh run watch *)",
+      "Bash(gh search *)",
+      "Bash(curl *)",
+      "mcp__ccd_session__mark_chapter"
+    ]
+  }
+}

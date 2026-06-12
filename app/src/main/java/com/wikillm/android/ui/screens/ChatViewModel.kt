@@ -17,6 +17,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import com.wikillm.android.diag.DiagLog
+import com.wikillm.android.rag.ListExtractor
 import com.wikillm.android.rag.QueryExtractor
 import com.wikillm.android.rag.RagPromptBuilder
 import com.wikillm.android.rag.ZimSearchHolder
@@ -245,6 +246,11 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         // (documented 4B failure mode — "collapse to user query paraphrase").
         // Skip agentic for list-intent regardless of the Deep Search toggle.
         val listIntent = QueryExtractor.isListIntent(userText)
+        // build-94: list questions go through the L3X map-extract pipeline
+        // (one short extraction call per candidate biography + deterministic
+        // merge) instead of one giant single-shot prompt the 4B can't handle.
+        val listExtraction = listIntent &&
+            _ragEnabled.value && ZimSearchHolder.searcher() != null
         val agentic = !listIntent &&
             _ragEnabled.value && _deepSearch.value && ZimSearchHolder.searcher() != null
 
@@ -254,7 +260,18 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
             val temp = genSettings.currentTemperature()
             val noThink = genSettings.currentNoThink()
             try {
-                if (agentic) {
+                if (listExtraction) {
+                    val res = runListExtraction(
+                        question = userText.trim(),
+                        onToken = { tokenCount.incrementAndGet() },
+                        onFirstToken = { firstTokenMs.compareAndSet(0L, System.currentTimeMillis()) },
+                    )
+                    builder.append(res.text)
+                    _messages.value = _messages.value.map {
+                        if (it.id == assistantId) it.copy(text = res.text) else it
+                    }
+                    stats = GenStats(currentModelName(), System.currentTimeMillis() - startMs, res.genTokens, res.promptTokens)
+                } else if (agentic) {
                     val res = runAgentic(
                         question = userText.trim(),
                         previous = previousMessages,
@@ -426,6 +443,55 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     private data class AgenticResult(val text: String, val genTokens: Int, val promptTokens: Int)
+
+    /**
+     * build-94 — L3X map-extract pipeline for "перечисли всех X" questions.
+     * Retrieves candidate biographies (walker + title probes), runs one short
+     * extraction call per biography, then merges deterministically in Kotlin.
+     * No final LLM synthesis call yet (build-96 may add one) — we format the
+     * merged list directly so the 4B can't re-drop names during synthesis.
+     */
+    private suspend fun runListExtraction(
+        question: String,
+        onFirstToken: () -> Unit,
+        onToken: () -> Unit,
+    ): AgenticResult {
+        val searcher = ZimSearchHolder.searcher()
+            ?: return AgenticResult("ZIM не открыт.", 0, 0)
+        val rag = RagPromptBuilder(searcher)
+        _searchStep.value = "🔎 Ищу кандидатов…"
+        val docs = rag.searchExcerptDocs(
+            question = question,
+            candidates = _ragCandidates.value,
+            topK = 10,
+            perDocChars = 1400,
+        )
+        if (docs.isEmpty()) {
+            return AgenticResult("не знаю по приведённым выдержкам", 0, 0)
+        }
+        var genTokens = 0
+        val extractor = ListExtractor { messages, maxTokens, systemPrompt ->
+            // Low temp for deterministic extraction; thinking off.
+            llmRepo.generateChat(
+                messages, maxTokens = maxTokens,
+                systemPrompt = systemPrompt, temperature = 0.3f, noThink = true,
+            )
+        }
+        val items = extractor.extract(question, docs) { done, total ->
+            _searchStep.value = "📑 Извлекаю $done/$total"
+            onFirstToken()
+            onToken()
+            genTokens += 1
+        }
+        _searchStep.value = null
+        if (items.isEmpty()) {
+            return AgenticResult("не знаю по приведённым выдержкам", genTokens, 0)
+        }
+        val md = buildString {
+            items.forEach { append("- **").append(it.name).append("** — ").append(it.years).append("\n") }
+        }.trimEnd()
+        return AgenticResult(md, genTokens, 0)
+    }
 
     /**
      * Agentic multi-hop RAG: the model gathers facts, and when they're not enough

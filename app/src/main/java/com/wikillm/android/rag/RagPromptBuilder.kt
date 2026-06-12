@@ -93,6 +93,19 @@ class RagPromptBuilder(private val searcher: ZimSearcher) {
         return Result(prompt = prompt, sourcesUsed = ex.titles, totalCandidates = ex.totalCandidates)
     }
 
+    /**
+     * One article's worth of context, kept separate (NOT concatenated) so the
+     * list-extraction map phase (build-94) can feed the model exactly one
+     * biography per LLM call. `text` is the same "=== Title ===\nКарточка…\nbody"
+     * section a single-shot prompt would have inlined.
+     */
+    data class DocExcerpt(
+        val title: String,
+        val path: String,
+        val text: String,
+        val sourceTag: String?,
+    )
+
     /** Search ZIM and return ready excerpt sections for [question]. */
     suspend fun searchExcerpts(
         question: String,
@@ -101,6 +114,62 @@ class RagPromptBuilder(private val searcher: ZimSearcher) {
         budgetChars: Int,
         excludeTitles: Set<String> = emptySet(),
     ): Excerpts {
+        val hits = gatherSortedHits(question, candidates, excludeTitles)
+        if (hits.isEmpty()) return Excerpts("", emptyList(), 0)
+        val searchTerms = QueryExtractor.extract(question)
+            .split(" ").filter { it.length >= 3 }.map { it.lowercase() }
+        return buildExcerptsFromHits(question, hits, topK, budgetChars, searchTerms)
+    }
+
+    /**
+     * build-94 — per-document excerpts for the L3X-style map phase. Same
+     * retrieval/sort as [searchExcerpts] but each surviving article is returned
+     * as its own [DocExcerpt] instead of being glued into one block. The caller
+     * (ListExtractor) runs one short extraction LLM call per item, then merges
+     * deterministically — far higher recall on "перечисли всех X" than asking a
+     * 4B model to pull every name out of one giant concatenated prompt.
+     */
+    suspend fun searchExcerptDocs(
+        question: String,
+        candidates: Int,
+        topK: Int,
+        perDocChars: Int = 1400,
+        excludeTitles: Set<String> = emptySet(),
+    ): List<DocExcerpt> {
+        val hits = gatherSortedHits(question, candidates, excludeTitles)
+        if (hits.isEmpty()) return emptyList()
+        val searchTerms = QueryExtractor.extract(question)
+            .split(" ").filter { it.length >= 3 }.map { it.lowercase() }
+        val isList = QueryExtractor.isListIntent(question)
+        val out = mutableListOf<DocExcerpt>()
+        for ((idx, hit) in hits.take(topK).withIndex()) {
+            val html = searcher.readArticleHtml(hit.path) ?: continue
+            val card = InfoboxExtractor.extract(html, hit.title)
+            val body = InfoboxExtractor.bodyText(html)
+            // Seed article on a list question: prefer the leadership section.
+            val chunk = if (idx == 0 && isList) {
+                val section = InfoboxExtractor.sectionsByAnchor(html, sectionAnchorsFor(question), perDocChars)
+                if (section.isNotBlank()) section else relevantChunk(body, hit.title, searchTerms, perDocChars)
+            } else {
+                relevantChunk(body, hit.title, searchTerms, perDocChars)
+            }
+            val text = buildString {
+                append("=== ").append(hit.title).append(" ===\n")
+                if (!card.isEmpty) append(card.block()).append("\n")
+                append(chunk)
+            }
+            out += DocExcerpt(hit.title, hit.path, text, hit.sourceTag)
+        }
+        DiagLog.i(TAG, "Map docs: ${out.size} (${out.joinToString { it.title }})")
+        return out
+    }
+
+    /** Shared retrieval+sort used by both single-shot and per-doc map paths. */
+    private suspend fun gatherSortedHits(
+        question: String,
+        candidates: Int,
+        excludeTitles: Set<String>,
+    ): List<ZimSearcher.Hit> {
         val searchQuery = QueryExtractor.extract(question)
         DiagLog.i(TAG, "Query: '$question' -> ZIM keywords: '$searchQuery'")
         val tokens = searchQuery.split(" ").filter { it.length >= 3 }
@@ -206,8 +275,17 @@ class RagPromptBuilder(private val searcher: ZimSearcher) {
                 "${it.title}(s=${it.score})[${it.path}]"
             })
         }
-        if (hits.isEmpty()) return Excerpts("", emptyList(), 0)
+        return hits
+    }
 
+    /** Build one concatenated excerpt block from already-sorted [hits]. */
+    private suspend fun buildExcerptsFromHits(
+        question: String,
+        hits: List<ZimSearcher.Hit>,
+        topK: Int,
+        budgetChars: Int,
+        searchTerms: List<String>,
+    ): Excerpts {
         // Sprint 18: when the chain-walker found a deep chain (e.g. all
         // historical mayors of a city), keep topK wide enough so the LLM
         // sees every link in the chain, not just the first 2-3. We grow
@@ -215,8 +293,7 @@ class RagPromptBuilder(private val searcher: ZimSearcher) {
         // doesn't smear thin. relevantChunk + per-article cap still bound
         // the total prompt size.
         val effectiveTopK = if (QueryExtractor.isListIntent(question)) {
-            val walkerCount = walkerProbeHits.size  // includes the seed
-            maxOf(topK, 5, walkerCount + 2).coerceAtMost(12)
+            maxOf(topK, 5, hits.size + 2).coerceAtMost(12)
         } else topK
         val isList = QueryExtractor.isListIntent(question)
         val sb = StringBuilder()
