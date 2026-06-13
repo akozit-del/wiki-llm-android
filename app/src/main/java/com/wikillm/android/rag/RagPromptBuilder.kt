@@ -158,21 +158,17 @@ class RagPromptBuilder(private val searcher: ZimSearcher) {
             val html = searcher.readArticleHtml(hit.path) ?: continue
             val card = InfoboxExtractor.extract(html, hit.title)
             val body = InfoboxExtractor.bodyText(html)
-            // Seed article on a list question: the leadership section names
-            // the current/notable mayors, but earlier mayors are often only
-            // mentioned in the History/prose sections. build-99: feed the
-            // extractor BOTH — the "Городская власть" section first, then a
-            // wide relevantChunk of the body — so every mayor mention reaches
-            // it. Bios stay small (fast).
+            // build-100: the seed article mentions mayors throughout (карточка,
+            // "Городская власть", and History prose) — a windowed chunk kept
+            // missing some (build-99 got only 2). Earlier single-shot builds
+            // that used a 9000-char whole-article window caught Ренц et al. So
+            // feed the seed the leadership section + a LARGE head of the body
+            // (up to ~7000 chars), not a density-anchored window. One big call,
+            // bios stay small.
             val chunk = if (idx == 0 && isList) {
-                val seedCap = perDocChars * 3
-                val section = InfoboxExtractor.sectionsByAnchor(html, sectionAnchorsFor(question), seedCap)
-                val bodyWin = relevantChunk(body, hit.title, searchTerms, seedCap)
-                if (section.isNotBlank() && !bodyWin.contains(section.take(80))) {
-                    (section + "\n\n" + bodyWin).take(seedCap * 2)
-                } else {
-                    bodyWin
-                }
+                val section = InfoboxExtractor.sectionsByAnchor(html, sectionAnchorsFor(question), 3000)
+                val bodyHead = body.take(7000)
+                if (section.isNotBlank()) (section + "\n\n" + bodyHead).take(9000) else bodyHead
             } else {
                 relevantChunk(body, hit.title, searchTerms, perDocChars)
             }
