@@ -104,6 +104,10 @@ class RagPromptBuilder(private val searcher: ZimSearcher) {
         val path: String,
         val text: String,
         val sourceTag: String?,
+        /** First hit (city/topic seed) holds a leadership SECTION with many
+         *  names → open extraction. The rest are single-person biographies →
+         *  the only name we trust is the article's own subject (the title). */
+        val isSeed: Boolean = false,
     )
 
     /** Search ZIM and return ready excerpt sections for [question]. */
@@ -166,7 +170,7 @@ class RagPromptBuilder(private val searcher: ZimSearcher) {
                 if (!card.isEmpty) append(card.block()).append("\n")
                 append(chunk)
             }
-            out += DocExcerpt(hit.title, hit.path, text, hit.sourceTag)
+            out += DocExcerpt(hit.title, hit.path, text, hit.sourceTag, isSeed = (idx == 0 && isList))
         }
         DiagLog.i(TAG, "Map docs: ${out.size} (${out.joinToString { it.title }})")
         return out

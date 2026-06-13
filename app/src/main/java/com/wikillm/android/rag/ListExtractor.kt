@@ -26,16 +26,26 @@ class ListExtractor(
 
     data class Item(val name: String, val years: String)
 
-    private val mapSystem =
+    // Seed (city/topic) article: open extraction over the leadership section,
+    // which legitimately names several people.
+    private val seedSystem =
         "Ты извлекаешь имена из выдержки Википедии под конкретный вопрос. " +
             "Выпиши КАЖДОГО человека, который по тексту выдержки подходит под вопрос " +
-            "(например, был мэром/главой названного города) — даже если он упомянут кратко " +
-            "или позже занимал другие посты. Сама статья тоже может быть про такого человека. " +
+            "(например, был мэром/главой названного города) — даже если он упомянут кратко. " +
             "Формат строго: каждая строка «Имя Фамилия — годы». Годы неизвестны → «Имя Фамилия — ?». " +
-            "Никаких пояснений и Markdown. Если в выдержке вообще нет подходящего человека — одно слово: НЕТ.\n" +
-            "Пример ответа:\n" +
-            "Сергей Жилкин — 1996–2000\n" +
-            "Николай Уткин — 2000–2008"
+            "Никаких пояснений и Markdown. Если подходящих людей нет — одно слово: НЕТ.\n" +
+            "Пример:\nСергей Жилкин — 1996–2000\nНиколай Уткин — 2000–2008"
+
+    // Biography article: trust ONLY the article's subject. His bio may mention
+    // many other politicians (a Samara governor's page lists dozens) — those are
+    // NOT answers. This merges L3X map + verify into one focused call.
+    private fun bioSystem(subject: String): String =
+        "Эта выдержка — статья Википедии про человека по имени «$subject». " +
+            "Реши строго по тексту выдержки: подходит ли ИМЕННО $subject под вопрос пользователя " +
+            "(например, был ли он мэром/главой именно того города, о котором спрашивают). " +
+            "Если ДА — верни ровно одну строку «$subject — годы» (годы из текста, или ?). " +
+            "Если НЕТ или неясно — одно слово: НЕТ. " +
+            "НЕ выписывай других людей, упомянутых в тексте — только самого $subject."
 
     /**
      * Run the map phase over [docs] for [question]. Returns deduped items in
@@ -50,19 +60,32 @@ class ListExtractor(
         val seen = LinkedHashMap<String, Item>() // key = normalised name
         docs.forEachIndexed { idx, doc ->
             onProgress(idx, docs.size)
+            val system = if (doc.isSeed) seedSystem else bioSystem(doc.title)
             val prompt = buildString {
                 append("Вопрос пользователя: ").append(question).append("\n\n")
                 append(doc.text).append("\n\n")
-                append("Кого из этой выдержки нужно включить в ответ на вопрос? ")
-                append("Список «Имя — годы» или «НЕТ».")
+                if (doc.isSeed) append("Кого из этой выдержки нужно включить? «Имя — годы» построчно или «НЕТ».")
+                else append("Подходит ли «${doc.title}» под вопрос? «${doc.title} — годы» или «НЕТ».")
             }
             val out = StringBuilder()
-            generate(listOf("user" to prompt), 128, mapSystem).collect { ev ->
+            generate(listOf("user" to prompt), 96, system).collect { ev ->
                 if (ev is LlmEvent.Token) out.append(ev.piece)
             }
             val raw = stripThinking(out.toString())
             DiagLog.i(TAG, "Map[${idx + 1}] raw: ${raw.take(160).replace('\n', '|')}")
-            val items = parseItems(raw)
+            var items = parseItems(raw)
+            // Safety net: a biography doc must only contribute its own subject.
+            // If the model ignored that and dumped other politicians (a Samara
+            // governor's page lists dozens), keep only names overlapping the
+            // article title.
+            if (!doc.isSeed && items.size > 1) {
+                val titleWords = normalise(doc.title).split(" ").filter { it.length >= 4 }.toSet()
+                items = items.filter { item ->
+                    val nameWords = normalise(item.name).split(" ").toSet()
+                    titleWords.any { it in nameWords }
+                }
+                if (items.isEmpty()) DiagLog.i(TAG, "Map[${idx + 1}] dropped — no subject match")
+            }
             for (it in items) {
                 val key = normalise(it.name)
                 if (key.length < 4) continue // junk
