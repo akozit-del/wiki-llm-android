@@ -136,11 +136,19 @@ class RagPromptBuilder(private val searcher: ZimSearcher) {
         perDocChars: Int = 1400,
         excludeTitles: Set<String> = emptySet(),
     ): List<DocExcerpt> {
-        val hits = gatherSortedHits(question, candidates, excludeTitles)
-        if (hits.isEmpty()) return emptyList()
+        val allHits = gatherSortedHits(question, candidates, excludeTitles)
+        if (allHits.isEmpty()) return emptyList()
         val searchTerms = QueryExtractor.extract(question)
             .split(" ").filter { it.length >= 3 }.map { it.lowercase() }
         val isList = QueryExtractor.isListIntent(question)
+        // build-95: for list questions, map ONLY over the deterministic
+        // probes (title-probe ≥800, walker ≥900, exact-title 1000) — those are
+        // the actual biographies. BM25 noise (s≤100: "Тольятти 24",
+        // "театр кукол", "станция") just wastes a slow LLM call each and never
+        // contains a mayor. Falls back to all hits if no probe survived.
+        val hits = if (isList) {
+            allHits.filter { it.score >= 800 }.ifEmpty { allHits }
+        } else allHits
         val out = mutableListOf<DocExcerpt>()
         for ((idx, hit) in hits.take(topK).withIndex()) {
             val html = searcher.readArticleHtml(hit.path) ?: continue
