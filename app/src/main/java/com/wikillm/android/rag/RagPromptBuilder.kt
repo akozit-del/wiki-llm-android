@@ -158,17 +158,16 @@ class RagPromptBuilder(private val searcher: ZimSearcher) {
             val html = searcher.readArticleHtml(hit.path) ?: continue
             val card = InfoboxExtractor.extract(html, hit.title)
             val body = InfoboxExtractor.bodyText(html)
-            // build-100: the seed article mentions mayors throughout (карточка,
-            // "Городская власть", and History prose) — a windowed chunk kept
-            // missing some (build-99 got only 2). Earlier single-shot builds
-            // that used a 9000-char whole-article window caught Ренц et al. So
-            // feed the seed the leadership section + a LARGE head of the body
-            // (up to ~7000 chars), not a density-anchored window. One big call,
-            // bios stay small.
+            // build-101: revert to the focused leadership section. build-100's
+            // 9000-char whole-article window made the 4B extract WORSE (seed →
+            // НЕТ), confirming the long-context weakness from the research: a
+            // small focused section ("Городская власть", ~2700 chars) is the
+            // sweet spot. Falls back to a density-anchored window when the
+            // article has no matching section header.
             val chunk = if (idx == 0 && isList) {
-                val section = InfoboxExtractor.sectionsByAnchor(html, sectionAnchorsFor(question), 3000)
-                val bodyHead = body.take(7000)
-                if (section.isNotBlank()) (section + "\n\n" + bodyHead).take(9000) else bodyHead
+                val seedCap = perDocChars * 3
+                val section = InfoboxExtractor.sectionsByAnchor(html, sectionAnchorsFor(question), seedCap)
+                if (section.isNotBlank()) section else relevantChunk(body, hit.title, searchTerms, seedCap)
             } else {
                 relevantChunk(body, hit.title, searchTerms, perDocChars)
             }
