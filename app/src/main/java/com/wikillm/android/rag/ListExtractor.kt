@@ -71,8 +71,20 @@ class ListExtractor(
             generate(listOf("user" to prompt), 96, system).collect { ev ->
                 if (ev is LlmEvent.Token) out.append(ev.piece)
             }
-            val raw = stripThinking(out.toString())
+            val raw = stripThinking(out.toString()).trim()
             DiagLog.i(TAG, "Map[${idx + 1}] raw: ${raw.take(160).replace('\n', '|')}")
+            // Negative sentence ("X не подходит", "не является мэром") = reject.
+            val low = raw.lowercase()
+            if (low.contains("не подход") || low.contains("не явля") || low.contains("нет данных")) {
+                DiagLog.i(TAG, "Map[${idx + 1}] negative — skip"); return@forEachIndexed
+            }
+            // Bio doc where the model just said "ДА" (no name): the subject IS
+            // valid → use the article title as the name.
+            if (!doc.isSeed && raw.trimEnd('.', '!', ' ').equals("ДА", ignoreCase = true)) {
+                val key = normalise(doc.title)
+                if (key.length >= 4 && seen[key] == null) seen[key] = Item(doc.title, "?")
+                DiagLog.i(TAG, "Map[${idx + 1}] bare-ДА → ${doc.title}"); return@forEachIndexed
+            }
             var items = parseItems(raw)
             // Safety net: a biography doc must only contribute its own subject.
             // If the model ignored that and dumped other politicians (a Samara

@@ -460,12 +460,16 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
             ?: return AgenticResult("ZIM не открыт.", 0, 0)
         val rag = RagPromptBuilder(searcher)
         _searchStep.value = "🔎 Ищу кандидатов…"
+        // build-98: cap at 6 map docs (seed + up to 5 bios) and smaller
+        // per-doc windows — each map call is ~3-4 min on a 4B at 5 tok/s, so
+        // 10+ docs meant 40-min runs. The seed leadership section carries the
+        // list; the bios only confirm/reject a few.
         val docs = rag.searchExcerptDocs(
             question = question,
             candidates = _ragCandidates.value,
-            topK = 14, // walker can now surface the whole chain (build-97)
-            perDocChars = 1400,
-        )
+            topK = 6,
+            perDocChars = 900,
+        ).let { if (it.size > 6) it.take(6) else it }
         if (docs.isEmpty()) {
             return AgenticResult("не знаю по приведённым выдержкам", 0, 0)
         }

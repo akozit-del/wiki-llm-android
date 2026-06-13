@@ -158,10 +158,13 @@ class RagPromptBuilder(private val searcher: ZimSearcher) {
             val html = searcher.readArticleHtml(hit.path) ?: continue
             val card = InfoboxExtractor.extract(html, hit.title)
             val body = InfoboxExtractor.bodyText(html)
-            // Seed article on a list question: prefer the leadership section.
+            // Seed article on a list question carries the actual list in its
+            // "Городская власть" section — give it 3× the per-doc budget so the
+            // whole section reaches the extractor. Bios stay small (fast).
             val chunk = if (idx == 0 && isList) {
-                val section = InfoboxExtractor.sectionsByAnchor(html, sectionAnchorsFor(question), perDocChars)
-                if (section.isNotBlank()) section else relevantChunk(body, hit.title, searchTerms, perDocChars)
+                val seedCap = perDocChars * 3
+                val section = InfoboxExtractor.sectionsByAnchor(html, sectionAnchorsFor(question), seedCap)
+                if (section.isNotBlank()) section else relevantChunk(body, hit.title, searchTerms, seedCap)
             } else {
                 relevantChunk(body, hit.title, searchTerms, perDocChars)
             }
@@ -523,16 +526,15 @@ class RagPromptBuilder(private val searcher: ZimSearcher) {
             searcher = searcher,
             seedPath = seed.path,
             propertyIds = props,
-            // build-97: widen back to 14 nodes / depth 8. Sprints 27-29
-            // narrowed the walker to fight Samara-governor noise at RETRIEVAL
-            // time. That tension is now resolved at EXTRACTION time: build-96's
-            // subject-focused bio extraction verifies each candidate ("был ли X
-            // мэром Тольятти?") and drops non-mayors (Меркушкин→НЕТ) for free.
-            // So we let the walker maximise recall — find the whole chain plus
-            // some governor noise — and rely on map+verify for precision. Pure
-            // ТРИЗ separation: retrieval = recall, extraction = precision.
-            maxNodes = 14,
-            maxDepth = 8,
+            // build-98: back to 6 nodes / depth 4. build-97's wide walk (14)
+            // didn't improve recall — the Тольятти predecessor chain isn't in
+            // this ZIM's infobox wikidata links, so the walker just pulled the
+            // Samara political cluster (governors), each costing a ~4-min map
+            // call to reject. 40-min runs are unusable. The real list lives in
+            // the SEED article's "Городская власть" section; the walker bios
+            // are a bounded bonus.
+            maxNodes = 6,
+            maxDepth = 4,
         )
         for (w in walked) {
             if (w.path in seenPaths) continue
