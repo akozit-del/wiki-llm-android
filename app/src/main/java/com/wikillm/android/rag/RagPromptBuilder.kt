@@ -158,13 +158,21 @@ class RagPromptBuilder(private val searcher: ZimSearcher) {
             val html = searcher.readArticleHtml(hit.path) ?: continue
             val card = InfoboxExtractor.extract(html, hit.title)
             val body = InfoboxExtractor.bodyText(html)
-            // Seed article on a list question carries the actual list in its
-            // "Городская власть" section — give it 3× the per-doc budget so the
-            // whole section reaches the extractor. Bios stay small (fast).
+            // Seed article on a list question: the leadership section names
+            // the current/notable mayors, but earlier mayors are often only
+            // mentioned in the History/prose sections. build-99: feed the
+            // extractor BOTH — the "Городская власть" section first, then a
+            // wide relevantChunk of the body — so every mayor mention reaches
+            // it. Bios stay small (fast).
             val chunk = if (idx == 0 && isList) {
                 val seedCap = perDocChars * 3
                 val section = InfoboxExtractor.sectionsByAnchor(html, sectionAnchorsFor(question), seedCap)
-                if (section.isNotBlank()) section else relevantChunk(body, hit.title, searchTerms, seedCap)
+                val bodyWin = relevantChunk(body, hit.title, searchTerms, seedCap)
+                if (section.isNotBlank() && !bodyWin.contains(section.take(80))) {
+                    (section + "\n\n" + bodyWin).take(seedCap * 2)
+                } else {
+                    bodyWin
+                }
             } else {
                 relevantChunk(body, hit.title, searchTerms, perDocChars)
             }
