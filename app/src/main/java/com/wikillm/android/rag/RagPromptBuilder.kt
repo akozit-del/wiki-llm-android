@@ -523,15 +523,16 @@ class RagPromptBuilder(private val searcher: ZimSearcher) {
             searcher = searcher,
             seedPath = seed.path,
             propertyIds = props,
-            // Sprint 29: maxNodes 12 → 8. The previous 12-node cap filled
-            // up before depth 6 ever mattered — the city infobox often emits
-            // 3-5 outgoing P6 wikilinks (current head + recent ones), and
-            // walker BFSs into governor chains for each. Tighten the cap
-            // to "seed + ~6 mayors". For a 30-year city this fits the
-            // straight predecessor chain (Сухих → Ренц → Анташев → Андреев
-            // → Пушков → Азаров) and stops before Самара governors enter.
-            maxNodes = 8,
-            maxDepth = 6,
+            // build-97: widen back to 14 nodes / depth 8. Sprints 27-29
+            // narrowed the walker to fight Samara-governor noise at RETRIEVAL
+            // time. That tension is now resolved at EXTRACTION time: build-96's
+            // subject-focused bio extraction verifies each candidate ("был ли X
+            // мэром Тольятти?") and drops non-mayors (Меркушкин→НЕТ) for free.
+            // So we let the walker maximise recall — find the whole chain plus
+            // some governor noise — and rely on map+verify for precision. Pure
+            // ТРИЗ separation: retrieval = recall, extraction = precision.
+            maxNodes = 14,
+            maxDepth = 8,
         )
         for (w in walked) {
             if (w.path in seenPaths) continue

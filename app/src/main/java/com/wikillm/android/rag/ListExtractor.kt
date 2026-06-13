@@ -108,14 +108,21 @@ class ListExtractor(
     private fun parseItems(raw: String): List<Item> {
         val out = mutableListOf<Item>()
         for (line0 in raw.lineSequence()) {
-            val line = line0.trim().removePrefix("*").removePrefix("-").removePrefix("•").trim()
+            var line = line0.trim().removePrefix("*").removePrefix("-").removePrefix("•").trim()
             if (line.isBlank()) continue
-            if (line.equals("НЕТ", ignoreCase = true)) continue
+            // Strip leading verdict words the model sometimes prepends.
+            line = line.replace(Regex("^(ДА|YES|Да)[\\s,:-]+"), "").trim()
+            if (line.equals("НЕТ", ignoreCase = true) || line.equals("NO", ignoreCase = true)) continue
             // Split on the first em/en dash or hyphen surrounded by spaces, or a colon.
             val m = Regex("^(.+?)\\s*[—–:-]\\s*(.+)$").find(line)
             if (m != null) {
                 val name = m.groupValues[1].trim().trim('*', '«', '»', '"').trim()
-                val years = m.groupValues[2].trim().trim('*', '.', '«', '»').trim()
+                var years = m.groupValues[2].trim().trim('*', '.', '«', '»').trim()
+                // "годы" / "год" / "?" are placeholders, not real year spans.
+                if (years.equals("годы", ignoreCase = true) || years.equals("год", ignoreCase = true) ||
+                    !years.any { it.isDigit() }) {
+                    years = "?"
+                }
                 if (name.length in 4..60 && looksLikeName(name)) {
                     out += Item(name, years.ifBlank { "?" })
                 }

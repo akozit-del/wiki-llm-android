@@ -463,7 +463,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         val docs = rag.searchExcerptDocs(
             question = question,
             candidates = _ragCandidates.value,
-            topK = 10,
+            topK = 14, // walker can now surface the whole chain (build-97)
             perDocChars = 1400,
         )
         if (docs.isEmpty()) {
