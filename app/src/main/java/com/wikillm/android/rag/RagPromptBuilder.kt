@@ -158,6 +158,17 @@ class RagPromptBuilder(private val searcher: ZimSearcher) {
             val html = searcher.readArticleHtml(hit.path) ?: continue
             val card = InfoboxExtractor.extract(html, hit.title)
             val body = InfoboxExtractor.bodyText(html)
+            // build-102 DEBUG: dump the full seed body in chunks so we can grep
+            // the ZIM content and settle "is it a content or extraction ceiling".
+            if (idx == 0 && isList) {
+                DiagLog.i(TAG, "SEEDBODY len=${body.length} '${hit.title}'")
+                var p = 0
+                var n = 0
+                while (p < body.length && n < 12) {
+                    DiagLog.i(TAG, "SEEDBODY[$n] " + body.substring(p, minOf(p + 900, body.length)))
+                    p += 900; n++
+                }
+            }
             // build-101: revert to the focused leadership section. build-100's
             // 9000-char whole-article window made the 4B extract WORSE (seed →
             // НЕТ), confirming the long-context weakness from the research: a
