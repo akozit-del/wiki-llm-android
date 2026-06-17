@@ -110,6 +110,34 @@ class ZimSearcher private constructor(
         }.getOrNull()
     }
 
+    /** A list article ("Градоначальники X") and whether it's a real article
+     *  or a redirect — with its own (un-followed) path and body length. */
+    data class TitleProbe(val title: String, val path: String, val isRedirect: Boolean, val bodyLen: Int)
+
+    /**
+     * build-103: look up [title] WITHOUT following a redirect, and report
+     * whether it's a standalone article (with body) or a redirect stub. Used
+     * to detect the dedicated list article ("Градоначальники Тольятти") that
+     * lookupExactTitle's redirect-follow was silently collapsing into the city
+     * page. If it has its own body, that body IS the full mayor list.
+     */
+    suspend fun lookupRaw(title: String): TitleProbe? = withContext(Dispatchers.IO) {
+        runCatching {
+            val entry = archive.getEntryByTitle(title)
+            val isRedirect = safe { entry.isRedirect } ?: false
+            val path = safe { entry.path } ?: ""
+            val bodyLen = if (!isRedirect && path.isNotBlank()) {
+                val html = runCatching {
+                    val item = entry.getItem(true)
+                    String(item.data.data, Charsets.UTF_8)
+                }.getOrNull()
+                html?.let { InfoboxExtractor.bodyText(it).length } ?: 0
+            } else 0
+            DiagLog.i(TAG, "lookupRaw '$title' redirect=$isRedirect path='$path' bodyLen=$bodyLen")
+            TitleProbe(safe { entry.title } ?: title, path, isRedirect, bodyLen)
+        }.getOrNull()
+    }
+
     /**
      * Title-prefix scan via libzim's `findByTitle`. Returns up to [limit]
      * entries whose title starts with [prefix] (case-insensitive), in title

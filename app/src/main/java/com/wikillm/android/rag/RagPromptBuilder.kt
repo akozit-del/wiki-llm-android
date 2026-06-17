@@ -175,12 +175,19 @@ class RagPromptBuilder(private val searcher: ZimSearcher) {
             // small focused section ("Городская власть", ~2700 chars) is the
             // sweet spot. Falls back to a density-anchored window when the
             // article has no matching section header.
-            val chunk = if (idx == 0 && isList) {
-                val seedCap = perDocChars * 3
-                val section = InfoboxExtractor.sectionsByAnchor(html, sectionAnchorsFor(question), seedCap)
-                if (section.isNotBlank()) section else relevantChunk(body, hit.title, searchTerms, seedCap)
-            } else {
-                relevantChunk(body, hit.title, searchTerms, perDocChars)
+            // build-103: a dedicated list article (score 2000, e.g.
+            // "Градоначальники Тольятти") IS the list — feed its whole body,
+            // not a section window. A normal city seed uses the focused
+            // leadership section (build-101).
+            val isListArticle = idx == 0 && isList && hit.score >= 2000
+            val chunk = when {
+                isListArticle -> body.take(perDocChars * 5)
+                idx == 0 && isList -> {
+                    val seedCap = perDocChars * 3
+                    val section = InfoboxExtractor.sectionsByAnchor(html, sectionAnchorsFor(question), seedCap)
+                    if (section.isNotBlank()) section else relevantChunk(body, hit.title, searchTerms, seedCap)
+                }
+                else -> relevantChunk(body, hit.title, searchTerms, perDocChars)
             }
             val text = buildString {
                 append("=== ").append(hit.title).append(" ===\n")
@@ -497,6 +504,27 @@ class RagPromptBuilder(private val searcher: ZimSearcher) {
 
         val hits = mutableListOf<ZimSearcher.Hit>()
         val seenPaths = HashSet<String>()
+        // Tier 0 (build-103): the DEDICATED list article. ru.wiki has
+        // "Градоначальники Тольятти" — a standalone article with the full mayor
+        // list. lookupExactTitle's redirect-follow was collapsing it into the
+        // city page and losing it. lookupRaw checks it WITHOUT following the
+        // redirect: if it's a real article with a real body, pin it at score
+        // 2000 so it becomes candidate #1 → the open-extraction seed → the
+        // whole list reaches the model in one focused call.
+        val listTitles = buildList {
+            if (role != null) { add("$role $entity"); add("Список ${role.lowercase()} $entity") }
+            add("Градоначальники $entity"); add("Главы $entity"); add("Список глав $entity")
+            add("Мэры $entity"); add("Список мэров $entity")
+        }.distinct()
+        for (t in listTitles) {
+            val probe = searcher.lookupRaw(t) ?: continue
+            if (!probe.isRedirect && probe.bodyLen >= 400 && probe.path !in seenPaths) {
+                DiagLog.i(TAG, "List article FOUND: '${probe.title}' (bodyLen=${probe.bodyLen})")
+                hits += ZimSearcher.Hit(probe.title, probe.path, "", score = 2000)
+                seenPaths += probe.path
+                break // one real list article is enough
+            }
+        }
         // Tier A: exact-title lookup for each template.
         for (t in templates.distinct()) {
             val h = searcher.lookupExactTitle(t) ?: continue
