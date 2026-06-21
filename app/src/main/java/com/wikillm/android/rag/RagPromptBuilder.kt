@@ -181,7 +181,11 @@ class RagPromptBuilder(private val searcher: ZimSearcher) {
             // leadership section (build-101).
             val isListArticle = idx == 0 && isList && hit.score >= 2000
             val chunk = when {
-                isListArticle -> body.take(perDocChars * 5)
+                // The list article is a long chronological table (imperial era →
+                // today). "Last 30 years" sits at the modern end, so anchor on
+                // the мэр/глав density cluster (relevantChunk) rather than the
+                // head, with a big cap so the whole modern run fits.
+                isListArticle -> relevantChunk(body, hit.title, searchTerms, perDocChars * 6)
                 idx == 0 && isList -> {
                     val seedCap = perDocChars * 3
                     val section = InfoboxExtractor.sectionsByAnchor(html, sectionAnchorsFor(question), seedCap)
@@ -256,15 +260,13 @@ class RagPromptBuilder(private val searcher: ZimSearcher) {
             } else emptyList()
         }
 
-        var hits = searcher.search(searchQuery.ifBlank { question }, candidates)
-        if (titleProbeHits.isNotEmpty()) {
-            val have = hits.mapTo(HashSet()) { it.path }
-            hits = titleProbeHits.filter { it.path !in have } + hits
-        }
-        if (walkerProbeHits.isNotEmpty()) {
-            val have = hits.mapTo(HashSet()) { it.path }
-            hits = walkerProbeHits.filter { it.path !in have } + hits
-        }
+        val bm25 = searcher.search(searchQuery.ifBlank { question }, candidates)
+        // build-103 fix: probes FIRST, then dedup by path keeping the first
+        // (highest-score) version. The old code filtered probes OUT when their
+        // path also appeared in BM25 — which silently demoted a pinned
+        // score-2000 list article ("Градоначальники Тольятти") to its BM25
+        // duplicate at ~50, then the score≥800 doc filter dropped it entirely.
+        var hits = (titleProbeHits + walkerProbeHits + bm25).distinctBy { it.path }
         // Also pull the head-entity article on its own. When the query mixes an
         // attribute with an entity ("мэр Тольятти"), the bare entity page
         // ("Тольятти") gets crowded out of the candidates by "<Entity>ский/ская…"
