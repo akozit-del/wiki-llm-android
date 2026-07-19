@@ -39,9 +39,11 @@ class ModelsViewModel(app: Application) : AndroidViewModel(app) {
     val query: StateFlow<String> = _query.asStateFlow()
 
     // Size filter (billions of params): "не менее" / "не более".
+    // maxB defaults to 999 (effectively no upper cap) — the user can pull any
+    // model; they'll narrow the range themselves if they want phone-sized ones.
     private val _minB = MutableStateFlow(0.5f)
     val minB: StateFlow<Float> = _minB.asStateFlow()
-    private val _maxB = MutableStateFlow(9.0f)
+    private val _maxB = MutableStateFlow(999f)
     val maxB: StateFlow<Float> = _maxB.asStateFlow()
 
     private val _state = MutableStateFlow<SearchState>(SearchState.Idle)

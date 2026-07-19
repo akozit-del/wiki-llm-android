@@ -148,8 +148,9 @@ class ModelRepository(private val context: Context) {
     }
 
     companion object {
-        // Matches a single-digit param count like "4B", "9B", "1.5B", "0.8B"
-        // but not "10B"/"27B"/"70B" — keeps the catalog to phone-sized models.
-        private val SIZE_REGEX = Regex("""(?<![\d.])([0-9](?:\.\d)?)B(?![\d])""", RegexOption.IGNORE_CASE)
+        // Matches any param count like "4B", "9B", "1.5B", "13B", "27B", "70B".
+        // The size range is controlled by the min/max filter, not the regex, so
+        // the user can pull large models if they choose.
+        private val SIZE_REGEX = Regex("""(?<![\d.])(\d{1,3}(?:\.\d)?)B(?![\d])""", RegexOption.IGNORE_CASE)
     }
 }
