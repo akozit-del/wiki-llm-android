@@ -108,6 +108,10 @@ class RagPromptBuilder(private val searcher: ZimSearcher) {
          *  names → open extraction. The rest are single-person biographies →
          *  the only name we trust is the article's own subject (the title). */
         val isSeed: Boolean = false,
+        /** True when this is the DEDICATED list article ("Градоначальники X",
+         *  score 2000). It contains the full answer, so if it yields a good
+         *  list the map phase can short-circuit and skip the bio docs. */
+        val isListArticle: Boolean = false,
     )
 
     /** Search ZIM and return ready excerpt sections for [question]. */
@@ -187,7 +191,11 @@ class RagPromptBuilder(private val searcher: ZimSearcher) {
                 if (!card.isEmpty) append(card.block()).append("\n")
                 append(chunk)
             }
-            out += DocExcerpt(hit.title, hit.path, text, hit.sourceTag, isSeed = (idx == 0 && isList))
+            out += DocExcerpt(
+                hit.title, hit.path, text, hit.sourceTag,
+                isSeed = (idx == 0 && isList),
+                isListArticle = isListArticle,
+            )
         }
         DiagLog.i(TAG, "Map docs: ${out.size} (${out.joinToString { it.title }})")
         return out

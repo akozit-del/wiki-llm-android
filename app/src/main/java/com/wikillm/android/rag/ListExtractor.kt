@@ -60,7 +60,10 @@ class ListExtractor(
         onProgress: (done: Int, total: Int) -> Unit = { _, _ -> },
     ): List<Item> {
         val seen = LinkedHashMap<String, Item>() // key = normalised name
-        docs.forEachIndexed { idx, doc ->
+        // Words from the question (e.g. "тольятти") — the entity name itself is
+        // not a person; drop it if the model emits it as a "name".
+        val questionWords = normalise(question).split(" ").filter { it.length >= 4 }.toSet()
+        for ((idx, doc) in docs.withIndex()) {
             onProgress(idx, docs.size)
             val system = if (doc.isSeed) seedSystem else bioSystem(doc.title)
             val prompt = buildString {
@@ -78,14 +81,14 @@ class ListExtractor(
             // Negative sentence ("X не подходит", "не является мэром") = reject.
             val low = raw.lowercase()
             if (low.contains("не подход") || low.contains("не явля") || low.contains("нет данных")) {
-                DiagLog.i(TAG, "Map[${idx + 1}] negative — skip"); return@forEachIndexed
+                DiagLog.i(TAG, "Map[${idx + 1}] negative — skip"); continue
             }
             // Bio doc where the model just said "ДА" (no name): the subject IS
             // valid → use the article title as the name.
             if (!doc.isSeed && raw.trimEnd('.', '!', ' ').equals("ДА", ignoreCase = true)) {
                 val key = normalise(doc.title)
                 if (key.length >= 4 && seen[key] == null) seen[key] = Item(doc.title, "?")
-                DiagLog.i(TAG, "Map[${idx + 1}] bare-ДА → ${doc.title}"); return@forEachIndexed
+                DiagLog.i(TAG, "Map[${idx + 1}] bare-ДА → ${doc.title}"); continue
             }
             var items = parseItems(raw)
             // Safety net: a biography doc must only contribute its own subject.
@@ -103,6 +106,8 @@ class ListExtractor(
             for (it in items) {
                 val key = normalise(it.name)
                 if (key.length < 4) continue // junk
+                // Drop the entity itself ("Тольятти") — it's a place, not a mayor.
+                if (key in questionWords || (key.split(" ").size == 1 && key in questionWords)) continue
                 val existing = seen[key]
                 if (existing == null) {
                     seen[key] = it
@@ -111,6 +116,17 @@ class ListExtractor(
                 }
             }
             DiagLog.i(TAG, "Map[${idx + 1}/${docs.size}] '${doc.title}': ${items.size} items")
+
+            // build-106 short-circuit: the dedicated list article
+            // ("Градоначальники X") holds the WHOLE answer. If it just yielded a
+            // solid list (≥3 names), the remaining docs are the city article
+            // (dupes) and bio-verify calls (mostly НЕТ) — ~15 min of no new
+            // info. Stop here. This is the option-1 speedup: 6 calls → 1-2,
+            // ~4.5 min → ~1.5 min, zero quality loss.
+            if (doc.isListArticle && seen.size >= 3) {
+                DiagLog.i(TAG, "Short-circuit: list article gave ${seen.size} names, skipping ${docs.size - idx - 1} docs")
+                break
+            }
         }
         onProgress(docs.size, docs.size)
         val result = seen.values.toList()
