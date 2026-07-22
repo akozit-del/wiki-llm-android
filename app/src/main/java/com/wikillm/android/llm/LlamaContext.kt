@@ -107,5 +107,44 @@ class LlamaContext private constructor(private val handle: Long) : AutoCloseable
             callback: TokenCallback,
         )
         @JvmStatic external fun nativeLastError(): String
+
+        // Variant 3: embedding model (multilingual-e5-small GGUF). Separate
+        // handle configured for mean-pooled embeddings; independent lifecycle
+        // from the chat model so both can be resident at once.
+        @JvmStatic external fun nativeLoadEmbed(path: String): Long
+        @JvmStatic external fun nativeEmbed(handle: Long, text: String): FloatArray?
+    }
+}
+
+/**
+ * Wraps an embedding-mode llama.cpp handle. [embed] returns an L2-normalised
+ * vector (so cosine similarity is a plain dot product), or null on failure.
+ */
+class EmbeddingContext private constructor(private val handle: Long) : AutoCloseable {
+
+    @Volatile private var closed = false
+
+    suspend fun embed(text: String): FloatArray? =
+        withContext(Dispatchers.IO) {
+            if (closed) null else LlamaContext.nativeEmbed(handle, text)
+        }
+
+    override fun close() {
+        if (closed) return
+        closed = true
+        LlamaContext.nativeFree(handle)
+    }
+
+    companion object {
+        suspend fun load(path: String): EmbeddingContext =
+            withContext(Dispatchers.IO) {
+                val h = LlamaContext.nativeLoadEmbed(path)
+                if (h == 0L) {
+                    val reason = LlamaContext.nativeLastError()
+                        .ifBlank { "Не удалось загрузить эмбеддер" }
+                    throw LlamaContext.LoadException(reason)
+                }
+                EmbeddingContext(h)
+            }
     }
 }

@@ -1,6 +1,7 @@
 #include <jni.h>
 #include <android/log.h>
 #include <atomic>
+#include <cmath>
 #include <cstring>
 #include <mutex>
 #include <string>
@@ -407,6 +408,107 @@ Java_com_wikillm_android_llm_LlamaContext_nativeFree(
     if (h->ctx)   llama_free(h->ctx);
     if (h->model) llama_model_free(h->model);
     delete h;
+}
+
+// ---- Variant 3: embedding model (multilingual-e5-small GGUF) ----
+// A separate model handle configured for embeddings (mean pooling). The GGUF
+// carries its own tokenizer, so no SentencePiece integration is needed.
+extern "C" JNIEXPORT jlong JNICALL
+Java_com_wikillm_android_llm_LlamaContext_nativeLoadEmbed(
+    JNIEnv* env, jclass /*clazz*/, jstring jpath) {
+
+    ensure_backend();
+    clear_last_error();
+
+    const char* path = env->GetStringUTFChars(jpath, nullptr);
+    if (!path) return 0;
+    std::string path_str(path);
+    env->ReleaseStringUTFChars(jpath, path);
+
+    auto* h = new LlmHandle();
+    llama_model_params mparams = llama_model_default_params();
+    mparams.n_gpu_layers = 0;
+    mparams.use_mmap = true;
+
+    LOGI("Loading embed model: %s", path_str.c_str());
+    h->model = llama_model_load_from_file(path_str.c_str(), mparams);
+    if (!h->model) {
+        std::lock_guard<std::mutex> lk(g_err_mu);
+        if (g_last_error.empty()) g_last_error = "embed model load failed";
+        delete h;
+        return 0;
+    }
+    h->vocab = llama_model_get_vocab(h->model);
+
+    llama_context_params cparams = llama_context_default_params();
+    cparams.n_ctx        = 512;      // embedding inputs are short
+    cparams.n_batch      = 512;
+    cparams.embeddings   = true;
+    cparams.pooling_type = LLAMA_POOLING_TYPE_MEAN;  // e5/bge = mean pooling
+    cparams.no_perf      = true;
+    h->ctx = llama_init_from_model(h->model, cparams);
+    if (!h->ctx) {
+        std::lock_guard<std::mutex> lk(g_err_mu);
+        if (g_last_error.empty()) g_last_error = "embed context init failed";
+        llama_model_free(h->model);
+        delete h;
+        return 0;
+    }
+    LOGI("Embed model loaded OK, n_embd=%d", llama_model_n_embd(h->model));
+    return reinterpret_cast<jlong>(h);
+}
+
+// Embed [jtext] → L2-normalised float[n_embd]. Returns null on failure.
+extern "C" JNIEXPORT jfloatArray JNICALL
+Java_com_wikillm_android_llm_LlamaContext_nativeEmbed(
+    JNIEnv* env, jclass /*clazz*/, jlong handle, jstring jtext) {
+
+    auto* h = reinterpret_cast<LlmHandle*>(handle);
+    if (!h || !h->ctx) return nullptr;
+
+    const char* t = env->GetStringUTFChars(jtext, nullptr);
+    std::string text = t ? t : "";
+    if (t) env->ReleaseStringUTFChars(jtext, t);
+
+    auto tokens = tokenize_text(h->vocab, text, /*add_special=*/true);
+    if (tokens.empty()) return nullptr;
+    if ((int)tokens.size() > 512) tokens.resize(512);
+
+    llama_memory_clear(llama_get_memory(h->ctx), /*data=*/true);
+    // Build the batch manually: every token in seq 0, all flagged for output
+    // so mean-pooling sees the whole sequence (the canonical embedding path).
+    llama_batch batch = llama_batch_init(static_cast<int>(tokens.size()), 0, 1);
+    for (size_t i = 0; i < tokens.size(); ++i) {
+        batch.token[i]        = tokens[i];
+        batch.pos[i]          = static_cast<llama_pos>(i);
+        batch.n_seq_id[i]     = 1;
+        batch.seq_id[i][0]    = 0;
+        batch.logits[i]       = 1;
+    }
+    batch.n_tokens = static_cast<int>(tokens.size());
+
+    if (llama_decode(h->ctx, batch) != 0) {
+        LOGE("embed decode failed");
+        llama_batch_free(batch);
+        return nullptr;
+    }
+
+    const int n_embd = llama_model_n_embd(h->model);
+    const float* emb = llama_get_embeddings_seq(h->ctx, 0);
+    if (!emb) emb = llama_get_embeddings(h->ctx);
+    if (!emb) { LOGE("no embeddings returned"); llama_batch_free(batch); return nullptr; }
+
+    std::vector<float> v(emb, emb + n_embd);
+    llama_batch_free(batch);
+    double norm = 0.0;
+    for (float x : v) norm += (double)x * x;
+    norm = std::sqrt(norm);
+    if (norm > 0.0) for (float& x : v) x /= (float)norm;
+
+    jfloatArray out = env->NewFloatArray(n_embd);
+    if (!out) return nullptr;
+    env->SetFloatArrayRegion(out, 0, n_embd, v.data());
+    return out;
 }
 
 // Multi-turn chat: roles[] and contents[] are parallel String arrays.

@@ -119,10 +119,6 @@ dependencies {
     // HTML parsing for RAG infobox extraction (Wikidata property-id + th/td rows).
     implementation("org.jsoup:jsoup:1.18.1")
 
-    // Variant 3: on-device semantic rerank (multilingual-e5-small int8 ONNX).
-    // ONNX Runtime Mobile with the XNNPACK EP for arm64 CPU. ~7-9 MB AAR.
-    implementation("com.microsoft.onnxruntime:onnxruntime-android:1.19.2")
-
     // Stage 5: libkiwix AAR bundles libzim + libkiwix .so for all Android ABIs.
     // The .so files live in jniLibs/<abi>/libzim/ and jniLibs/<abi>/libkiwix/
     // sub-dirs, so a plain System.loadLibrary won't find them — use ReLinker.
