@@ -122,6 +122,8 @@ class LlamaContext private constructor(private val handle: Long) : AutoCloseable
  */
 class EmbeddingContext private constructor(private val handle: Long) : AutoCloseable {
 
+    class LoadException(message: String) : RuntimeException(message)
+
     @Volatile private var closed = false
 
     suspend fun embed(text: String): FloatArray? =
@@ -142,7 +144,7 @@ class EmbeddingContext private constructor(private val handle: Long) : AutoClose
                 if (h == 0L) {
                     val reason = LlamaContext.nativeLastError()
                         .ifBlank { "Не удалось загрузить эмбеддер" }
-                    throw LlamaContext.LoadException(reason)
+                    throw LoadException(reason)
                 }
                 EmbeddingContext(h)
             }
