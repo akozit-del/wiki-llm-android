@@ -302,6 +302,11 @@ class RagPromptBuilder(private val searcher: ZimSearcher) {
         if (excludeTitles.isNotEmpty()) {
             hits = hits.filter { it.title !in excludeTitles }
         }
+        // Variant 3: semantic rerank of the BM25 tail (no-op unless the mE5
+        // embedder is loaded). Pinned probes stay on top; the tail is reordered
+        // by RRF(bm25-rank, cosine-to-question) so the most on-topic passages
+        // enter topK even when Xapian ranked them low.
+        hits = semanticRerank(question, hits)
         DiagLog.i(TAG, "RAG: '$question' candidates=${hits.size}")
         // build-69 diag: top of the candidate list after re-sort, with paths,
         // so we can see when a pinned probe lost the join or its path is wrong.
@@ -397,6 +402,56 @@ class RagPromptBuilder(private val searcher: ZimSearcher) {
         }
         return Excerpts(sb.toString(), titles, hits.size)
     }
+
+    /**
+     * Variant 3 — hybrid rerank. Keeps the pinned probe hits (list article,
+     * chain-walker, title probes) in place at the top, then reorders the BM25
+     * tail by Reciprocal-Rank Fusion of its original BM25 order and cosine
+     * similarity of (title + Xapian snippet) to the natural-language question.
+     *
+     * This is the "глобально, не только по мэрам" lever: for questions with NO
+     * dedicated list article, the tail IS the whole candidate set, so semantic
+     * ordering decides what the model actually reads. No-op when the embedder
+     * isn't loaded, so the deterministic list path is never disturbed.
+     */
+    private suspend fun semanticRerank(
+        question: String,
+        hits: List<ZimSearcher.Hit>,
+    ): List<ZimSearcher.Hit> {
+        if (!EmbeddingHolder.isReady() || hits.size < 3) return hits
+        // Probes are pinned at score ≥ 800; BM25/Xapian hits sit well below.
+        val pinned = hits.filter { it.score >= 500 }
+        val tail = hits.filter { it.score < 500 }
+        if (tail.size < 3) return hits
+
+        val qv = EmbeddingHolder.embedQuery(question) ?: return hits
+        val sims = FloatArray(tail.size) { -1f }
+        for (i in tail.indices) {
+            val h = tail[i]
+            val passage = (h.title + ". " + stripHtml(h.snippet)).trim().take(600)
+            val pv = EmbeddingHolder.embedPassage(passage) ?: continue
+            sims[i] = EmbeddingHolder.cosine(qv, pv)
+        }
+        // Semantic rank per tail index (0 = most similar).
+        val semRank = IntArray(tail.size)
+        tail.indices.sortedByDescending { sims[it] }
+            .forEachIndexed { rank, idx -> semRank[idx] = rank }
+        // RRF fuse: bm25 rank == the tail index (already BM25-ordered).
+        val k = 60f
+        val fusedOrder = tail.indices.sortedByDescending { i ->
+            1f / (k + i) + 1f / (k + semRank[i])
+        }
+        val rerankedTail = fusedOrder.map { tail[it] }
+        DiagLog.i(TAG, "Semantic rerank: tail ${tail.size}, top → " +
+            fusedOrder.take(3).joinToString { i ->
+                "${tail[i].title}(cos=%.2f,bm25#$i)".format(sims[i])
+            })
+        return pinned + rerankedTail
+    }
+
+    /** Strip Xapian snippet markup ("<b>…</b>") and collapse whitespace. */
+    private fun stripHtml(s: String): String =
+        s.replace(Regex("<[^>]+>"), " ").replace(Regex("\\s+"), " ").trim()
 
     /**
      * Take a [cap]-char window of [body] over the DENSEST cluster of query-term

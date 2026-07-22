@@ -19,6 +19,7 @@ import kotlinx.coroutines.flow.StateFlow
 import com.wikillm.android.diag.DiagLog
 import com.wikillm.android.rag.ListExtractor
 import com.wikillm.android.rag.QueryExtractor
+import com.wikillm.android.rag.EmbeddingHolder
 import com.wikillm.android.rag.RagPromptBuilder
 import com.wikillm.android.rag.ZimSearchHolder
 import com.wikillm.android.settings.GenerationSettings
@@ -259,6 +260,14 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
             var stats: GenStats? = null
             val temp = genSettings.currentTemperature()
             val noThink = genSettings.currentNoThink()
+            // Variant 3: keep the mE5 reranker loaded iff RAG + rerank are both
+            // on. This makes EmbeddingHolder.isReady() a faithful proxy for the
+            // toggle, which RagPromptBuilder.semanticRerank keys off of.
+            if (_ragEnabled.value && genSettings.currentRerank()) {
+                EmbeddingHolder.ensureLoaded(getApplication<Application>().applicationContext)
+            } else if (EmbeddingHolder.isReady()) {
+                EmbeddingHolder.unload()
+            }
             try {
                 if (listExtraction) {
                     val res = runListExtraction(

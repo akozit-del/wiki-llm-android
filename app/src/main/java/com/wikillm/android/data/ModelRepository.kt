@@ -73,6 +73,9 @@ class ModelRepository(private val context: Context) {
         for (root in roots) {
             root.listFiles()?.forEach { authorDir ->
                 if (!authorDir.isDirectory) return@forEach
+                // The mE5 reranker (variant 3) lives under models/rerank/ but is
+                // NOT a chat model — never surface it in the model picker.
+                if (authorDir.name == "rerank") return@forEach
                 authorDir.listFiles()?.forEach { modelDir ->
                     if (!modelDir.isDirectory) return@forEach
                     modelDir.listFiles()?.forEach { file ->

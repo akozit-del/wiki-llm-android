@@ -33,6 +33,10 @@ class GenerationSettings(context: Context) {
     private val _responseWords = MutableStateFlow(prefs.getInt(KEY_WORDS, DEFAULT_WORDS))
     val responseWords: StateFlow<Int> = _responseWords.asStateFlow()
 
+    /** Variant 3: semantic rerank of RAG candidates via the mE5 embedder. */
+    private val _rerank = MutableStateFlow(prefs.getBoolean(KEY_RERANK, false))
+    val rerank: StateFlow<Boolean> = _rerank.asStateFlow()
+
     fun setSystemPrompt(v: String) {
         prefs.edit().putString(KEY_SYS, v).apply(); _systemPrompt.value = v
     }
@@ -49,7 +53,13 @@ class GenerationSettings(context: Context) {
         prefs.edit().putInt(KEY_WORDS, v).apply(); _responseWords.value = v
     }
 
+    fun setRerank(v: Boolean) {
+        prefs.edit().putBoolean(KEY_RERANK, v).apply(); _rerank.value = v
+    }
+
     fun resetSystemPrompt() = setSystemPrompt(DEFAULT_SYSTEM_PROMPT)
+
+    fun currentRerank(): Boolean = prefs.getBoolean(KEY_RERANK, false)
 
     // Fresh reads from prefs (used at generation time).
     fun currentSystemPrompt(): String =
@@ -76,6 +86,7 @@ class GenerationSettings(context: Context) {
         private const val KEY_TEMP = "temperature"
         private const val KEY_THINK = "thinking_enabled"
         private const val KEY_WORDS = "response_words"
+        private const val KEY_RERANK = "rerank_enabled"
         const val DEFAULT_TEMPERATURE = 0.7f
         const val DEFAULT_WORDS = 200
         const val DEFAULT_SYSTEM_PROMPT =
