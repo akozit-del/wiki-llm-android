@@ -134,31 +134,38 @@ class ListExtractor(
         return result
     }
 
-    /** Parse "Имя — годы" lines; tolerant of «-», «—», «:» separators. */
+    /**
+     * Parse "Имя — годы" lines. Handles BOTH model output styles:
+     *  - Qwen: "Илья Сухих — ?", "Сергей Жилкин — 1996–2000"
+     *  - Gemma: "**Исполнительная власть:**", "1. Уткин, Николай Дмитриевич
+     *    (род.1949) — 1992 год – 1994 год" (markdown bold, numbering,
+     *    comma-form names, parenthetical birth years, "год" words).
+     */
     private fun parseItems(raw: String): List<Item> {
         val out = mutableListOf<Item>()
         for (line0 in raw.lineSequence()) {
-            var line = line0.trim().removePrefix("*").removePrefix("-").removePrefix("•").trim()
+            var line = line0.trim()
             if (line.isBlank()) continue
-            // Strip leading verdict words the model sometimes prepends.
+            // Strip markdown bold/italic and leading bullets/numbering ("1. ", "- ", "2) ").
+            line = line.replace("**", "").replace("__", "")
+            line = line.replace(Regex("^[\\-*•\\u2013\\u2014\\d]+[.)]?\\s+"), "").trim()
             line = line.replace(Regex("^(ДА|YES|Да)[\\s,:-]+"), "").trim()
+            if (line.isBlank()) continue
             if (line.equals("НЕТ", ignoreCase = true) || line.equals("NO", ignoreCase = true)) continue
-            // Split on the first em/en dash or hyphen surrounded by spaces, or a colon.
-            val m = Regex("^(.+?)\\s*[—–:-]\\s*(.+)$").find(line)
-            if (m != null) {
-                val name = m.groupValues[1].trim().trim('*', '«', '»', '"').trim()
-                var years = m.groupValues[2].trim().trim('*', '.', '«', '»').trim()
-                // "годы" / "год" / "?" are placeholders, not real year spans.
-                if (years.equals("годы", ignoreCase = true) || years.equals("год", ignoreCase = true) ||
-                    !years.any { it.isDigit() }) {
-                    years = "?"
-                }
-                if (name.length in 4..60 && looksLikeName(name)) {
-                    out += Item(name, years.ifBlank { "?" })
-                }
-            } else if (line.length in 4..60 && looksLikeName(line)) {
-                out += Item(line.trim('*', '«', '»', '"').trim(), "?")
-            }
+            // Section header ("Исполнительная власть:") — ends with ":" and no digits.
+            if (line.endsWith(":") && !line.any { it.isDigit() }) continue
+            // Split name — years on the FIRST dash that is surrounded by spaces
+            // (so commas/dashes inside the name or "(1960—2008)" don't split it).
+            val m = Regex("^(.+?)\\s+[—–-]\\s+(.+)$").find(line)
+            var name = (m?.groupValues?.get(1) ?: line).trim()
+            var years = (m?.groupValues?.get(2) ?: "?").trim()
+            // Drop parentheticals from the name: "(род.1949)", "(1960—2008)".
+            name = name.replace(Regex("\\(.*?\\)"), "").trim().trim('*', '«', '»', '"', '.', ',').trim()
+            // Years: must contain a digit else "?"; strip the "год/года" words.
+            years = if (years.any { it.isDigit() })
+                years.replace(Regex("\\s*год[а-я]*"), "").replace(Regex("\\s+"), " ").trim().ifBlank { "?" }
+            else "?"
+            if (name.length in 4..70 && looksLikeName(name)) out += Item(name, years)
         }
         return out
     }
