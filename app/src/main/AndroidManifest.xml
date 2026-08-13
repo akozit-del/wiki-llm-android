@@ -20,6 +20,16 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.WikiLLM"
         tools:targetApi="31">
+
+        <!-- Grant the app's linker namespace access to the vendor-provided
+             Adreno OpenCL driver so libggml-opencl.so's DT_NEEDED "libOpenCL.so"
+             resolves to the PUBLIC /vendor/lib64/libOpenCL.so at run time.
+             required=false so the app still installs on devices without it
+             (we fall back / the model load reports the error). API 31+. -->
+        <uses-native-library
+            android:name="libOpenCL.so"
+            android:required="false" />
+
         <activity
             android:name=".MainActivity"
             android:exported="true"
