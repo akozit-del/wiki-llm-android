@@ -85,6 +85,12 @@ android {
         }
         jniLibs {
             useLegacyPackaging = false
+            // We LINK libllm.so against the device's libOpenCL.so (in cpp/prebuilt)
+            // to satisfy the ggml-opencl backend, but must NOT ship it in the APK:
+            // that copy pulls vendor deps (libcutils.so …) unavailable in the app's
+            // linker namespace. Excluding it makes the DT_NEEDED "libOpenCL.so"
+            // resolve to the PUBLIC /vendor/lib64/libOpenCL.so at run time instead.
+            excludes += "**/libOpenCL.so"
         }
     }
 
