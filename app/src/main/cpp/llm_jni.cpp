@@ -5,6 +5,7 @@
 #include <cstring>
 #include <mutex>
 #include <string>
+#include <thread>
 #include <vector>
 
 #include "llama.h"
@@ -344,7 +345,11 @@ Java_com_wikillm_android_llm_LlamaContext_nativeLoad(
     h->n_ctx = nCtx;
 
     llama_model_params mparams = llama_model_default_params();
-    mparams.n_gpu_layers = 0;
+    // Sprint 5 (build-112): offload all layers to the Adreno GPU via the
+    // OpenCL backend. If no OpenCL device is found at run time the load fails
+    // loudly (surfaced through nativeLastError) instead of silently dropping
+    // to CPU, so we can tell a GPU-init problem from a model problem.
+    mparams.n_gpu_layers = 99;
     mparams.use_mmap = true;
 
     LOGI("Loading model: %s", path_str.c_str());
@@ -363,17 +368,25 @@ Java_com_wikillm_android_llm_LlamaContext_nativeLoad(
     cparams.n_batch = 2048;
     cparams.no_perf = true;
 
-    // Sprint 4 (build-71): flash-attention + Q8_0 KV cache.
-    //   - flash_attn=true cuts attention memory ~half on long contexts and
-    //     is required for the quantized KV-cache path.
-    //   - type_k/type_v = Q8_0 quantize the KV cache, freeing ~1 GB at
-    //     n_ctx=4096 for a 4B model (we run with only 3-4 GB free) — this
-    //     was the actual root of the OOM crashes the build-60 guards were
-    //     papering over. Q8_0 is essentially lossless; Q4_0 V-cache hurts
-    //     thinking models, so we don't go below Q8.
-    cparams.flash_attn_type = LLAMA_FLASH_ATTN_TYPE_ENABLED;
-    cparams.type_k          = GGML_TYPE_Q8_0;
-    cparams.type_v          = GGML_TYPE_Q8_0;
+    // Threads matter for the CPU-side work (sampler + any non-offloaded ops).
+    // llama.cpp's default is a hardcoded 4 because we don't link `common`
+    // (which would auto-tune it); use the online core count instead.
+    {
+        unsigned hw = std::thread::hardware_concurrency();
+        int n = hw > 0 ? static_cast<int>(hw) : 6;
+        if (n > 8) n = 8;
+        cparams.n_threads       = n;
+        cparams.n_threads_batch = n;
+    }
+
+    // Sprint 5 (build-112): GPU-offload path. Keep the KV cache at F16 and let
+    // llama choose the attention kernel (AUTO). The OpenCL backend does not
+    // support the Q8_0 KV + forced flash-attn combo the CPU path (build-71)
+    // used; with 4B-class models (the only ones that fit) F16 KV at n_ctx=4096
+    // is cheap on an 11 GB device.
+    cparams.flash_attn_type = LLAMA_FLASH_ATTN_TYPE_AUTO;
+    cparams.type_k          = GGML_TYPE_F16;
+    cparams.type_v          = GGML_TYPE_F16;
 
     h->ctx = llama_init_from_model(h->model, cparams);
     if (!h->ctx) {

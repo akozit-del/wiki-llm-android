@@ -24,6 +24,15 @@ set(GGML_HIPBLAS         OFF CACHE BOOL "" FORCE)
 set(GGML_METAL           OFF CACHE BOOL "" FORCE)
 set(GGML_CCACHE          OFF CACHE BOOL "" FORCE)
 
+# Sprint 5 (build-112): GPU offload via the Qualcomm-optimized OpenCL backend
+# for Adreno. Vulkan is intentionally left OFF (it crashes on Adreno); OpenCL
+# is the vendor-supported path. The device ships /vendor/lib64/libOpenCL.so as
+# a PUBLIC library, so the app is allowed to dlopen the Adreno driver at run
+# time — we only need headers + an import lib to LINK against here.
+set(GGML_OPENCL                    ON CACHE BOOL "" FORCE)
+set(GGML_OPENCL_EMBED_KERNELS      ON CACHE BOOL "" FORCE)
+set(GGML_OPENCL_USE_ADRENO_KERNELS ON CACHE BOOL "" FORCE)
+
 # Sprint 4 (build-71): arm64 CPU speedups.
 #
 # - GGML_CPU_AARCH64=ON enables ggml's runtime Q4_0 online repack into the
@@ -48,6 +57,24 @@ set(GGML_CPU_KLEIDIAI    OFF CACHE BOOL "" FORCE)
 set(GGML_CPU_AARCH64     ON  CACHE BOOL "" FORCE)
 
 include(FetchContent)
+
+# --- OpenCL for the GGML OpenCL backend ---------------------------------
+# ggml-opencl does find_package(OpenCL REQUIRED). Under NDK cross-compile
+# nothing is found by default, so we provide it ourselves:
+#   * headers  — fetched from KhronosGroup/OpenCL-Headers (header-only)
+#   * link lib — the device's own libOpenCL.so, pulled into cpp/prebuilt/.
+#     Its soname is "libOpenCL.so"; at run time Android resolves that to the
+#     PUBLIC /vendor/lib64/libOpenCL.so, so we do NOT ship it in jniLibs.
+FetchContent_Declare(
+    opencl_headers
+    GIT_REPOSITORY https://github.com/KhronosGroup/OpenCL-Headers.git
+    GIT_TAG        v2024.10.24
+    GIT_SHALLOW    TRUE
+)
+FetchContent_MakeAvailable(opencl_headers)
+set(OpenCL_INCLUDE_DIR "${opencl_headers_SOURCE_DIR}" CACHE PATH "" FORCE)
+set(OpenCL_LIBRARY "${CMAKE_CURRENT_SOURCE_DIR}/prebuilt/libOpenCL.so" CACHE FILEPATH "" FORCE)
+
 FetchContent_Declare(
     llama_cpp
     GIT_REPOSITORY https://github.com/ggml-org/llama.cpp.git
