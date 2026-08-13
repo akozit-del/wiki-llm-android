@@ -379,12 +379,13 @@ Java_com_wikillm_android_llm_LlamaContext_nativeLoad(
         cparams.n_threads_batch = n;
     }
 
-    // Sprint 5 (build-112): GPU-offload path. Keep the KV cache at F16 and let
-    // llama choose the attention kernel (AUTO). The OpenCL backend does not
-    // support the Q8_0 KV + forced flash-attn combo the CPU path (build-71)
-    // used; with 4B-class models (the only ones that fit) F16 KV at n_ctx=4096
-    // is cheap on an 11 GB device.
-    cparams.flash_attn_type = LLAMA_FLASH_ATTN_TYPE_AUTO;
+    // Sprint 5 (build-115): GPU-offload path. Keep the KV cache at F16.
+    //   flash-attn is DISABLED: the OpenCL backend has no flash-attn kernel, so
+    //   with AUTO (build-112) llama put every layer's attention on the CPU and
+    //   bounced tensors GPU->CPU->GPU each token — killing the GPU win (measured
+    //   7.4 tok/s, no better than CPU). Disabled, attention uses the standard
+    //   path which OpenCL supports, so the whole graph stays on the Adreno.
+    cparams.flash_attn_type = LLAMA_FLASH_ATTN_TYPE_DISABLED;
     cparams.type_k          = GGML_TYPE_F16;
     cparams.type_v          = GGML_TYPE_F16;
 
