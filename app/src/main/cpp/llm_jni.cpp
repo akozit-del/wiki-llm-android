@@ -26,6 +26,12 @@ struct LlmHandle {
     llama_sampler*     smpl  = nullptr;
     int   n_ctx = 2048;
     float temp  = 0.7f; // current sampler temperature
+    // Set from another thread by nativeStopGeneration() so the generation loop
+    // (below) can bail immediately. The Kotlin channel-close path can't stop a
+    // running native call — the producer coroutine is blocked inside this very
+    // JNI call, so its channel never closes until we return. This flag breaks
+    // that deadlock: stop() flips it and the loop checks it every token.
+    std::atomic<bool> cancel{false};
 };
 
 // Build the sampler chain: penalties → min_p → temp → dist.
@@ -307,6 +313,9 @@ static void run_generation(
     // n_batch (positions auto-increment across llama_batch_get_one calls).
     bool prompt_ok = true;
     for (int i = 0; i < promptTokens; i += nBatch) {
+        // A long agentic/RAG prompt can spend seconds in prefill before the
+        // first token; honour Stop here too, not just in the sampling loop.
+        if (h->cancel.load(std::memory_order_relaxed)) { LOGI("Cancelled (prefill)"); return; }
         const int chunk = (promptTokens - i) < nBatch ? (promptTokens - i) : nBatch;
         llama_batch pb = llama_batch_get_one(tokens.data() + i, chunk);
         if (llama_decode(h->ctx, pb) != 0) {
@@ -320,6 +329,7 @@ static void run_generation(
     int generated = 0;
     std::string pending; // buffers bytes until they form a complete UTF-8 char
     while (prompt_ok && generated < genBudget && (promptTokens + generated) < nCtx) {
+        if (h->cancel.load(std::memory_order_relaxed)) { LOGI("Cancelled (stop requested)"); break; }
         next_token = llama_sampler_sample(h->smpl, h->ctx, -1); // also accepts the token
         if (llama_vocab_is_eog(h->vocab, next_token)) { LOGI("EOG, stopping"); break; }
         ++generated;
@@ -349,7 +359,7 @@ static void run_generation(
 
 extern "C" JNIEXPORT jlong JNICALL
 Java_com_wikillm_android_llm_LlamaContext_nativeLoad(
-    JNIEnv* env, jclass /*clazz*/, jstring jpath, jint nCtx) {
+    JNIEnv* env, jclass /*clazz*/, jstring jpath, jint nCtx, jint device) {
 
     ensure_backend();
     clear_last_error();
@@ -375,15 +385,30 @@ Java_com_wikillm_android_llm_LlamaContext_nativeLoad(
         LOGI("  dev[%zu] = %s (%s)", i,
              ggml_backend_dev_name(d), ggml_backend_dev_description(d));
     }
-    // Force the NPU if present; leave default (OpenCL/CPU) otherwise.
+    // Compute-device selection (A/B knob from settings):
+    //   0=auto (NPU if present, else default), 1=NPU/HTP0, 2=GPU/OpenCL, 3=CPU.
+    // static so the array outlives this call (llama copies from it during load,
+    // but keep it alive to be safe).
     static ggml_backend_dev_t s_devs[2] = { nullptr, nullptr };
     ggml_backend_dev_t htp = ggml_backend_dev_by_name("HTP0");
-    if (htp) {
-        s_devs[0] = htp;
-        mparams.devices = s_devs;
-        LOGI("Selected NPU device HTP0 for offload");
-    } else {
-        LOGI("HTP0 not found — default device selection");
+    ggml_backend_dev_t gpu = ggml_backend_dev_by_name("GPUOpenCL");
+    switch (device) {
+        case 3: // CPU only
+            mparams.n_gpu_layers = 0;
+            LOGI("Device pref=CPU — no offload (n_gpu_layers=0)");
+            break;
+        case 2: // GPU (OpenCL Adreno)
+            if (gpu) { s_devs[0] = gpu; mparams.devices = s_devs; LOGI("Device pref=GPU — selected GPUOpenCL"); }
+            else LOGW("Device pref=GPU but GPUOpenCL not found — default selection");
+            break;
+        case 1: // NPU (Hexagon)
+            if (htp) { s_devs[0] = htp; mparams.devices = s_devs; LOGI("Device pref=NPU — selected HTP0"); }
+            else LOGW("Device pref=NPU but HTP0 not found — default selection");
+            break;
+        default: // 0 = auto: prefer NPU, else leave default (OpenCL/CPU)
+            if (htp) { s_devs[0] = htp; mparams.devices = s_devs; LOGI("Device pref=Auto — selected NPU HTP0"); }
+            else LOGI("Device pref=Auto — HTP0 not found, default selection");
+            break;
     }
 
     LOGI("Loading model: %s", path_str.c_str());
@@ -445,6 +470,18 @@ Java_com_wikillm_android_llm_LlamaContext_nativeLastError(
     JNIEnv* env, jclass /*clazz*/) {
     std::lock_guard<std::mutex> lk(g_err_mu);
     return env->NewStringUTF(g_last_error.c_str());
+}
+
+// Signal a running nativeGenerateChat to stop as soon as it can (next token,
+// or between prefill batches). Safe to call from any thread while generation
+// runs on another; the loop reads the flag every iteration.
+extern "C" JNIEXPORT void JNICALL
+Java_com_wikillm_android_llm_LlamaContext_nativeStopGeneration(
+    JNIEnv* /*env*/, jclass /*clazz*/, jlong handle) {
+    auto* h = reinterpret_cast<LlmHandle*>(handle);
+    if (!h) return;
+    h->cancel.store(true, std::memory_order_relaxed);
+    LOGI("Stop requested");
 }
 
 extern "C" JNIEXPORT void JNICALL
@@ -569,6 +606,9 @@ Java_com_wikillm_android_llm_LlamaContext_nativeGenerateChat(
 
     auto* h = reinterpret_cast<LlmHandle*>(handle);
     if (!h || !h->model || !h->ctx) return;
+
+    // Clear any stale cancel from a previous run before we start this one.
+    h->cancel.store(false, std::memory_order_relaxed);
 
     std::string systemPrompt;
     if (jSystemPrompt) {

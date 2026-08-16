@@ -65,6 +65,18 @@ class LlamaContext private constructor(private val handle: Long) : AutoCloseable
             trySend(LlmEvent.Done(promptTok.get(), genTok.get()))
         }.flowOn(Dispatchers.Default).buffer(Channel.UNLIMITED)
 
+    /**
+     * Ask a running [generateChat] to stop ASAP. The coroutine's channel-close
+     * path alone can't do this — the producer coroutine is blocked inside the
+     * native call, so its channel never closes until the call returns. This flips
+     * an atomic flag the native loop checks every token (and between prefill
+     * batches), breaking that deadlock.
+     */
+    fun requestStop() {
+        if (closed) return
+        nativeStopGeneration(handle)
+    }
+
     override fun close() {
         if (closed) return
         closed = true
@@ -84,9 +96,10 @@ class LlamaContext private constructor(private val handle: Long) : AutoCloseable
         // list questions, 4096 was getting truncated; 6144 gives the model
         // enough room for the chain + a full answer. n_ctx is still a hard
         // ceiling — the JNI guard truncates from the head on overshoot.
-        suspend fun load(path: String, nCtx: Int = 6144): LlamaContext =
+        // device: 0=auto, 1=NPU/HTP0, 2=GPU/OpenCL, 3=CPU (see GenerationSettings).
+        suspend fun load(path: String, nCtx: Int = 6144, device: Int = 0): LlamaContext =
             withContext(Dispatchers.IO) {
-                val h = nativeLoad(path, nCtx)
+                val h = nativeLoad(path, nCtx, device)
                 if (h == 0L) {
                     val reason = nativeLastError().ifBlank { "Не удалось загрузить модель" }
                     throw LoadException(reason)
@@ -94,8 +107,9 @@ class LlamaContext private constructor(private val handle: Long) : AutoCloseable
                 LlamaContext(h)
             }
 
-        @JvmStatic external fun nativeLoad(path: String, nCtx: Int): Long
+        @JvmStatic external fun nativeLoad(path: String, nCtx: Int, device: Int): Long
         @JvmStatic external fun nativeFree(handle: Long)
+        @JvmStatic external fun nativeStopGeneration(handle: Long)
         @JvmStatic external fun nativeGenerateChat(
             handle: Long,
             roles: Array<String>,

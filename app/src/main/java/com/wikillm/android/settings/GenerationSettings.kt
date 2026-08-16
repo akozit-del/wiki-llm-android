@@ -37,6 +37,14 @@ class GenerationSettings(context: Context) {
     private val _rerank = MutableStateFlow(prefs.getBoolean(KEY_RERANK, false))
     val rerank: StateFlow<Boolean> = _rerank.asStateFlow()
 
+    /**
+     * Compute device the model is offloaded to (NPU-speed A/B knob). One of
+     * [DEVICE_AUTO]/[DEVICE_NPU]/[DEVICE_GPU]/[DEVICE_CPU]. Takes effect on the
+     * next model load — the native selection happens in nativeLoad().
+     */
+    private val _device = MutableStateFlow(prefs.getString(KEY_DEVICE, DEVICE_AUTO) ?: DEVICE_AUTO)
+    val device: StateFlow<String> = _device.asStateFlow()
+
     fun setSystemPrompt(v: String) {
         prefs.edit().putString(KEY_SYS, v).apply(); _systemPrompt.value = v
     }
@@ -57,9 +65,23 @@ class GenerationSettings(context: Context) {
         prefs.edit().putBoolean(KEY_RERANK, v).apply(); _rerank.value = v
     }
 
+    fun setDevice(v: String) {
+        prefs.edit().putString(KEY_DEVICE, v).apply(); _device.value = v
+    }
+
     fun resetSystemPrompt() = setSystemPrompt(DEFAULT_SYSTEM_PROMPT)
 
     fun currentRerank(): Boolean = prefs.getBoolean(KEY_RERANK, false)
+
+    fun currentDevice(): String = prefs.getString(KEY_DEVICE, DEVICE_AUTO) ?: DEVICE_AUTO
+
+    /** Device string → the int code nativeLoad() expects. */
+    fun currentDeviceCode(): Int = when (currentDevice()) {
+        DEVICE_NPU -> 1
+        DEVICE_GPU -> 2
+        DEVICE_CPU -> 3
+        else -> 0 // auto
+    }
 
     // Fresh reads from prefs (used at generation time).
     fun currentSystemPrompt(): String =
@@ -87,6 +109,11 @@ class GenerationSettings(context: Context) {
         private const val KEY_THINK = "thinking_enabled"
         private const val KEY_WORDS = "response_words"
         private const val KEY_RERANK = "rerank_enabled"
+        private const val KEY_DEVICE = "compute_device"
+        const val DEVICE_AUTO = "auto"
+        const val DEVICE_NPU = "npu"
+        const val DEVICE_GPU = "gpu"
+        const val DEVICE_CPU = "cpu"
         const val DEFAULT_TEMPERATURE = 0.7f
         const val DEFAULT_WORDS = 200
         const val DEFAULT_SYSTEM_PROMPT =

@@ -43,6 +43,7 @@ fun SettingsScreen(navController: NavController) {
     val temp by gen.temperature.collectAsState()
     val thinking by gen.thinking.collectAsState()
     val words by gen.responseWords.collectAsState()
+    val device by gen.device.collectAsState()
     val themeMode by ThemePrefs.mode.collectAsState()
 
     Scaffold(
@@ -178,6 +179,41 @@ fun SettingsScreen(navController: NavController) {
                     )
                 }
             }
+
+            Spacer(Modifier.height(8.dp))
+            HorizontalDivider()
+            Spacer(Modifier.height(8.dp))
+
+            SectionLabel("Устройство вычислений (скорость)")
+            Text(
+                "Куда выгружать модель. «Авто» = NPU, если доступен. NPU (Hexagon) — " +
+                    "самый быстрый путь для Q4_0; CPU полезен для честного A/B-замера.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(start = 4.dp),
+            )
+            Spacer(Modifier.height(6.dp))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                listOf(
+                    GenerationSettings.DEVICE_AUTO to "Авто",
+                    GenerationSettings.DEVICE_NPU to "NPU",
+                    GenerationSettings.DEVICE_GPU to "GPU",
+                    GenerationSettings.DEVICE_CPU to "CPU",
+                ).forEach { (value, label) ->
+                    FilterChip(
+                        selected = device == value,
+                        onClick = { gen.setDevice(value) },
+                        label = { Text(label) },
+                    )
+                }
+            }
+            Text(
+                "Применяется при следующей загрузке модели — после смены переоткрой " +
+                    "модель в списке вверху экрана чата.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(start = 4.dp, top = 4.dp),
+            )
 
             Spacer(Modifier.height(8.dp))
             HorizontalDivider()

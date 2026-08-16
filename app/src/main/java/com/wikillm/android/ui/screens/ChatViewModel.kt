@@ -157,8 +157,9 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         if (_loadState.value is ModelLoadState.Loading) return
         viewModelScope.launch {
             _loadState.value = ModelLoadState.Loading(model.fileName)
-            DiagLog.i(TAG, "Loading model: ${model.fileName} (${model.file.absolutePath})")
-            val r = llmRepo.load(model.file)
+            val device = genSettings.currentDevice()
+            DiagLog.i(TAG, "Loading model: ${model.fileName} (device=$device) (${model.file.absolutePath})")
+            val r = llmRepo.load(model.file, genSettings.currentDeviceCode())
             _loadState.value = r.fold(
                 onSuccess = {
                     DiagLog.i(TAG, "Model loaded: ${model.fileName}")
@@ -360,6 +361,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
 
     /** Open a saved conversation, replacing the current messages. */
     fun openConversation(id: Long) {
+        llmRepo.requestStop()
         generationJob?.cancel()
         val conv = historyStore.get(id) ?: return
         currentConvId = id
@@ -710,10 +712,17 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         return line.lowercase().startsWith("поиск") && SEARCH_DIRECTIVE.containsMatchIn(line)
     }
 
-    fun stop() { generationJob?.cancel() }
+    fun stop() {
+        // Interrupt the current native call first (breaks the blocking-JNI
+        // deadlock), then cancel the coroutine so any pending agentic/list hops
+        // don't start a fresh generation after this one bails.
+        llmRepo.requestStop()
+        generationJob?.cancel()
+    }
 
     /** Start a fresh chat. The previous one is already saved after each reply. */
     fun clear() {
+        llmRepo.requestStop()
         generationJob?.cancel()
         _messages.value = emptyList()
         currentConvId = System.currentTimeMillis()

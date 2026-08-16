@@ -19,10 +19,10 @@ class LlmRepository {
     private var current: LlamaContext? = null
     private val mutex = Object()
 
-    suspend fun load(file: File): Result<Unit> {
+    suspend fun load(file: File, device: Int = 0): Result<Unit> {
         unload()
         return try {
-            val ctx = LlamaContext.load(file.absolutePath)
+            val ctx = LlamaContext.load(file.absolutePath, device = device)
             synchronized(mutex) {
                 current = ctx
                 _loaded.value = LoadedModel(file.absolutePath, file.name)
@@ -50,6 +50,11 @@ class LlmRepository {
     ): Flow<LlmEvent> {
         val ctx = synchronized(mutex) { current } ?: return emptyFlow()
         return ctx.generateChat(messages, maxTokens, systemPrompt, temperature, noThink)
+    }
+
+    /** Interrupt a running generation on the loaded context (Stop button). */
+    fun requestStop() {
+        synchronized(mutex) { current }?.requestStop()
     }
 
     fun isLoaded(): Boolean = synchronized(mutex) { current != null }
