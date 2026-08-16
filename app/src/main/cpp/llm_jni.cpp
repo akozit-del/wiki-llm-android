@@ -27,13 +27,16 @@ struct LlmHandle {
 };
 
 // Build the sampler chain: penalties → min_p → temp → dist.
-static llama_sampler* make_sampler(float temp) {
+static llama_sampler* make_sampler(float temp, const llama_vocab* vocab) {
     if (temp < 0.05f) temp = 0.05f;
     auto sparams = llama_sampler_chain_default_params();
     sparams.no_perf = true;
     llama_sampler* s = llama_sampler_chain_init(sparams);
     // Penalties first so they reshape the logits before temp/min_p.
+    // Newer llama.cpp (post-Oct-2025, incl. the Hexagon merge) takes n_vocab
+    // as the first argument to llama_sampler_init_penalties.
     llama_sampler_chain_add(s, llama_sampler_init_penalties(
+        /*n_vocab*/        llama_vocab_n_tokens(vocab),
         /*penalty_last_n*/ 128, /*penalty_repeat*/ 1.15f,
         /*penalty_freq*/   0.0f, /*penalty_present*/ 0.0f));
     llama_sampler_chain_add(s, llama_sampler_init_min_p(0.05f, 1));
@@ -47,7 +50,7 @@ static void ensure_temp(LlmHandle* h, float temp) {
     if (temp < 0.05f) temp = 0.05f;
     if (h->smpl && temp == h->temp) return;
     if (h->smpl) llama_sampler_free(h->smpl);
-    h->smpl = make_sampler(temp);
+    h->smpl = make_sampler(temp, h->vocab);
     h->temp = temp;
 }
 
@@ -350,7 +353,6 @@ Java_com_wikillm_android_llm_LlamaContext_nativeLoad(
     // loudly (surfaced through nativeLastError) instead of silently dropping
     // to CPU, so we can tell a GPU-init problem from a model problem.
     mparams.n_gpu_layers = 99;
-    mparams.use_mmap = true;
 
     LOGI("Loading model: %s", path_str.c_str());
     h->model = llama_model_load_from_file(path_str.c_str(), mparams);
@@ -400,7 +402,7 @@ Java_com_wikillm_android_llm_LlamaContext_nativeLoad(
     }
 
     h->temp = 0.7f;
-    h->smpl = make_sampler(h->temp);
+    h->smpl = make_sampler(h->temp, h->vocab);
 
     LOGI("Model loaded OK");
     return reinterpret_cast<jlong>(h);
@@ -442,7 +444,6 @@ Java_com_wikillm_android_llm_LlamaContext_nativeLoadEmbed(
     auto* h = new LlmHandle();
     llama_model_params mparams = llama_model_default_params();
     mparams.n_gpu_layers = 0;
-    mparams.use_mmap = true;
 
     LOGI("Loading embed model: %s", path_str.c_str());
     h->model = llama_model_load_from_file(path_str.c_str(), mparams);
