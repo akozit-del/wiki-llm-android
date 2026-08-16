@@ -30,6 +30,14 @@
             android:name="libOpenCL.so"
             android:required="false" />
 
+        <!-- FastRPC bridge to the Hexagon DSP, needed by the ggml-hexagon NPU
+             backend (it dlopens libcdsprpc.so to open an HTP session). It's a
+             public vendor library, so declaring it grants the app's namespace
+             access to /vendor/lib64/libcdsprpc.so. -->
+        <uses-native-library
+            android:name="libcdsprpc.so"
+            android:required="false" />
+
         <activity
             android:name=".MainActivity"
             android:exported="true"

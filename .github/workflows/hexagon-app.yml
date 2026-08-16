@@ -18,13 +18,25 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # The 8-min Docker cross-compile only depends on our JNI + this workflow +
+      # the llama.cpp ref. Cache the produced libs so app-side-only changes
+      # (manifest, gradle, Kotlin) skip it.
+      - name: Cache native libs
+        id: nativecache
+        uses: actions/cache@v4
+        with:
+          path: out
+          key: hexnative-${{ github.event.inputs.llama_ref }}-${{ hashFiles('app/src/main/cpp/llm_jni.cpp', '.github/workflows/hexagon-app.yml') }}
+
       - name: Clone llama.cpp
+        if: steps.nativecache.outputs.cache-hit != 'true'
         run: |
           git clone --depth 1 --branch "${{ github.event.inputs.llama_ref }}" \
             https://github.com/ggml-org/llama.cpp.git llama.cpp \
             || git clone https://github.com/ggml-org/llama.cpp.git llama.cpp
 
       - name: Build llama.cpp(+Hexagon) and libllm.so via snapdragon-toolchain
+        if: steps.nativecache.outputs.cache-hit != 'true'
         run: |
           docker run --rm -u 0:0 -v "$PWD":/workspace -w /workspace \
             ghcr.io/snapdragon-toolchain/arm64-android:v0.7 bash -lc '
