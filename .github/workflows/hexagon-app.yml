@@ -1,0 +1,66 @@
+name: hexagon-app
+
+# M1 (de-risk) native build: compile upstream llama.cpp WITH the ggml-hexagon
+# NPU backend AND our JNI wrapper (llm_jni.cpp) against it, via Qualcomm's
+# snapdragon-toolchain. Produces the full set of arm64 .so (libllm.so +
+# libllama/ggml + libggml-htp-v73/v81) that a Hexagon-enabled APK will package.
+# Separate from build.yml so the normal app keeps building while we iterate.
+on:
+  workflow_dispatch:
+    inputs:
+      llama_ref:
+        description: "llama.cpp git ref (tag/branch/sha) with ggml-hexagon"
+        default: "master"
+
+jobs:
+  native:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Clone llama.cpp
+        run: |
+          git clone --depth 1 --branch "${{ github.event.inputs.llama_ref }}" \
+            https://github.com/ggml-org/llama.cpp.git llama.cpp \
+            || git clone https://github.com/ggml-org/llama.cpp.git llama.cpp
+
+      - name: Build llama.cpp(+Hexagon) and libllm.so via snapdragon-toolchain
+        run: |
+          docker run --rm -u 0:0 -v "$PWD":/workspace -w /workspace \
+            ghcr.io/snapdragon-toolchain/arm64-android:v0.7 bash -lc '
+              set -euo pipefail
+              cd llama.cpp
+              cp docs/backend/snapdragon/CMakeUserPresets.json .
+              cmake --preset arm64-android-snapdragon-release -B build-snap
+              cmake --build build-snap -j"$(nproc)"
+              cmake --install build-snap --prefix /workspace/pkg
+              cd /workspace
+
+              CLANG="$(find /opt -name "aarch64-linux-android31-clang++" 2>/dev/null | head -1)"
+              echo "Using clang: $CLANG"
+              test -n "$CLANG"
+
+              mkdir -p out
+              "$CLANG" -fPIC -shared -std=c++17 -fexceptions -frtti -O2 \
+                -I pkg/include \
+                app/src/main/cpp/llm_jni.cpp \
+                -Lpkg/lib -lllama -lggml -lggml-base -lggml-cpu \
+                -llog -landroid \
+                -Wl,--allow-shlib-undefined \
+                -o out/libllm.so
+
+              # Collect every runtime .so the APK will need.
+              cp pkg/lib/libllama.so pkg/lib/libggml*.so out/
+              # c++_shared from the NDK sysroot
+              CXXSO="$(find /opt -name libc++_shared.so -path "*aarch64*" 2>/dev/null | head -1)"
+              [ -n "$CXXSO" ] && cp "$CXXSO" out/ || echo "warn: libc++_shared.so not found"
+              echo "=== produced ==="; ls -la out/
+              echo "=== libllm.so NEEDED ==="; "$CLANG" --version >/dev/null; readelf -d out/libllm.so 2>/dev/null | grep NEEDED || true
+            '
+
+      - name: Upload native libs
+        uses: actions/upload-artifact@v4
+        with:
+          name: hexagon-native
+          path: out/**
+          if-no-files-found: error
