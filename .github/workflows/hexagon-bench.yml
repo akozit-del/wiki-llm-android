@@ -1,0 +1,40 @@
+name: hexagon-bench
+
+# Standalone experiment (does NOT touch the app build): cross-compiles upstream
+# llama.cpp with the official ggml-hexagon NPU backend using Qualcomm's
+# snapdragon-toolchain Docker image, and uploads llama-bench/llama-cli plus the
+# per-Hexagon-version HTP libs (v73 for S23, v81 for S26) as an artifact. We
+# then adb-push these to a device and measure real NPU tokens/sec on Q4_0
+# models before deciding whether to integrate the backend into the app.
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Clone upstream llama.cpp
+        run: git clone --depth 1 https://github.com/ggml-org/llama.cpp.git
+
+      - name: Build llama.cpp (CPU + OpenCL + Hexagon) via snapdragon-toolchain
+        run: |
+          docker run --rm -u 0:0 \
+            -v "$PWD/llama.cpp":/workspace -w /workspace \
+            ghcr.io/snapdragon-toolchain/arm64-android:v0.7 \
+            bash -lc '
+              set -e
+              cp docs/backend/snapdragon/CMakeUserPresets.json .
+              cmake --preset arm64-android-snapdragon-release -B build-snapdragon
+              cmake --build build-snapdragon -j"$(nproc)"
+              cmake --install build-snapdragon --prefix pkg-snapdragon/llama.cpp
+            '
+
+      - name: List built artifacts
+        run: find llama.cpp/pkg-snapdragon -maxdepth 3 -type f | sort
+
+      - name: Upload package
+        uses: actions/upload-artifact@v4
+        with:
+          name: llama-hexagon-snapdragon
+          path: llama.cpp/pkg-snapdragon/**
+          if-no-files-found: error
