@@ -89,7 +89,13 @@ android {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
         }
         jniLibs {
-            useLegacyPackaging = false
+            // Hexagon needs the native libs EXTRACTED to a real filesystem dir:
+            // the ggml backend loader (dladdr → ggml_backend_load_all_from_path)
+            // and the DSP (ADSP_LIBRARY_PATH → libggml-htp-vNN.so) can't scan the
+            // in-APK "base.apk!/lib" path. Legacy packaging extracts to
+            // nativeLibraryDir. The normal build keeps the smaller uncompressed
+            // packaging.
+            useLegacyPackaging = project.hasProperty("hexagon")
             // We LINK libllm.so against the device's libOpenCL.so (in cpp/prebuilt)
             // to satisfy the ggml-opencl backend, but must NOT ship it in the APK:
             // that copy pulls vendor deps (libcutils.so …) unavailable in the app's
