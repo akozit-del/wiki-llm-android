@@ -9,6 +9,7 @@ import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.withContext
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicLong
 
 interface TokenCallback {
     /**
@@ -17,14 +18,24 @@ interface TokenCallback {
      * cleanly. Return false to stop generation.
      */
     fun onToken(utf8: ByteArray): Boolean
-    /** Called once at the very end with exact token counts. */
-    fun onComplete(promptTokens: Int, genTokens: Int)
+    /**
+     * Called once at the very end with exact token counts and per-phase timing.
+     * [prefillMs] = time to process the prompt (prefill), [decodeMs] = time to
+     * generate [genTokens] tokens — split so RAG's big-prompt prefill throughput
+     * is visible separately from decode speed.
+     */
+    fun onComplete(promptTokens: Int, genTokens: Int, prefillMs: Long, decodeMs: Long)
 }
 
 /** Streamed output of a generation: token pieces followed by a final [Done] with stats. */
 sealed interface LlmEvent {
     data class Token(val piece: String) : LlmEvent
-    data class Done(val promptTokens: Int, val genTokens: Int) : LlmEvent
+    data class Done(
+        val promptTokens: Int,
+        val genTokens: Int,
+        val prefillMs: Long,
+        val decodeMs: Long,
+    ) : LlmEvent
 }
 
 class LlamaContext private constructor(private val handle: Long) : AutoCloseable {
@@ -44,14 +55,17 @@ class LlamaContext private constructor(private val handle: Long) : AutoCloseable
             val cancelled  = AtomicBoolean(false)
             val promptTok  = AtomicInteger(0)
             val genTok     = AtomicInteger(0)
+            val prefillMs  = AtomicLong(0)
+            val decodeMs   = AtomicLong(0)
             val cb = object : TokenCallback {
                 override fun onToken(utf8: ByteArray): Boolean {
                     val r = trySend(LlmEvent.Token(String(utf8, Charsets.UTF_8)))
                     if (r.isClosed) { cancelled.set(true); return false }
                     return !cancelled.get()
                 }
-                override fun onComplete(promptTokens: Int, genTokens: Int) {
+                override fun onComplete(promptTokens: Int, genTokens: Int, prefill: Long, decode: Long) {
                     promptTok.set(promptTokens); genTok.set(genTokens)
+                    prefillMs.set(prefill); decodeMs.set(decode)
                 }
             }
             val roles    = messages.map { it.first  }.toTypedArray()
@@ -62,7 +76,7 @@ class LlamaContext private constructor(private val handle: Long) : AutoCloseable
                         systemPrompt, temperature, noThink, cb)
                 } catch (t: Throwable) { cancelled.set(true); throw t }
             }
-            trySend(LlmEvent.Done(promptTok.get(), genTok.get()))
+            trySend(LlmEvent.Done(promptTok.get(), genTok.get(), prefillMs.get(), decodeMs.get()))
         }.flowOn(Dispatchers.Default).buffer(Channel.UNLIMITED)
 
     /**

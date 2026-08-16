@@ -388,10 +388,20 @@ private fun liveStatus(p: GenProgress?): String {
     return sb.toString()
 }
 
-/** "qwen2.5-1.5b · 12 с · 187 ток · 15.6 ток/с" under a finished reply. */
+/**
+ * "qwen2.5-3b · 12 с · 187 ток · 15.6 ток/с · префилл 1500 ток @ 320 т/с".
+ * The prefill segment (prompt-processing throughput) appears only when native
+ * timing is available — it's the number that jumps on the NPU for big RAG
+ * prompts, so it's worth surfacing right under the reply.
+ */
 private fun statsLine(s: GenStats): String {
-    val rate = String.format("%.1f", s.tokensPerSec)
-    return "${s.model} · ${secs(s.elapsedMs)} с · ${s.genTokens} ток · $rate ток/с"
+    // Prefer the precise decode rate (excludes prefill + retrieval); fall back
+    // to the whole-turn rate when per-phase timing is unavailable.
+    val rate = String.format("%.1f", if (s.decodeMs > 0) s.decodeTokensPerSec else s.tokensPerSec)
+    val base = "${s.model} · ${secs(s.elapsedMs)} с · ${s.genTokens} ток · $rate ток/с"
+    return if (s.prefillMs > 0 && s.promptTokens > 0) {
+        base + " · префилл ${s.promptTokens} ток @ ${String.format("%.0f", s.prefillTokensPerSec)} т/с"
+    } else base
 }
 
 private fun secs(ms: Long): Long = (ms + 500) / 1000

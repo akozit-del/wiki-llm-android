@@ -42,8 +42,16 @@ data class GenStats(
     val elapsedMs: Long,
     val genTokens: Int,
     val promptTokens: Int,
+    // Native per-phase timing (ms). prefill = prompt processing (matters for RAG),
+    // decode = token generation. 0 when unavailable (e.g. deterministic list path).
+    val prefillMs: Long = 0,
+    val decodeMs: Long = 0,
 ) {
     val tokensPerSec: Float get() = if (elapsedMs > 0) genTokens * 1000f / elapsedMs else 0f
+    /** Prompt-processing throughput — the number the NPU should push high on RAG. */
+    val prefillTokensPerSec: Float get() = if (prefillMs > 0) promptTokens * 1000f / prefillMs else 0f
+    /** Pure decode throughput (excludes prefill + retrieval, unlike [tokensPerSec]). */
+    val decodeTokensPerSec: Float get() = if (decodeMs > 0) genTokens * 1000f / decodeMs else 0f
 }
 
 /** Live progress while the model is thinking/generating. */
@@ -280,7 +288,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                     _messages.value = _messages.value.map {
                         if (it.id == assistantId) it.copy(text = res.text) else it
                     }
-                    stats = GenStats(currentModelName(), System.currentTimeMillis() - startMs, res.genTokens, res.promptTokens)
+                    stats = GenStats(currentModelName(), System.currentTimeMillis() - startMs, res.genTokens, res.promptTokens, res.prefillMs, res.decodeMs)
                 } else if (agentic) {
                     val res = runAgentic(
                         question = userText.trim(),
@@ -290,7 +298,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                         onToken = { tokenCount.incrementAndGet() },
                     )
                     builder.append(res.text)
-                    stats = GenStats(currentModelName(), System.currentTimeMillis() - startMs, res.genTokens, res.promptTokens)
+                    stats = GenStats(currentModelName(), System.currentTimeMillis() - startMs, res.genTokens, res.promptTokens, res.prefillMs, res.decodeMs)
                 } else {
                     val history = buildHistory(previousMessages, userText.trim())
                     val sysPrompt = genSettings.effectiveSystemPrompt()
@@ -315,6 +323,8 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                                     elapsedMs = System.currentTimeMillis() - startMs,
                                     genTokens = ev.genTokens,
                                     promptTokens = ev.promptTokens,
+                                    prefillMs = ev.prefillMs,
+                                    decodeMs = ev.decodeMs,
                                 )
                             }
                         }
@@ -331,8 +341,13 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                     genTokens = tokenCount.get(),
                     promptTokens = 0,
                 )
+                val perf = if (finalStats.prefillMs > 0)
+                    ", prefill ${finalStats.promptTokens}tok/${finalStats.prefillMs}ms=" +
+                        "${"%.0f".format(finalStats.prefillTokensPerSec)}t/s" +
+                        ", decode ${"%.1f".format(finalStats.decodeTokensPerSec)}t/s"
+                else ""
                 DiagLog.i(TAG, "Reply (${finalText.length} chars, ${finalStats.genTokens} tok, " +
-                        "${finalStats.elapsedMs}ms): ${finalText.take(200).replace('\n', ' ')}")
+                        "${finalStats.elapsedMs}ms$perf): ${finalText.take(200).replace('\n', ' ')}")
                 _messages.value = _messages.value.map {
                     if (it.id == assistantId) {
                         it.copy(text = finalText, isStreaming = false, stats = finalStats)
@@ -453,7 +468,13 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         return augmented
     }
 
-    private data class AgenticResult(val text: String, val genTokens: Int, val promptTokens: Int)
+    private data class AgenticResult(
+        val text: String,
+        val genTokens: Int,
+        val promptTokens: Int,
+        val prefillMs: Long = 0,
+        val decodeMs: Long = 0,
+    )
 
     /**
      * build-94 — L3X map-extract pipeline for "перечисли всех X" questions.
@@ -532,6 +553,8 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         val triedQueries = HashSet<String>()
         var totalGen = 0
         var totalPrompt = 0
+        var totalPrefillMs = 0L
+        var totalDecodeMs = 0L
         var lastText = ""
 
         val seedEx = rag.searchExcerpts(resolved, _ragCandidates.value, topK = 4, budgetChars = 3500)
@@ -574,12 +597,15 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
             ).collect { ev ->
                 when (ev) {
                     is LlmEvent.Token -> { onFirstToken(); onToken(); out.append(ev.piece) }
-                    is LlmEvent.Done -> { totalGen += ev.genTokens; totalPrompt += ev.promptTokens }
+                    is LlmEvent.Done -> {
+                        totalGen += ev.genTokens; totalPrompt += ev.promptTokens
+                        totalPrefillMs += ev.prefillMs; totalDecodeMs += ev.decodeMs
+                    }
                 }
             }
             val text = stripThinking(out.toString()).trim()
             // If the model misbehaves, fall back to the deterministic list.
-            return AgenticResult(text.ifBlank { factual }, totalGen, totalPrompt)
+            return AgenticResult(text.ifBlank { factual }, totalGen, totalPrompt, totalPrefillMs, totalDecodeMs)
         }
 
         for (hop in 1..MAX_HOPS) {
@@ -597,7 +623,10 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
             ).collect { ev ->
                 when (ev) {
                     is LlmEvent.Token -> { onFirstToken(); onToken(); out.append(ev.piece) }
-                    is LlmEvent.Done -> { totalGen += ev.genTokens; totalPrompt += ev.promptTokens }
+                    is LlmEvent.Done -> {
+                        totalGen += ev.genTokens; totalPrompt += ev.promptTokens
+                        totalPrefillMs += ev.prefillMs; totalDecodeMs += ev.decodeMs
+                    }
                 }
             }
             val text = stripThinking(out.toString()).trim()
@@ -608,7 +637,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                 val answer = text.lineSequence()
                     .filterNot { isSearchDirectiveLine(it) }
                     .joinToString("\n").trim()
-                return AgenticResult(answer.ifBlank { "не знаю по приведённым выдержкам" }, totalGen, totalPrompt)
+                return AgenticResult(answer.ifBlank { "не знаю по приведённым выдержкам" }, totalGen, totalPrompt, totalPrefillMs, totalDecodeMs)
             }
             if (normalizeQuery(query) in triedQueries) {
                 // The model is repeating itself — nudge it to answer instead of looping.
@@ -626,7 +655,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
             trail += if (more.block.isBlank()) "\n\n--- Доп. поиск «$query»: ничего нового ---"
             else "\n\n--- Доп. поиск «$query» ---\n" + more.block
         }
-        return AgenticResult(lastText.ifBlank { "не знаю по приведённым выдержкам" }, totalGen, totalPrompt)
+        return AgenticResult(lastText.ifBlank { "не знаю по приведённым выдержкам" }, totalGen, totalPrompt, totalPrefillMs, totalDecodeMs)
     }
 
     /** Normalize a search query for dedup (lowercase, strip punctuation/spaces). */

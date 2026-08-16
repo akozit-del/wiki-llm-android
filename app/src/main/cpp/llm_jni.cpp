@@ -2,6 +2,7 @@
 #include <android/log.h>
 #include <dlfcn.h>
 #include <atomic>
+#include <chrono>
 #include <cmath>
 #include <cstring>
 #include <mutex>
@@ -266,7 +267,10 @@ static void run_generation(
 
     jclass cbClass = env->GetObjectClass(callback);
     jmethodID onTokenMethod    = env->GetMethodID(cbClass, "onToken",    "([B)Z");
-    jmethodID onCompleteMethod = env->GetMethodID(cbClass, "onComplete", "(II)V");
+    // onComplete now also reports prefill/decode wall-time (ms) so the app can
+    // show prompt-processing (prefill) tok/s separately from decode tok/s — the
+    // number that matters for RAG's big prompts, where the NPU should win big.
+    jmethodID onCompleteMethod = env->GetMethodID(cbClass, "onComplete", "(IIJJ)V");
     if (!onTokenMethod) { LOGE("TokenCallback.onToken not found"); return; }
 
     // Emit a complete-UTF-8 chunk to Kotlin; returns false to stop generation.
@@ -311,6 +315,8 @@ static void run_generation(
 
     // Decode the prompt in n_batch-sized chunks so a single batch never exceeds
     // n_batch (positions auto-increment across llama_batch_get_one calls).
+    using clk = std::chrono::steady_clock;
+    const auto t_prefill_start = clk::now();
     bool prompt_ok = true;
     for (int i = 0; i < promptTokens; i += nBatch) {
         // A long agentic/RAG prompt can spend seconds in prefill before the
@@ -325,6 +331,7 @@ static void run_generation(
         }
     }
 
+    const auto t_decode_start = clk::now();
     llama_token next_token = 0;
     int generated = 0;
     std::string pending; // buffers bytes until they form a complete UTF-8 char
@@ -343,15 +350,23 @@ static void run_generation(
         llama_batch batch = llama_batch_get_one(&next_token, 1);
         if (llama_decode(h->ctx, batch) != 0) { LOGE("gen decode failed"); break; }
     }
+    const auto t_end = clk::now();
     // Flush any complete bytes left in the buffer (drop a trailing partial char).
     if (!pending.empty()) {
         size_t cut = utf8_complete_len(pending);
         if (cut > 0) emit_chunk(pending.substr(0, cut));
     }
-    LOGI("Done, generated=%d", generated);
+    using ms = std::chrono::milliseconds;
+    const long prefill_ms = std::chrono::duration_cast<ms>(t_decode_start - t_prefill_start).count();
+    const long decode_ms  = std::chrono::duration_cast<ms>(t_end - t_decode_start).count();
+    const double prefill_tps = prefill_ms > 0 ? promptTokens * 1000.0 / prefill_ms : 0.0;
+    const double decode_tps  = decode_ms  > 0 ? generated    * 1000.0 / decode_ms  : 0.0;
+    LOGI("Prefill: %d tok in %ld ms (%.1f tok/s) | Decode: %d tok in %ld ms (%.1f tok/s)",
+         promptTokens, prefill_ms, prefill_tps, generated, decode_ms, decode_tps);
     if (onCompleteMethod) {
         env->CallVoidMethod(callback, onCompleteMethod,
-                            static_cast<jint>(promptTokens), static_cast<jint>(generated));
+                            static_cast<jint>(promptTokens), static_cast<jint>(generated),
+                            static_cast<jlong>(prefill_ms), static_cast<jlong>(decode_ms));
     }
 }
 
