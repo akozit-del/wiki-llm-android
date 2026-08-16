@@ -1,5 +1,6 @@
 #include <jni.h>
 #include <android/log.h>
+#include <dlfcn.h>
 #include <atomic>
 #include <cmath>
 #include <cstring>
@@ -9,6 +10,7 @@
 #include <vector>
 
 #include "llama.h"
+#include "ggml-backend.h"
 
 #define LOG_TAG "WikiLLM"
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO,  LOG_TAG, __VA_ARGS__)
@@ -92,6 +94,19 @@ void clear_last_error() {
 void ensure_backend() {
     std::call_once(g_backend_once, []() {
         llama_log_set(llama_log_cb, nullptr);
+        // The OpenCL / Hexagon backends are separate .so; load them from our
+        // own native lib dir (found via dladdr) so their devices register.
+        Dl_info info;
+        if (dladdr(reinterpret_cast<void*>(&ensure_backend), &info) && info.dli_fname) {
+            std::string p = info.dli_fname;
+            auto slash = p.find_last_of('/');
+            std::string dir = (slash == std::string::npos) ? std::string(".") : p.substr(0, slash);
+            LOGI("Loading ggml backends from: %s", dir.c_str());
+            ggml_backend_load_all_from_path(dir.c_str());
+        } else {
+            ggml_backend_load_all();
+        }
+        LOGI("ggml_backend_reg_count = %zu", ggml_backend_reg_count());
         llama_backend_init();
         LOGI("llama_backend_init done");
     });
@@ -348,11 +363,28 @@ Java_com_wikillm_android_llm_LlamaContext_nativeLoad(
     h->n_ctx = nCtx;
 
     llama_model_params mparams = llama_model_default_params();
-    // Sprint 5 (build-112): offload all layers to the Adreno GPU via the
-    // OpenCL backend. If no OpenCL device is found at run time the load fails
-    // loudly (surfaced through nativeLastError) instead of silently dropping
-    // to CPU, so we can tell a GPU-init problem from a model problem.
+    // Sprint 6 (M1): offload all layers and prefer the Hexagon NPU (HTP0).
     mparams.n_gpu_layers = 99;
+
+    // Log every ggml device we see (CPU / GPUOpenCL / HTP0…) — this is the
+    // de-risk signal: whether the Hexagon device is visible from the app.
+    const size_t ndev = ggml_backend_dev_count();
+    LOGI("ggml devices: %zu", ndev);
+    for (size_t i = 0; i < ndev; ++i) {
+        ggml_backend_dev_t d = ggml_backend_dev_get(i);
+        LOGI("  dev[%zu] = %s (%s)", i,
+             ggml_backend_dev_name(d), ggml_backend_dev_description(d));
+    }
+    // Force the NPU if present; leave default (OpenCL/CPU) otherwise.
+    static ggml_backend_dev_t s_devs[2] = { nullptr, nullptr };
+    ggml_backend_dev_t htp = ggml_backend_dev_by_name("HTP0");
+    if (htp) {
+        s_devs[0] = htp;
+        mparams.devices = s_devs;
+        LOGI("Selected NPU device HTP0 for offload");
+    } else {
+        LOGI("HTP0 not found — default device selection");
+    }
 
     LOGI("Loading model: %s", path_str.c_str());
     h->model = llama_model_load_from_file(path_str.c_str(), mparams);

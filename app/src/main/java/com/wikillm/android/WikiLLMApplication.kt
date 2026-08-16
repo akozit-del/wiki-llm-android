@@ -26,7 +26,26 @@ class WikiLLMApplication : Application() {
         DiagLog.attach(this)
         DiagLog.installCrashHandler()
         ThemePrefs.init(this)
+        setupHexagonEnv()
         loadKiwixNatives()
+    }
+
+    /**
+     * The ggml-hexagon NPU backend loads its DSP skel (libggml-htp-vNN.so) via
+     * FastRPC, which finds it through ADSP_LIBRARY_PATH. Point that at our own
+     * native lib dir (where the htp libs are packaged) BEFORE libllm.so loads,
+     * plus the standard vendor DSP dirs. Without this: "failed to open session
+     * : error 0x80000406".
+     */
+    private fun setupHexagonEnv() {
+        try {
+            val libDir = applicationInfo.nativeLibraryDir
+            val path = "$libDir;/vendor/lib/rfsa/adsp;/vendor/dsp/cdsp;/system/lib/rfsa/adsp"
+            android.system.Os.setenv("ADSP_LIBRARY_PATH", path, true)
+            DiagLog.i(TAG, "ADSP_LIBRARY_PATH=$path")
+        } catch (t: Throwable) {
+            DiagLog.e(TAG, "setupHexagonEnv failed", t)
+        }
     }
 
     private fun loadKiwixNatives() {
