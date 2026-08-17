@@ -14,26 +14,54 @@
 #include "llama.h"
 #include "ggml-backend.h"
 
-// --- MTP (Multi-Token Prediction) staging API ---------------------------------
-// These live in llama.cpp's src/llama-ext.h, which is NOT installed with the
-// public headers, but the symbols ARE exported from libllama.so (visibility
-// default). So we vendor the prototypes here and let -lllama resolve them.
-// The enum LLAMA_CONTEXT_TYPE_MTP, the llama_context_params.{ctx_type,n_rs_seq,
-// ctx_other} and llama_model_params.load_mtp fields, and the public functions
-// llama_model_n_embd_out / llama_model_n_layer_nextn / llama_n_rs_seq all live
-// in the PUBLIC llama.h (merged 2026-05, present since tag b9296).
-extern "C" {
-    void   llama_set_embeddings_nextn    (llama_context* ctx, bool value, bool masked);
-    float* llama_get_embeddings_nextn_ith(llama_context* ctx, int32_t i);
-    void   llama_set_nextn_layer_offset  (llama_context* ctx, int32_t offset);
-}
-
 #define LOG_TAG "WikiLLM"
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO,  LOG_TAG, __VA_ARGS__)
 #define LOGW(...) __android_log_print(ANDROID_LOG_WARN,  LOG_TAG, __VA_ARGS__)
 #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, LOG_TAG, __VA_ARGS__)
 
 namespace {
+
+// --- MTP (Multi-Token Prediction) staging API, resolved at RUNTIME -----------
+// These live in llama.cpp's src/llama-ext.h (NOT installed) and — as we learned
+// the hard way (build hexagon-8) — are NOT exported from the prebuilt
+// libllama.so we link against. A hard link reference makes dlopen(libllm.so)
+// fail outright ("cannot locate symbol llama_set_embeddings_nextn"), which
+// bricks ALL model loading, not just MTP. So we bind them via dlsym instead:
+// no hard reference → the lib always loads; if the symbols aren't exported,
+// MTP simply stays off and plain generation is unaffected.
+typedef void    (*fn_set_embd_nextn)     (llama_context*, bool, bool);
+typedef float*  (*fn_get_embd_nextn_ith) (llama_context*, int32_t);
+typedef void    (*fn_set_nextn_off)      (llama_context*, int32_t);
+typedef int32_t (*fn_model_n_embd_out)   (const llama_model*);
+typedef int32_t (*fn_model_n_layer_nextn)(const llama_model*);
+
+struct MtpSyms {
+    fn_set_embd_nextn      set_embeddings_nextn     = nullptr;
+    fn_get_embd_nextn_ith  get_embeddings_nextn_ith = nullptr;
+    fn_set_nextn_off       set_nextn_layer_offset   = nullptr;
+    fn_model_n_embd_out    model_n_embd_out         = nullptr;
+    fn_model_n_layer_nextn model_n_layer_nextn      = nullptr;
+    bool resolved = false;
+    bool ok = false;
+};
+MtpSyms g_mtp;
+
+bool resolve_mtp_syms() {
+    if (g_mtp.resolved) return g_mtp.ok;
+    g_mtp.resolved = true;
+    g_mtp.set_embeddings_nextn     = (fn_set_embd_nextn)      dlsym(RTLD_DEFAULT, "llama_set_embeddings_nextn");
+    g_mtp.get_embeddings_nextn_ith = (fn_get_embd_nextn_ith)  dlsym(RTLD_DEFAULT, "llama_get_embeddings_nextn_ith");
+    g_mtp.set_nextn_layer_offset   = (fn_set_nextn_off)       dlsym(RTLD_DEFAULT, "llama_set_nextn_layer_offset");
+    g_mtp.model_n_embd_out         = (fn_model_n_embd_out)    dlsym(RTLD_DEFAULT, "llama_model_n_embd_out");
+    g_mtp.model_n_layer_nextn      = (fn_model_n_layer_nextn) dlsym(RTLD_DEFAULT, "llama_model_n_layer_nextn");
+    g_mtp.ok = g_mtp.set_embeddings_nextn && g_mtp.get_embeddings_nextn_ith &&
+               g_mtp.set_nextn_layer_offset && g_mtp.model_n_embd_out && g_mtp.model_n_layer_nextn;
+    LOGI("MTP syms: set_embd=%p get_embd_ith=%p set_off=%p n_embd_out=%p n_layer_nextn=%p -> %s",
+         (void*)g_mtp.set_embeddings_nextn, (void*)g_mtp.get_embeddings_nextn_ith,
+         (void*)g_mtp.set_nextn_layer_offset, (void*)g_mtp.model_n_embd_out,
+         (void*)g_mtp.model_n_layer_nextn, g_mtp.ok ? "OK" : "MISSING (MTP disabled)");
+    return g_mtp.ok;
+}
 
 struct LlmHandle {
     llama_model*       model = nullptr;
@@ -415,7 +443,7 @@ static void run_generation(
         if (llama_decode(h->ctx, batch) != 0) { LOGE("gen decode failed"); break; }
         // Shadow draft for the NEXT token, using the target's nextn hidden row.
         if (h->mtp) {
-            const float* curH = llama_get_embeddings_nextn_ith(h->ctx, 0);
+            const float* curH = g_mtp.get_embeddings_nextn_ith(h->ctx, 0);
             mtp_pending = curH ? mtp_draft_next(h, next_token, curH, mtp_pos++) : -1;
             if (mtp_pending < 0) ++mtp_fail;
         }
@@ -545,8 +573,9 @@ Java_com_wikillm_android_llm_LlamaContext_nativeLoad(
     // shadow probe doesn't roll back, but we set it now so the same context
     // shape carries into the real speculative loop later.
     const int mtp_n_max = 2;
-    const int n_layer_nextn = (mtp && h->model) ? llama_model_n_layer_nextn(h->model) : 0;
-    const bool mtp_ok = mtp && n_layer_nextn > 0;
+    const bool mtp_syms = mtp ? resolve_mtp_syms() : false;
+    const int n_layer_nextn = (mtp_syms && h->model) ? g_mtp.model_n_layer_nextn(h->model) : 0;
+    const bool mtp_ok = mtp_syms && n_layer_nextn > 0;
     if (mtp_ok) cparams.n_rs_seq = mtp_n_max;
 
     h->ctx = llama_init_from_model(h->model, cparams);
@@ -562,26 +591,29 @@ Java_com_wikillm_android_llm_LlamaContext_nativeLoad(
     h->temp = 0.7f;
     h->smpl = make_sampler(h->temp, h->vocab);
 
-    // Build the MTP draft context (2nd context on the SAME model). If the model
-    // has no nextn head, or MTP wasn't requested, we skip it and run normally.
-    if (mtp && n_layer_nextn == 0) {
+    // Build the MTP draft context (2nd context on the SAME model). If MTP wasn't
+    // requested, the symbols aren't exported, or the model has no nextn head, we
+    // skip it and run normally.
+    if (mtp && !mtp_syms) {
+        LOGW("MTP requested but staging symbols not exported by libllama — running plain");
+    } else if (mtp && n_layer_nextn == 0) {
         LOGW("MTP requested but model has no nextn head (n_layer_nextn=0) — running plain");
     } else if (mtp_ok) {
-        h->n_embd_out = llama_model_n_embd_out(h->model);
-        llama_set_embeddings_nextn(h->ctx, true, /*masked=*/false); // target emits nextn hidden state
+        h->n_embd_out = g_mtp.model_n_embd_out(h->model);
+        g_mtp.set_embeddings_nextn(h->ctx, true, /*masked=*/false); // target emits nextn hidden state
         llama_context_params cd = cparams;
         cd.ctx_type  = LLAMA_CONTEXT_TYPE_MTP;
         cd.n_rs_seq  = 0;
         cd.ctx_other = h->ctx;
         h->mtp = llama_init_from_model(h->model, cd);
         if (h->mtp) {
-            llama_set_embeddings_nextn(h->mtp, true, /*masked=*/true);
-            llama_set_nextn_layer_offset(h->mtp, 0); // qwen35 = single nextn head
+            g_mtp.set_embeddings_nextn(h->mtp, true, /*masked=*/true);
+            g_mtp.set_nextn_layer_offset(h->mtp, 0); // qwen35 = single nextn head
             LOGI("MTP enabled: n_layer_nextn=%d, n_embd_out=%d, n_rs_seq=%d (shadow probe)",
                  n_layer_nextn, h->n_embd_out, mtp_n_max);
         } else {
             LOGE("MTP context init failed — running plain");
-            llama_set_embeddings_nextn(h->ctx, false, false);
+            g_mtp.set_embeddings_nextn(h->ctx, false, false);
         }
     }
 

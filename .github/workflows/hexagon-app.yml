@@ -43,7 +43,14 @@ jobs:
               set -euo pipefail
               cd llama.cpp
               cp docs/backend/snapdragon/CMakeUserPresets.json .
-              cmake --preset arm64-android-snapdragon-release -B build-snap
+              # Default symbol visibility so the MTP "nextn" staging functions
+              # (src/llama-ext.h, NOT marked LLAMA_API) are exported from
+              # libllama.so and reachable via dlsym from our libllm.so. Without
+              # this they are hidden under -fvisibility=hidden and dlopen fails.
+              cmake --preset arm64-android-snapdragon-release -B build-snap \
+                -DCMAKE_C_VISIBILITY_PRESET=default \
+                -DCMAKE_CXX_VISIBILITY_PRESET=default \
+                -DCMAKE_VISIBILITY_INLINES_HIDDEN=OFF
               cmake --build build-snap -j"$(nproc)"
               cmake --install build-snap --prefix /workspace/pkg
               cd /workspace
