@@ -166,8 +166,9 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             _loadState.value = ModelLoadState.Loading(model.fileName)
             val device = genSettings.currentDevice()
-            DiagLog.i(TAG, "Loading model: ${model.fileName} (device=$device) (${model.file.absolutePath})")
-            val r = llmRepo.load(model.file, genSettings.currentDeviceCode())
+            val mtp = genSettings.currentMtp()
+            DiagLog.i(TAG, "Loading model: ${model.fileName} (device=$device, mtp=$mtp) (${model.file.absolutePath})")
+            val r = llmRepo.load(model.file, genSettings.currentDeviceCode(), mtp)
             _loadState.value = r.fold(
                 onSuccess = {
                     DiagLog.i(TAG, "Model loaded: ${model.fileName}")

@@ -45,6 +45,14 @@ class GenerationSettings(context: Context) {
     private val _device = MutableStateFlow(prefs.getString(KEY_DEVICE, DEVICE_AUTO) ?: DEVICE_AUTO)
     val device: StateFlow<String> = _device.asStateFlow()
 
+    /**
+     * MTP (Multi-Token Prediction) self-speculative decoding — experimental.
+     * Stage-1 is a shadow probe (logs acceptance, doesn't change output). Only
+     * effective on models that ship nextn heads. Takes effect on next load.
+     */
+    private val _mtp = MutableStateFlow(prefs.getBoolean(KEY_MTP, false))
+    val mtp: StateFlow<Boolean> = _mtp.asStateFlow()
+
     fun setSystemPrompt(v: String) {
         prefs.edit().putString(KEY_SYS, v).apply(); _systemPrompt.value = v
     }
@@ -68,6 +76,11 @@ class GenerationSettings(context: Context) {
     fun setDevice(v: String) {
         prefs.edit().putString(KEY_DEVICE, v).apply(); _device.value = v
     }
+
+    fun setMtp(v: Boolean) {
+        prefs.edit().putBoolean(KEY_MTP, v).apply(); _mtp.value = v
+    }
+    fun currentMtp(): Int = if (prefs.getBoolean(KEY_MTP, false)) 1 else 0
 
     fun resetSystemPrompt() = setSystemPrompt(DEFAULT_SYSTEM_PROMPT)
 
@@ -110,6 +123,7 @@ class GenerationSettings(context: Context) {
         private const val KEY_WORDS = "response_words"
         private const val KEY_RERANK = "rerank_enabled"
         private const val KEY_DEVICE = "compute_device"
+        private const val KEY_MTP = "mtp_enabled"
         const val DEVICE_AUTO = "auto"
         const val DEVICE_NPU = "npu"
         const val DEVICE_GPU = "gpu"

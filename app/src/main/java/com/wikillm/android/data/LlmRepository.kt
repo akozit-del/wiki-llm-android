@@ -19,10 +19,10 @@ class LlmRepository {
     private var current: LlamaContext? = null
     private val mutex = Object()
 
-    suspend fun load(file: File, device: Int = 0): Result<Unit> {
+    suspend fun load(file: File, device: Int = 0, mtp: Int = 0): Result<Unit> {
         unload()
         return try {
-            val ctx = LlamaContext.load(file.absolutePath, device = device)
+            val ctx = LlamaContext.load(file.absolutePath, device = device, mtp = mtp)
             synchronized(mutex) {
                 current = ctx
                 _loaded.value = LoadedModel(file.absolutePath, file.name)

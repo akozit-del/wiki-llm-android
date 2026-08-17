@@ -111,9 +111,11 @@ class LlamaContext private constructor(private val handle: Long) : AutoCloseable
         // enough room for the chain + a full answer. n_ctx is still a hard
         // ceiling — the JNI guard truncates from the head on overshoot.
         // device: 0=auto, 1=NPU/HTP0, 2=GPU/OpenCL, 3=CPU (see GenerationSettings).
-        suspend fun load(path: String, nCtx: Int = 6144, device: Int = 0): LlamaContext =
+        // mtp: 1 = build the MTP self-speculative draft context (stage-1 shadow
+        // probe) if the model carries nextn heads; 0 = plain.
+        suspend fun load(path: String, nCtx: Int = 6144, device: Int = 0, mtp: Int = 0): LlamaContext =
             withContext(Dispatchers.IO) {
-                val h = nativeLoad(path, nCtx, device)
+                val h = nativeLoad(path, nCtx, device, mtp)
                 if (h == 0L) {
                     val reason = nativeLastError().ifBlank { "Не удалось загрузить модель" }
                     throw LoadException(reason)
@@ -121,7 +123,7 @@ class LlamaContext private constructor(private val handle: Long) : AutoCloseable
                 LlamaContext(h)
             }
 
-        @JvmStatic external fun nativeLoad(path: String, nCtx: Int, device: Int): Long
+        @JvmStatic external fun nativeLoad(path: String, nCtx: Int, device: Int, mtp: Int): Long
         @JvmStatic external fun nativeFree(handle: Long)
         @JvmStatic external fun nativeStopGeneration(handle: Long)
         @JvmStatic external fun nativeGenerateChat(

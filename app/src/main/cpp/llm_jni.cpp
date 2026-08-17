@@ -4,6 +4,7 @@
 #include <atomic>
 #include <chrono>
 #include <cmath>
+#include <cstdlib>
 #include <cstring>
 #include <mutex>
 #include <string>
@@ -12,6 +13,20 @@
 
 #include "llama.h"
 #include "ggml-backend.h"
+
+// --- MTP (Multi-Token Prediction) staging API ---------------------------------
+// These live in llama.cpp's src/llama-ext.h, which is NOT installed with the
+// public headers, but the symbols ARE exported from libllama.so (visibility
+// default). So we vendor the prototypes here and let -lllama resolve them.
+// The enum LLAMA_CONTEXT_TYPE_MTP, the llama_context_params.{ctx_type,n_rs_seq,
+// ctx_other} and llama_model_params.load_mtp fields, and the public functions
+// llama_model_n_embd_out / llama_model_n_layer_nextn / llama_n_rs_seq all live
+// in the PUBLIC llama.h (merged 2026-05, present since tag b9296).
+extern "C" {
+    void   llama_set_embeddings_nextn    (llama_context* ctx, bool value, bool masked);
+    float* llama_get_embeddings_nextn_ith(llama_context* ctx, int32_t i);
+    void   llama_set_nextn_layer_offset  (llama_context* ctx, int32_t offset);
+}
 
 #define LOG_TAG "WikiLLM"
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO,  LOG_TAG, __VA_ARGS__)
@@ -27,6 +42,12 @@ struct LlmHandle {
     llama_sampler*     smpl  = nullptr;
     int   n_ctx = 2048;
     float temp  = 0.7f; // current sampler temperature
+    // MTP self-speculative draft context (2nd context on the SAME model, created
+    // with ctx_type=LLAMA_CONTEXT_TYPE_MTP). null unless MTP is enabled at load
+    // AND the model carries nextn heads. Stage-1 (shadow) only reads its drafts
+    // to log acceptance; it never commits them, so output is unaffected.
+    llama_context* mtp = nullptr;
+    int  n_embd_out = 0;      // width of the nextn hidden-state row
     // Set from another thread by nativeStopGeneration() so the generation loop
     // (below) can bail immediately. The Kotlin channel-close path can't stop a
     // running native call — the producer coroutine is blocked inside this very
@@ -255,6 +276,39 @@ static void maybe_suppress_thinking(const llama_model* model, std::string& forma
     }
 }
 
+// One MTP-head decode: feed (token, target hidden-state row) into the MTP draft
+// context and return the greedy (argmax) predicted NEXT token, or -1 on failure.
+// The MTP batch is special: it carries BOTH the token id and the hidden row as
+// `embd`. llama_batch_init(embd>0) allocates embd but leaves token NULL, so we
+// add the token ourselves.
+static llama_token mtp_draft_next(LlmHandle* h, llama_token token,
+                                  const float* embd, llama_pos pos) {
+    const int n_embd = h->n_embd_out;
+    if (n_embd <= 0 || !embd) return -1;
+    llama_batch b = llama_batch_init(/*n_tokens=*/1, /*embd=*/n_embd, /*n_seq_max=*/1);
+    b.n_tokens = 1;
+    b.token = (llama_token*) malloc(sizeof(llama_token)); // freed below (init left it NULL)
+    b.token[0] = token;
+    memcpy(b.embd, embd, sizeof(float) * n_embd);
+    b.pos[0] = pos;
+    b.n_seq_id[0] = 1;
+    b.seq_id[0][0] = 0;
+    b.logits[0] = 1;
+    llama_token out = -1;
+    if (llama_decode(h->mtp, b) == 0) {
+        const float* logits = llama_get_logits_ith(h->mtp, 0);
+        if (logits) {
+            const int nv = llama_vocab_n_tokens(h->vocab);
+            int best = 0; float bv = logits[0];
+            for (int i = 1; i < nv; ++i) if (logits[i] > bv) { bv = logits[i]; best = i; }
+            out = best;
+        }
+    }
+    free(b.token); b.token = nullptr; // avoid double-free in llama_batch_free
+    llama_batch_free(b);
+    return out;
+}
+
 // Generation loop for nativeGenerateChat.
 // Streams complete UTF-8 chunks as byte[] (Kotlin decodes them), so we never
 // hand partial/4-byte sequences to NewStringUTF (which aborts on those).
@@ -312,6 +366,7 @@ static void run_generation(
     // Reset the KV cache; positions are tracked automatically by llama_decode
     // when batches come from llama_batch_get_one().
     llama_memory_clear(llama_get_memory(h->ctx), /*data=*/true);
+    if (h->mtp) llama_memory_clear(llama_get_memory(h->mtp), /*data=*/true);
 
     // Decode the prompt in n_batch-sized chunks so a single batch never exceeds
     // n_batch (positions auto-increment across llama_batch_get_one calls).
@@ -335,10 +390,19 @@ static void run_generation(
     llama_token next_token = 0;
     int generated = 0;
     std::string pending; // buffers bytes until they form a complete UTF-8 char
+    // MTP stage-1 shadow probe: draft the next token with the MTP head each step
+    // and check it against the token the target actually produces. We never
+    // commit drafts, so output is identical to plain generation — we only learn
+    // whether the MTP graph runs on this backend and its acceptance rate.
+    llama_token mtp_pending = -1; // draft predicted for the upcoming token
+    llama_pos   mtp_pos = 0;      // MTP-context-local position (prompt not replayed)
+    int mtp_total = 0, mtp_hit = 0, mtp_fail = 0;
     while (prompt_ok && generated < genBudget && (promptTokens + generated) < nCtx) {
         if (h->cancel.load(std::memory_order_relaxed)) { LOGI("Cancelled (stop requested)"); break; }
         next_token = llama_sampler_sample(h->smpl, h->ctx, -1); // also accepts the token
         if (llama_vocab_is_eog(h->vocab, next_token)) { LOGI("EOG, stopping"); break; }
+        // Shadow: did the previous step's MTP draft predict this token?
+        if (h->mtp && mtp_pending >= 0) { ++mtp_total; if (mtp_pending == next_token) ++mtp_hit; }
         ++generated;
         pending += token_piece(h->vocab, next_token);
         size_t cut = utf8_complete_len(pending);
@@ -349,8 +413,18 @@ static void run_generation(
         }
         llama_batch batch = llama_batch_get_one(&next_token, 1);
         if (llama_decode(h->ctx, batch) != 0) { LOGE("gen decode failed"); break; }
+        // Shadow draft for the NEXT token, using the target's nextn hidden row.
+        if (h->mtp) {
+            const float* curH = llama_get_embeddings_nextn_ith(h->ctx, 0);
+            mtp_pending = curH ? mtp_draft_next(h, next_token, curH, mtp_pos++) : -1;
+            if (mtp_pending < 0) ++mtp_fail;
+        }
     }
     const auto t_end = clk::now();
+    if (h->mtp) {
+        LOGI("MTP shadow: %d/%d drafts matched (%.0f%% 1-tok acceptance), %d decode failures",
+             mtp_hit, mtp_total, mtp_total > 0 ? 100.0 * mtp_hit / mtp_total : 0.0, mtp_fail);
+    }
     // Flush any complete bytes left in the buffer (drop a trailing partial char).
     if (!pending.empty()) {
         size_t cut = utf8_complete_len(pending);
@@ -374,7 +448,7 @@ static void run_generation(
 
 extern "C" JNIEXPORT jlong JNICALL
 Java_com_wikillm_android_llm_LlamaContext_nativeLoad(
-    JNIEnv* env, jclass /*clazz*/, jstring jpath, jint nCtx, jint device) {
+    JNIEnv* env, jclass /*clazz*/, jstring jpath, jint nCtx, jint device, jint mtp) {
 
     ensure_backend();
     clear_last_error();
@@ -390,6 +464,9 @@ Java_com_wikillm_android_llm_LlamaContext_nativeLoad(
     llama_model_params mparams = llama_model_default_params();
     // Sprint 6 (M1): offload all layers and prefer the Hexagon NPU (HTP0).
     mparams.n_gpu_layers = 99;
+    // MTP: load the nextn/MTP head tensors (skipped by default). Harmless for
+    // models without them. Required before we can build the MTP draft context.
+    if (mtp) mparams.load_mtp = true;
 
     // Log every ggml device we see (CPU / GPUOpenCL / HTP0…) — this is the
     // de-risk signal: whether the Hexagon device is visible from the app.
@@ -463,6 +540,15 @@ Java_com_wikillm_android_llm_LlamaContext_nativeLoad(
     cparams.type_k          = GGML_TYPE_F16;
     cparams.type_v          = GGML_TYPE_F16;
 
+    // MTP stage-1: the target context needs recurrent-state snapshots so a
+    // rejected draft tail can roll back the SSM state (n_rs_seq >= n_max). The
+    // shadow probe doesn't roll back, but we set it now so the same context
+    // shape carries into the real speculative loop later.
+    const int mtp_n_max = 2;
+    const int n_layer_nextn = (mtp && h->model) ? llama_model_n_layer_nextn(h->model) : 0;
+    const bool mtp_ok = mtp && n_layer_nextn > 0;
+    if (mtp_ok) cparams.n_rs_seq = mtp_n_max;
+
     h->ctx = llama_init_from_model(h->model, cparams);
     if (!h->ctx) {
         LOGE("llama_init_from_model failed");
@@ -475,6 +561,29 @@ Java_com_wikillm_android_llm_LlamaContext_nativeLoad(
 
     h->temp = 0.7f;
     h->smpl = make_sampler(h->temp, h->vocab);
+
+    // Build the MTP draft context (2nd context on the SAME model). If the model
+    // has no nextn head, or MTP wasn't requested, we skip it and run normally.
+    if (mtp && n_layer_nextn == 0) {
+        LOGW("MTP requested but model has no nextn head (n_layer_nextn=0) — running plain");
+    } else if (mtp_ok) {
+        h->n_embd_out = llama_model_n_embd_out(h->model);
+        llama_set_embeddings_nextn(h->ctx, true, /*masked=*/false); // target emits nextn hidden state
+        llama_context_params cd = cparams;
+        cd.ctx_type  = LLAMA_CONTEXT_TYPE_MTP;
+        cd.n_rs_seq  = 0;
+        cd.ctx_other = h->ctx;
+        h->mtp = llama_init_from_model(h->model, cd);
+        if (h->mtp) {
+            llama_set_embeddings_nextn(h->mtp, true, /*masked=*/true);
+            llama_set_nextn_layer_offset(h->mtp, 0); // qwen35 = single nextn head
+            LOGI("MTP enabled: n_layer_nextn=%d, n_embd_out=%d, n_rs_seq=%d (shadow probe)",
+                 n_layer_nextn, h->n_embd_out, mtp_n_max);
+        } else {
+            LOGE("MTP context init failed — running plain");
+            llama_set_embeddings_nextn(h->ctx, false, false);
+        }
+    }
 
     LOGI("Model loaded OK");
     return reinterpret_cast<jlong>(h);
@@ -505,6 +614,7 @@ Java_com_wikillm_android_llm_LlamaContext_nativeFree(
     auto* h = reinterpret_cast<LlmHandle*>(handle);
     if (!h) return;
     if (h->smpl)  llama_sampler_free(h->smpl);
+    if (h->mtp)   llama_free(h->mtp);
     if (h->ctx)   llama_free(h->ctx);
     if (h->model) llama_model_free(h->model);
     delete h;

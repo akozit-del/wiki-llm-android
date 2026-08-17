@@ -44,6 +44,7 @@ fun SettingsScreen(navController: NavController) {
     val thinking by gen.thinking.collectAsState()
     val words by gen.responseWords.collectAsState()
     val device by gen.device.collectAsState()
+    val mtpOn by gen.mtp.collectAsState()
     val themeMode by ThemePrefs.mode.collectAsState()
 
     Scaffold(
@@ -214,6 +215,26 @@ fun SettingsScreen(navController: NavController) {
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(start = 4.dp, top = 4.dp),
             )
+
+            Spacer(Modifier.height(12.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Switch(checked = mtpOn, onCheckedChange = gen::setMtp)
+                Spacer(Modifier.width(8.dp))
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        if (mtpOn) "MTP: включён (эксперимент)" else "MTP: выключен",
+                        fontWeight = FontWeight.Medium,
+                    )
+                    Text(
+                        "Multi-Token Prediction — самоспекулятивный декод. Работает только на " +
+                            "моделях с nextn-головами (напр. Qwen3.5-MTP). Стадия 1 — теневой " +
+                            "замер: логирует % угадывания в диагностике, ответ не меняет. " +
+                            "Применяется при загрузке модели.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
 
             Spacer(Modifier.height(8.dp))
             HorizontalDivider()
