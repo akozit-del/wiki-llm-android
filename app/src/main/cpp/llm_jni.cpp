@@ -388,43 +388,175 @@ static void run_generation(
     }
 
     const auto t_decode_start = clk::now();
-    llama_token next_token = 0;
     int generated = 0;
     std::string pending; // buffers bytes until they form a complete UTF-8 char
-    // MTP stage-1 shadow probe: draft the next token with the MTP head each step
-    // and check it against the token the target actually produces. We never
-    // commit drafts, so output is identical to plain generation — we only learn
-    // whether the MTP graph runs on this backend and its acceptance rate.
-    llama_token mtp_pending = -1; // draft predicted for the upcoming token
-    llama_pos   mtp_pos = 0;      // MTP-context-local position (prompt not replayed)
-    int mtp_total = 0, mtp_hit = 0, mtp_fail = 0;
+
+    // Emit one token: appends its piece, flushes any complete UTF-8 prefix, and
+    // returns false if the Kotlin side asked to stop.
+    auto emit_token = [&](llama_token tok) -> bool {
+        pending += token_piece(h->vocab, tok);
+        size_t cut = utf8_complete_len(pending);
+        if (cut == 0) return true;
+        std::string chunk = pending.substr(0, cut);
+        pending.erase(0, cut);
+        return emit_chunk(chunk);
+    };
+
+    // MTP stage-2: self-speculative decoding with n_max=1 draft per iteration.
+    //
+    // Per-iteration schema (invariant: target has decoded through position
+    // target_pos-1, its logits at target_pos-1 are cached and predict target_pos):
+    //   1. seed = sampler_sample(target, -1) — token for position target_pos.
+    //   2. draft = MTP head evaluated on (seed, target's nextn hidden at
+    //      target_pos-1) — a proposal for position target_pos+1.
+    //   3. Verify batch [seed, draft] at positions [target_pos, target_pos+1].
+    //      One target forward pass produces logits at both positions.
+    //   4. Compare draft to argmax(target_logits at seed's position) — greedy
+    //      verify (temperature is honoured for seed/correction sampling only).
+    //   5a. Accept: emit seed AND draft (+2 tokens for 1 target pass), continue
+    //       from draft's logits.
+    //   5b. Reject: emit seed only, rollback KV at draft position from both
+    //       target and MTP ctx (n_rs_seq snapshot handles the SSM state), sample
+    //       correction from seed's logits as next iter's seed.
+    // Fallback (no MTP, MTP draft returned -1, verify decode failed, or no
+    // context room for a 2-token batch): decode seed alone and continue like
+    // plain 1-tok generation.
+    llama_pos target_pos = static_cast<llama_pos>(promptTokens); // next slot to write in target
+    llama_pos mtp_pos    = 0;   // next slot to write in MTP ctx
+    int last_out_idx     = 0;   // batch index of the last decode's fresh output logits/hidden
+    int spec_accepted    = 0, spec_drafted = 0, spec_mismatches = 0, spec_fallbacks = 0;
+    // If MTP's SSM rollback fails (n_rs_seq snapshot exhausted or backend
+    // doesn't support seq_rm on this graph), disable further drafting for the
+    // rest of THIS generation and fall back to plain 1-tok decode. Target
+    // stays fine (KV seq_rm on attention is always reversible).
+    bool spec_disabled = false;
+
+    // Plain 1-token step. Decodes `seed` at target_pos, emits it, samples the
+    // NEXT seed. Returns false if generation should end (cancel, budget hit,
+    // decode failure) — caller breaks out of the loop.
+    auto do_plain_step = [&](llama_token& seed) -> bool {
+        llama_batch b = llama_batch_init(/*n_tokens=*/1, /*embd=*/0, /*n_seq_max=*/1);
+        b.token[0]      = seed;
+        b.pos[0]        = target_pos;
+        b.n_seq_id[0]   = 1;
+        b.seq_id[0][0]  = 0;
+        b.logits[0]     = 1;
+        b.n_tokens      = 1;
+        int rc = llama_decode(h->ctx, b);
+        llama_batch_free(b);
+        if (rc != 0) { LOGE("plain decode failed rc=%d", rc); return false; }
+        target_pos    += 1;
+        last_out_idx   = 0;
+        if (!emit_token(seed)) { LOGI("Cancelled (emit)"); return false; }
+        ++generated;
+        if (generated >= genBudget) return false;
+        seed = llama_sampler_sample(h->smpl, h->ctx, 0);
+        return true;
+    };
+
+    llama_token seed = -1;
+    if (prompt_ok) {
+        seed = llama_sampler_sample(h->smpl, h->ctx, -1); // from prefill's last logits
+    }
+
     while (prompt_ok && generated < genBudget && (promptTokens + generated) < nCtx) {
         if (h->cancel.load(std::memory_order_relaxed)) { LOGI("Cancelled (stop requested)"); break; }
-        next_token = llama_sampler_sample(h->smpl, h->ctx, -1); // also accepts the token
-        if (llama_vocab_is_eog(h->vocab, next_token)) { LOGI("EOG, stopping"); break; }
-        // Shadow: did the previous step's MTP draft predict this token?
-        if (h->mtp && mtp_pending >= 0) { ++mtp_total; if (mtp_pending == next_token) ++mtp_hit; }
-        ++generated;
-        pending += token_piece(h->vocab, next_token);
-        size_t cut = utf8_complete_len(pending);
-        if (cut > 0) {
-            std::string chunk = pending.substr(0, cut);
-            pending.erase(0, cut);
-            if (!emit_chunk(chunk)) { LOGI("Cancelled"); break; }
+        if (llama_vocab_is_eog(h->vocab, seed)) { LOGI("EOG, stopping"); break; }
+
+        // Speculative path — MTP enabled AND context has room for a 2-token verify.
+        const bool can_spec = h->mtp && !spec_disabled &&
+                              (target_pos + 2 <= static_cast<llama_pos>(nCtx - reserve));
+        llama_token draft = -1;
+        if (can_spec) {
+            const float* hidden = llama_get_embeddings_nextn_ith(h->ctx, last_out_idx);
+            if (hidden) draft = mtp_draft_next(h, seed, hidden, mtp_pos);
         }
-        llama_batch batch = llama_batch_get_one(&next_token, 1);
-        if (llama_decode(h->ctx, batch) != 0) { LOGE("gen decode failed"); break; }
-        // Shadow draft for the NEXT token, using the target's nextn hidden row.
-        if (h->mtp) {
-            const float* curH = llama_get_embeddings_nextn_ith(h->ctx, 0);
-            mtp_pending = curH ? mtp_draft_next(h, next_token, curH, mtp_pos++) : -1;
-            if (mtp_pending < 0) ++mtp_fail;
+
+        if (draft < 0) {
+            if (can_spec) ++spec_fallbacks;
+            if (!do_plain_step(seed)) break;
+            continue;
+        }
+
+        // Verify batch: [seed, draft] at [target_pos, target_pos+1].
+        llama_batch vb = llama_batch_init(/*n_tokens=*/2, /*embd=*/0, /*n_seq_max=*/1);
+        vb.token[0]     = seed;               vb.pos[0]      = target_pos;
+        vb.n_seq_id[0]  = 1;                  vb.seq_id[0][0] = 0;
+        vb.logits[0]    = 1;
+        vb.token[1]     = draft;              vb.pos[1]      = target_pos + 1;
+        vb.n_seq_id[1]  = 1;                  vb.seq_id[1][0] = 0;
+        vb.logits[1]    = 1;
+        vb.n_tokens     = 2;
+
+        int rc = llama_decode(h->ctx, vb);
+        llama_batch_free(vb);
+        ++spec_drafted;
+
+        if (rc != 0) {
+            // Verify failed — roll back whatever made it in and retry as plain.
+            LOGW("verify decode failed rc=%d — rollback + plain fallback", rc);
+            const bool ok_t = llama_memory_seq_rm(llama_get_memory(h->ctx), 0, target_pos, -1);
+            const bool ok_m = llama_memory_seq_rm(llama_get_memory(h->mtp), 0, mtp_pos,    -1);
+            if (!ok_t) { LOGE("target KV rollback failed on verify fail — aborting gen"); break; }
+            if (!ok_m) { LOGW("MTP SSM rollback failed — disabling spec for the rest of this gen"); spec_disabled = true; }
+            ++spec_fallbacks;
+            if (!do_plain_step(seed)) break;
+            continue;
+        }
+
+        // Greedy argmax of target's logits at seed's position (predicts target_pos+1).
+        int argmax_seed = 0;
+        {
+            const float* logits0 = llama_get_logits_ith(h->ctx, 0);
+            if (!logits0) { LOGE("null logits at idx 0 — bailing"); break; }
+            const int nv = llama_vocab_n_tokens(h->vocab);
+            float bv = logits0[0];
+            for (int i = 1; i < nv; ++i) if (logits0[i] > bv) { bv = logits0[i]; argmax_seed = i; }
+        }
+
+        // Emit seed regardless — it's always accepted (it was sampled from target's own logits).
+        if (!emit_token(seed)) { LOGI("Cancelled (emit)"); break; }
+        ++generated;
+        if (generated >= genBudget) break;
+
+        if (draft == argmax_seed) {
+            // Draft accepted — +2 tokens for 1 target forward pass.
+            ++spec_accepted;
+            if (llama_vocab_is_eog(h->vocab, draft)) { LOGI("EOG on accepted draft, stopping"); break; }
+            if (!emit_token(draft)) { LOGI("Cancelled (emit)"); break; }
+            // Draft wasn't sampled via llama_sampler_sample, so the sampler's
+            // penalty history didn't see it. Feed it back explicitly so
+            // subsequent penalties (repetition, etc.) treat it like any other
+            // emitted token.
+            llama_sampler_accept(h->smpl, draft);
+            ++generated;
+            if (generated >= genBudget) break;
+            target_pos    += 2;
+            mtp_pos       += 1;
+            last_out_idx   = 1;
+            seed = llama_sampler_sample(h->smpl, h->ctx, 1); // draft's logits → target_pos+2
+        } else {
+            // Draft rejected — roll back its position from KV (target + MTP);
+            // n_rs_seq snapshot restores the SSM state. Sample correction from
+            // seed's logits (they're still valid — seq_rm doesn't touch the
+            // logits buffer, only KV).
+            ++spec_mismatches;
+            const bool ok_t = llama_memory_seq_rm(llama_get_memory(h->ctx), 0, target_pos + 1, -1);
+            const bool ok_m = llama_memory_seq_rm(llama_get_memory(h->mtp), 0, mtp_pos,        -1);
+            if (!ok_t) { LOGE("target KV rollback failed on reject — aborting gen"); break; }
+            if (!ok_m) { LOGW("MTP SSM rollback failed — disabling spec for the rest of this gen"); spec_disabled = true; }
+            target_pos    += 1;
+            last_out_idx   = 0;
+            seed = llama_sampler_sample(h->smpl, h->ctx, 0); // seed's logits → target_pos+1
         }
     }
     const auto t_end = clk::now();
     if (h->mtp) {
-        LOGI("MTP shadow: %d/%d drafts matched (%.0f%% 1-tok acceptance), %d decode failures",
-             mtp_hit, mtp_total, mtp_total > 0 ? 100.0 * mtp_hit / mtp_total : 0.0, mtp_fail);
+        LOGI("MTP spec: %d/%d drafts accepted (%.0f%%), %d mismatches, %d fallbacks%s",
+             spec_accepted, spec_drafted,
+             spec_drafted > 0 ? 100.0 * spec_accepted / spec_drafted : 0.0,
+             spec_mismatches, spec_fallbacks,
+             spec_disabled ? " (spec disabled after rollback failure)" : "");
     }
     // Flush any complete bytes left in the buffer (drop a trailing partial char).
     if (!pending.empty()) {
@@ -541,10 +673,11 @@ Java_com_wikillm_android_llm_LlamaContext_nativeLoad(
     cparams.type_k          = GGML_TYPE_F16;
     cparams.type_v          = GGML_TYPE_F16;
 
-    // MTP stage-1: the target context needs recurrent-state snapshots so a
-    // rejected draft tail can roll back the SSM state (n_rs_seq >= n_max). The
-    // shadow probe doesn't roll back, but we set it now so the same context
-    // shape carries into the real speculative loop later.
+    // MTP stage-2: both target AND draft need recurrent-state snapshots so a
+    // rejected draft can roll back the SSM state (Qwen3.5 = hybrid Gated-DeltaNet
+    // + attention → SSM slice is stateful and can't be reversed without a
+    // snapshot). n_rs_seq >= draft depth is required; we use 2 (n_max=1 draft +
+    // 1 headroom). Set on target here; MTP ctx picks it up below.
     const int mtp_n_max = 2;
     const int n_layer_nextn = (mtp && h->model) ? llama_model_n_layer_nextn(h->model) : 0;
     const bool mtp_ok = mtp && n_layer_nextn > 0;
@@ -573,13 +706,13 @@ Java_com_wikillm_android_llm_LlamaContext_nativeLoad(
         llama_set_embeddings_nextn(h->ctx, true, /*masked=*/false); // target emits nextn hidden state
         llama_context_params cd = cparams;
         cd.ctx_type  = LLAMA_CONTEXT_TYPE_MTP;
-        cd.n_rs_seq  = 0;
+        cd.n_rs_seq  = mtp_n_max;  // stage-2: MTP ctx also rolls back on reject
         cd.ctx_other = h->ctx;
         h->mtp = llama_init_from_model(h->model, cd);
         if (h->mtp) {
             llama_set_embeddings_nextn(h->mtp, true, /*masked=*/true);
             llama_set_nextn_layer_offset(h->mtp, 0); // qwen35 = single nextn head
-            LOGI("MTP enabled: n_layer_nextn=%d, n_embd_out=%d, n_rs_seq=%d (shadow probe)",
+            LOGI("MTP enabled: n_layer_nextn=%d, n_embd_out=%d, n_rs_seq=%d (stage-2 speculative n_max=1)",
                  n_layer_nextn, h->n_embd_out, mtp_n_max);
         } else {
             LOGE("MTP context init failed — running plain");
