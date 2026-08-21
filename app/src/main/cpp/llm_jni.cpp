@@ -6,6 +6,7 @@
 #include <cmath>
 #include <cstdlib>
 #include <cstring>
+#include <algorithm>
 #include <mutex>
 #include <string>
 #include <thread>
@@ -55,6 +56,11 @@ struct LlmHandle {
     // JNI call, so its channel never closes until we return. This flag breaks
     // that deadlock: stop() flips it and the loop checks it every token.
     std::atomic<bool> cancel{false};
+    // One-shot NPU batch-scaling benchmark: runs on the first nativeGenerateChat
+    // after model load, times decode() for batch sizes 1..4, logs mean/median ms.
+    // Used to understand how much cheaper a k-token verify batch is vs k plain
+    // 1-tok decodes — determines whether raising MTP's n_max is worth it.
+    bool bench_done = false;
 };
 
 // Build the sampler chain: penalties → min_p → temp → dist.
@@ -310,6 +316,80 @@ static llama_token mtp_draft_next(LlmHandle* h, llama_token token,
     return out;
 }
 
+// One-shot NPU batch-scaling micro-benchmark. Times llama_decode() on the
+// target context for batch sizes 1..4 (5 timed iterations + 2 warm-ups each),
+// logs median and mean ms per pass plus tokens/s. Resets the KV cache before
+// and after so real generation starts fresh. Cost is ~5-8 s once per model
+// load — the whole point is to answer "how much is a k-tok batch vs k separate
+// 1-tok batches" without guessing.
+static void bench_batch_scaling(LlmHandle* h) {
+    if (!h || !h->ctx) return;
+    LOGI("NPU batch bench: running (one-shot per model load)...");
+    llama_memory_clear(llama_get_memory(h->ctx), /*data=*/true);
+
+    // Use BOS or 0 as filler token — content doesn't matter, we're timing
+    // graph execution not sampling. Positions increment monotonically.
+    const llama_token fake_tok = 0;
+    llama_pos pos = 0;
+
+    auto run_size = [&](int bsz) {
+        if (bsz > h->n_ctx / 2) return;
+        const int warmup = 2;
+        const int iters  = 5;
+        // Warm-up (untimed) — first pass on a new batch shape can be slower.
+        for (int w = 0; w < warmup; ++w) {
+            llama_batch b = llama_batch_init(bsz, /*embd=*/0, /*n_seq_max=*/1);
+            for (int i = 0; i < bsz; ++i) {
+                b.token[i]     = fake_tok;
+                b.pos[i]       = pos + i;
+                b.n_seq_id[i]  = 1;
+                b.seq_id[i][0] = 0;
+                b.logits[i]    = (i == bsz - 1) ? 1 : 0;
+            }
+            b.n_tokens = bsz;
+            (void)llama_decode(h->ctx, b);
+            llama_batch_free(b);
+            pos += bsz;
+        }
+
+        using clk = std::chrono::steady_clock;
+        std::vector<long> times_us; times_us.reserve(iters);
+        for (int t = 0; t < iters; ++t) {
+            llama_batch b = llama_batch_init(bsz, 0, 1);
+            for (int i = 0; i < bsz; ++i) {
+                b.token[i]     = fake_tok;
+                b.pos[i]       = pos + i;
+                b.n_seq_id[i]  = 1;
+                b.seq_id[i][0] = 0;
+                b.logits[i]    = (i == bsz - 1) ? 1 : 0;
+            }
+            b.n_tokens = bsz;
+            auto t0 = clk::now();
+            (void)llama_decode(h->ctx, b);
+            auto t1 = clk::now();
+            llama_batch_free(b);
+            times_us.push_back(std::chrono::duration_cast<std::chrono::microseconds>(t1 - t0).count());
+            pos += bsz;
+        }
+        std::sort(times_us.begin(), times_us.end());
+        const long median_us = times_us[iters / 2];
+        double sum = 0;
+        for (long v : times_us) sum += v;
+        const double mean_us = sum / iters;
+        LOGI("NPU bench batch=%d: median=%.1f ms mean=%.1f ms (%.1f tok/s per pass, %.1f tok/s per tok)",
+             bsz, median_us / 1000.0, mean_us / 1000.0,
+             bsz * 1000000.0 / median_us,
+             1000000.0 / median_us);
+    };
+
+    for (int bsz : {1, 2, 3, 4}) run_size(bsz);
+
+    // Clean state for the real generation that follows.
+    llama_memory_clear(llama_get_memory(h->ctx), /*data=*/true);
+    if (h->mtp) llama_memory_clear(llama_get_memory(h->mtp), /*data=*/true);
+    LOGI("NPU batch bench: done");
+}
+
 // Generation loop for nativeGenerateChat.
 // Streams complete UTF-8 chunks as byte[] (Kotlin decodes them), so we never
 // hand partial/4-byte sequences to NewStringUTF (which aborts on those).
@@ -340,6 +420,14 @@ static void run_generation(
         if (env->ExceptionCheck()) { env->ExceptionClear(); return false; }
         return keep;
     };
+
+    // One-shot batch-scaling benchmark on the first generation after model
+    // load. Cheap (~5-8s once); the numbers tell us whether raising MTP's
+    // n_max would actually help (bigger batch might be nearly free — or not).
+    if (!h->bench_done) {
+        bench_batch_scaling(h);
+        h->bench_done = true;
+    }
 
     auto tokens = tokenize_text(h->vocab, formatted, /*add_special=*/true);
     if (tokens.empty()) { LOGE("Tokenization failed"); return; }
