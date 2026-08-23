@@ -76,6 +76,9 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     private val modelRepo = ModelRepository(app.applicationContext)
     private val llmRepo = LlmRepository()
     private val genSettings = GenerationSettings(app.applicationContext)
+    /** Exposed to the chat screen so the compact toggle bar can bind directly to
+     * the same StateFlows the Settings screen uses. */
+    val settings: GenerationSettings get() = genSettings
     private val historyStore = ChatHistoryStore(app.applicationContext)
     private val prefs = app.getSharedPreferences("wikillm_chat", Context.MODE_PRIVATE)
     private val activityManager = app.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager

@@ -32,6 +32,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 import com.wikillm.android.data.Conversation
 import com.wikillm.android.data.LocalModel
+import com.wikillm.android.settings.GenerationSettings
 import com.wikillm.android.ui.MarkdownText
 import kotlinx.coroutines.launch
 
@@ -101,6 +102,7 @@ fun ChatScreen(navController: NavController, vm: ChatViewModel = viewModel()) {
             Column(Modifier.padding(padding).fillMaxSize()) {
                 (loadState as? ModelLoadState.Failed)?.let { s -> ErrorBanner(s.message) }
 
+                QuickToggles(vm.settings)
                 RagControls(vm)
 
                 val listState = rememberLazyListState()
@@ -405,6 +407,64 @@ private fun statsLine(s: GenStats): String {
 }
 
 private fun secs(ms: Long): Long = (ms + 500) / 1000
+
+/**
+ * Compact single-row chip strip above the RAG card: mirrors the three most
+ * common Settings toggles (thinking mode, MTP, compute device) so the user
+ * doesn't have to open Settings mid-chat just to flip them. Bound to the same
+ * GenerationSettings StateFlows — changes here take effect on the next model
+ * load / next generation (identical semantics to the Settings screen).
+ */
+@Composable
+private fun QuickToggles(settings: GenerationSettings) {
+    val thinking by settings.thinking.collectAsState()
+    val mtp by settings.mtp.collectAsState()
+    val device by settings.device.collectAsState()
+    var deviceExpanded by remember { mutableStateOf(false) }
+    val deviceLabel = when (device) {
+        GenerationSettings.DEVICE_NPU -> "NPU"
+        GenerationSettings.DEVICE_GPU -> "GPU"
+        GenerationSettings.DEVICE_CPU -> "CPU"
+        else -> "Авто"
+    }
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 2.dp),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        FilterChip(
+            selected = thinking,
+            onClick = { settings.setThinking(!thinking) },
+            label = { Text("Думать", style = MaterialTheme.typography.labelSmall) },
+        )
+        FilterChip(
+            selected = mtp,
+            onClick = { settings.setMtp(!mtp) },
+            label = { Text("MTP", style = MaterialTheme.typography.labelSmall) },
+        )
+        Spacer(Modifier.weight(1f))
+        Box {
+            AssistChip(
+                onClick = { deviceExpanded = true },
+                label = { Text(deviceLabel, style = MaterialTheme.typography.labelSmall) },
+                leadingIcon = { Icon(Icons.Default.ArrowDropDown, contentDescription = "Устройство") },
+            )
+            DropdownMenu(expanded = deviceExpanded, onDismissRequest = { deviceExpanded = false }) {
+                listOf(
+                    GenerationSettings.DEVICE_AUTO to "Авто",
+                    GenerationSettings.DEVICE_NPU to "NPU",
+                    GenerationSettings.DEVICE_GPU to "GPU",
+                    GenerationSettings.DEVICE_CPU to "CPU",
+                ).forEach { (v, label) ->
+                    DropdownMenuItem(
+                        text = { Text(label) },
+                        onClick = { settings.setDevice(v); deviceExpanded = false },
+                    )
+                }
+            }
+        }
+    }
+}
 
 @Composable
 private fun RagControls(vm: ChatViewModel) {
