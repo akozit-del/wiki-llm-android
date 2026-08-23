@@ -738,6 +738,12 @@ Java_com_wikillm_android_llm_LlamaContext_nativeLoad(
     llama_context_params cparams = llama_context_default_params();
     cparams.n_ctx   = nCtx;
     cparams.n_batch = 2048;
+    // Physical micro-batch. llama.cpp defaults to 512; Qualcomm's own Snapdragon
+    // benchmark scripts (scripts/snapdragon/adb/run-*.sh) all run --ubatch-size
+    // 1024, and the Hexagon matmul only takes the fast HMX path once the batch
+    // is wide enough (HMX at m>4, pipelined at m>32), so a wider ubatch keeps
+    // prefill on the HMX kernel for longer.
+    cparams.n_ubatch = 1024;
     cparams.no_perf = true;
 
     // Threads matter for the CPU-side work (sampler + any non-offloaded ops).
@@ -751,15 +757,28 @@ Java_com_wikillm_android_llm_LlamaContext_nativeLoad(
         cparams.n_threads_batch = n;
     }
 
-    // Sprint 5 (build-115): GPU-offload path. Keep the KV cache at F16.
-    //   flash-attn is DISABLED: the OpenCL backend has no flash-attn kernel, so
-    //   with AUTO (build-112) llama put every layer's attention on the CPU and
-    //   bounced tensors GPU->CPU->GPU each token — killing the GPU win (measured
-    //   7.4 tok/s, no better than CPU). Disabled, attention uses the standard
-    //   path which OpenCL supports, so the whole graph stays on the Adreno.
-    cparams.flash_attn_type = LLAMA_FLASH_ATTN_TYPE_DISABLED;
+    // Flash attention: AUTO (was DISABLED since build-115).
+    //   The old rationale — "OpenCL has no flash-attn kernel, so AUTO put every
+    //   layer's attention on the CPU and bounced tensors GPU->CPU->GPU" — no
+    //   longer holds:
+    //     * ggml-hexagon gained FLASH_ATTN_EXT in Jan 2026 and an HMX kernel in
+    //       May 2026; upstream numbers put the HMX prefill path at ~4x the HVX
+    //       one (176 vs 44 tok/s pp512 on qwen3-4B Q4_0). Prefill takes the HMX
+    //       path, decode stays on HVX.
+    //     * AUTO is now self-checking: llama_context::resolve() runs a probe
+    //       graph and turns FA back off if the fused node lands on a different
+    //       device than the layer — exactly the OpenCL case that burned us.
+    //   Qualcomm's own Snapdragon scripts run with -fa on.
+    // KV cache stays F16: Hexagon rejects quantized K/V outright (set_rows wants
+    // an F16 dst, flash_attn_ext wants F16 K/V, and a quantized src0 in mul_mat
+    // needs a repack buffer the KV cache isn't), so q8_0 KV would silently move
+    // attention back onto the CPU.
+    cparams.flash_attn_type = LLAMA_FLASH_ATTN_TYPE_AUTO;
     cparams.type_k          = GGML_TYPE_F16;
     cparams.type_v          = GGML_TYPE_F16;
+    LOGI("Context: n_ctx=%d n_batch=%d n_ubatch=%d flash_attn=%s",
+         cparams.n_ctx, cparams.n_batch, cparams.n_ubatch,
+         llama_flash_attn_type_name(cparams.flash_attn_type));
 
     // MTP stage-2: both target AND draft need recurrent-state snapshots so a
     // rejected draft can roll back the SSM state (Qwen3.5 = hybrid Gated-DeltaNet
