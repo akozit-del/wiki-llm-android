@@ -542,6 +542,31 @@ static void run_generation(
         return true;
     };
 
+    // --- Reasoning budget -----------------------------------------------------
+    // Qwen3-Thinking-class models can spend the entire token budget inside
+    // <think> and never emit an answer (measured on S23: 4520 chars of
+    // reasoning, 1600 tokens, 216 s, zero answer — twice in a row). Cap the
+    // thinking phase: once it exceeds THINK_FRACTION of the budget, force the
+    // closing tag instead of the sampled token, which drops the model out of
+    // reasoning and into the answer. Only engages for models whose vocab
+    // actually has the tags as single tokens; otherwise it's inert.
+    llama_token think_open_id  = -1;
+    llama_token think_close_id = -1;
+    {
+        auto o = tokenize_text(h->vocab, "<think>",  /*add_special=*/false);
+        auto c = tokenize_text(h->vocab, "</think>", /*add_special=*/false);
+        if (o.size() == 1) think_open_id  = o[0];
+        if (c.size() == 1) think_close_id = c[0];
+    }
+    const int think_budget = (int)(genBudget * 0.6f) > 64 ? (int)(genBudget * 0.6f) : 64;
+    bool think_open = false;
+    int  think_tokens = 0, think_total = 0;
+    bool think_forced = false;
+    if (think_close_id >= 0) {
+        LOGI("Reasoning budget: %d of %d tokens (think tags %d/%d)",
+             think_budget, genBudget, think_open_id, think_close_id);
+    }
+
     llama_token seed = -1;
     if (prompt_ok) {
         seed = llama_sampler_sample(h->smpl, h->ctx, -1); // from prefill's last logits
@@ -550,6 +575,19 @@ static void run_generation(
     while (prompt_ok && generated < genBudget && (promptTokens + generated) < nCtx) {
         if (h->cancel.load(std::memory_order_relaxed)) { LOGI("Cancelled (stop requested)"); break; }
         if (llama_vocab_is_eog(h->vocab, seed)) { LOGI("EOG, stopping"); break; }
+
+        // Track the reasoning block and cut it off once it overruns its budget.
+        if (seed == think_open_id)  { think_open = true;  think_tokens = 0; }
+        else if (seed == think_close_id) { think_open = false; }
+        else if (think_open) {
+            ++think_tokens; ++think_total;
+            if (think_tokens >= think_budget && think_close_id >= 0) {
+                LOGW("Reasoning budget hit (%d tokens) — forcing </think>", think_tokens);
+                seed = think_close_id;   // replace the sampled token
+                think_open = false;
+                think_forced = true;
+            }
+        }
 
         // Speculative path — MTP enabled AND context has room for a 2-token verify.
         const bool can_spec = h->mtp && !spec_disabled &&
@@ -656,6 +694,10 @@ static void run_generation(
     const long decode_ms  = std::chrono::duration_cast<ms>(t_end - t_decode_start).count();
     const double prefill_tps = prefill_ms > 0 ? promptTokens * 1000.0 / prefill_ms : 0.0;
     const double decode_tps  = decode_ms  > 0 ? generated    * 1000.0 / decode_ms  : 0.0;
+    if (think_total > 0) {
+        LOGI("Reasoning: %d tokens%s", think_total,
+             think_forced ? " (budget hit, </think> forced)" : "");
+    }
     LOGI("Prefill: %d tok in %ld ms (%.1f tok/s) | Decode: %d tok in %ld ms (%.1f tok/s)",
          promptTokens, prefill_ms, prefill_tps, generated, decode_ms, decode_tps);
     if (onCompleteMethod) {

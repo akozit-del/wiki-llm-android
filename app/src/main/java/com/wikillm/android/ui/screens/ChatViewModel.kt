@@ -17,6 +17,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import com.wikillm.android.diag.DiagLog
+import com.wikillm.android.rag.FactoidAnswerer
 import com.wikillm.android.rag.ListExtractor
 import com.wikillm.android.rag.QueryExtractor
 import com.wikillm.android.rag.EmbeddingHolder
@@ -298,6 +299,42 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
             _ragEnabled.value && _deepSearch.value && ZimSearchHolder.searcher() != null
 
         generationJob = viewModelScope.launch {
+            // Fast path: a single-fact question whose answer is a field of the
+            // article's infobox needs no model at all. Reading the field takes
+            // well under a second against ~50 s for a full RAG turn, and it
+            // can't hallucinate. Falls through to the normal pipeline whenever
+            // the match isn't certain.
+            if (_ragEnabled.value && !listIntent) {
+                val fast = ZimSearchHolder.searcher()?.let { s ->
+                    runCatching { FactoidAnswerer.tryAnswer(userText.trim(), s) }
+                        .onFailure { DiagLog.w(TAG, "Factoid path failed, using RAG", it) }
+                        .getOrNull()
+                }
+                if (fast != null) {
+                    val elapsed = System.currentTimeMillis() - startMs
+                    DiagLog.i(TAG, "Factoid answer in ${elapsed}ms (no LLM): " +
+                            "${fast.label} = ${fast.value} [${fast.articleTitle}]")
+                    ticker.cancel()
+                    _searchStep.value = null
+                    _messages.value = _messages.value.map {
+                        if (it.id == assistantId) it.copy(
+                            text = fast.render(),
+                            isStreaming = false,
+                            stats = GenStats(
+                                model = "карточка вики",
+                                elapsedMs = elapsed,
+                                genTokens = 0,
+                                promptTokens = 0,
+                            ),
+                        ) else it
+                    }
+                    _genProgress.value = null
+                    _generating.value = false
+                    persistConversation(convId)
+                    return@launch
+                }
+            }
+
             val builder = StringBuilder()
             var stats: GenStats? = null
             val temp = genSettings.currentTemperature()
