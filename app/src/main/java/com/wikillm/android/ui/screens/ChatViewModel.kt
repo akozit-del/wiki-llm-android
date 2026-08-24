@@ -67,6 +67,14 @@ data class ChatMessage(
     val text: String,
     val isStreaming: Boolean = false,
     val stats: GenStats? = null,
+    /**
+     * Reasoning models (Qwen3-Thinking, DeepSeek-R1 distills) emit a
+     * <think>…</think> block before the answer. It used to be dropped on the
+     * floor, which made those models look frozen — on a long chain the whole
+     * token budget can go into thinking and [text] stays empty. Kept separately
+     * so the UI can stream it in a collapsible block instead of hiding it.
+     */
+    val thinking: String = "",
 ) {
     enum class Role { USER, ASSISTANT }
 }
@@ -209,13 +217,34 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
      * thinking, so this is usually a no-op; it also handles a still-open block
      * mid-stream (everything up to a future </think> is treated as thinking).
      */
-    private fun stripThinking(text: String): String {
+    private fun stripThinking(text: String): String = splitThinking(text).answer
+
+    /** Answer text plus whatever the model produced inside <think> blocks. */
+    private data class Thought(val answer: String, val thinking: String)
+
+    /**
+     * Splits a reply into the visible answer and the model's reasoning.
+     * Handles both complete <think>…</think> blocks and a block that is still
+     * open mid-stream (everything after the last <think> is thinking-so-far).
+     */
+    private fun splitThinking(text: String): Thought {
         // Fast path: no thinking marker (the usual case) — avoid the regex entirely.
-        if (!text.contains("<think>")) return text
+        if (!text.contains("<think>")) return Thought(text, "")
+        val thoughts = StringBuilder()
+        THINK_BLOCK.findAll(text).forEach { m ->
+            thoughts.append(m.value.removePrefix("<think>").removeSuffix("</think>"))
+        }
         val closed = THINK_BLOCK.replace(text, "")
+        // A still-open block: treat the tail as thinking in progress.
         val openIdx = closed.indexOf("<think>")
-        val cleaned = if (openIdx >= 0) closed.substring(0, openIdx) else closed
-        return cleaned.trimStart('\n', ' ', '\t')
+        val answer = if (openIdx >= 0) {
+            thoughts.append(closed.substring(openIdx + "<think>".length))
+            closed.substring(0, openIdx)
+        } else closed
+        return Thought(
+            answer = answer.trimStart('\n', ' ', '\t'),
+            thinking = thoughts.toString().trim(),
+        )
     }
 
     fun send(userText: String) {
@@ -316,9 +345,11 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                                 firstTokenMs.compareAndSet(0L, System.currentTimeMillis())
                                 tokenCount.incrementAndGet()
                                 builder.append(ev.piece)
-                                val shown = stripThinking(builder.toString())
+                                val shown = splitThinking(builder.toString())
                                 _messages.value = _messages.value.map {
-                                    if (it.id == assistantId) it.copy(text = shown) else it
+                                    if (it.id == assistantId)
+                                        it.copy(text = shown.answer, thinking = shown.thinking)
+                                    else it
                                 }
                             }
                             is LlmEvent.Done -> {
@@ -338,7 +369,8 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                 ticker.cancel()
                 _searchStep.value = null
                 _genProgress.value = null
-                val finalText = stripThinking(builder.toString())
+                val finalSplit = splitThinking(builder.toString())
+                val finalText = finalSplit.answer
                 val finalStats = stats ?: GenStats(
                     model = currentModelName(),
                     elapsedMs = System.currentTimeMillis() - startMs,
@@ -350,11 +382,18 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                         "${"%.0f".format(finalStats.prefillTokensPerSec)}t/s" +
                         ", decode ${"%.1f".format(finalStats.decodeTokensPerSec)}t/s"
                 else ""
+                val think = if (finalSplit.thinking.isNotEmpty())
+                    ", think ${finalSplit.thinking.length} chars" else ""
                 DiagLog.i(TAG, "Reply (${finalText.length} chars, ${finalStats.genTokens} tok, " +
-                        "${finalStats.elapsedMs}ms$perf): ${finalText.take(200).replace('\n', ' ')}")
+                        "${finalStats.elapsedMs}ms$perf$think): ${finalText.take(200).replace('\n', ' ')}")
                 _messages.value = _messages.value.map {
                     if (it.id == assistantId) {
-                        it.copy(text = finalText, isStreaming = false, stats = finalStats)
+                        it.copy(
+                            text = finalText,
+                            isStreaming = false,
+                            stats = finalStats,
+                            thinking = finalSplit.thinking,
+                        )
                     } else it
                 }
                 _generating.value = false
@@ -365,7 +404,11 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
 
     /** Save the current (non-streaming) messages as a conversation under [convId]. */
     private fun persistConversation(convId: Long) {
-        val msgs = _messages.value.filter { !it.isStreaming && it.text.isNotBlank() }
+        // A reasoning model can spend its whole budget inside <think> and leave
+        // `text` empty — keep those turns too, they still show the reasoning.
+        val msgs = _messages.value.filter {
+            !it.isStreaming && (it.text.isNotBlank() || it.thinking.isNotBlank())
+        }
         if (msgs.isEmpty()) return
         val title = msgs.firstOrNull { it.role == ChatMessage.Role.USER }?.text
             ?.replace('\n', ' ')?.trim()?.take(50)?.ifBlank { null } ?: "Чат"
@@ -373,6 +416,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
             StoredMessage(
                 role = if (it.role == ChatMessage.Role.USER) "user" else "assistant",
                 text = it.text,
+                thinking = it.thinking,
             )
         }
         historyStore.upsert(Conversation(convId, title, System.currentTimeMillis(), stored))
@@ -390,6 +434,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                 id = idc++,
                 role = if (sm.role == "user") ChatMessage.Role.USER else ChatMessage.Role.ASSISTANT,
                 text = sm.text,
+                thinking = sm.thinking,
             )
         }
         nextMessageId = idc

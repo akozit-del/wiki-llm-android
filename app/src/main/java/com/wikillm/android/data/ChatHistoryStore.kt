@@ -16,7 +16,13 @@ import kotlinx.serialization.json.Json
 import java.io.File
 
 @Serializable
-data class StoredMessage(val role: String, val text: String)
+data class StoredMessage(
+    val role: String,
+    val text: String,
+    /** Reasoning-model <think> content, if any. Defaulted so older saved
+     *  conversations (written before this field existed) still deserialize. */
+    val thinking: String = "",
+)
 
 @Serializable
 data class Conversation(

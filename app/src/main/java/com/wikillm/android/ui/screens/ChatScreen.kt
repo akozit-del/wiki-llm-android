@@ -290,21 +290,28 @@ private fun MessageBubble(msg: ChatMessage) {
     val context = LocalContext.current
     val clipboard = LocalClipboardManager.current
     Column(Modifier.fillMaxWidth()) {
-        Box(
-            Modifier.align(align).widthIn(max = 320.dp).clip(RoundedCornerShape(14.dp))
-                .background(bg)
-                .clickable {
-                    if (msg.text.isNotBlank()) {
-                        clipboard.setText(AnnotatedString(msg.text))
-                        Toast.makeText(context, "Скопировано", Toast.LENGTH_SHORT).show()
+        if (msg.thinking.isNotBlank()) {
+            ThinkingBlock(msg.thinking, streaming = msg.isStreaming && msg.text.isBlank())
+        }
+        // With a reasoning model the answer can still be empty while thinking
+        // streams — don't show an empty bubble on top of the reasoning block.
+        if (msg.text.isNotBlank() || msg.thinking.isBlank()) {
+            Box(
+                Modifier.align(align).widthIn(max = 320.dp).clip(RoundedCornerShape(14.dp))
+                    .background(bg)
+                    .clickable {
+                        if (msg.text.isNotBlank()) {
+                            clipboard.setText(AnnotatedString(msg.text))
+                            Toast.makeText(context, "Скопировано", Toast.LENGTH_SHORT).show()
+                        }
                     }
+                    .padding(horizontal = 12.dp, vertical = 8.dp)
+            ) {
+                when {
+                    msg.text.isEmpty() && msg.isStreaming -> Text("…", color = fg)
+                    isUser -> Text(msg.text, color = fg)
+                    else -> MarkdownText(msg.text, color = fg) // render assistant Markdown
                 }
-                .padding(horizontal = 12.dp, vertical = 8.dp)
-        ) {
-            when {
-                msg.text.isEmpty() && msg.isStreaming -> Text("…", color = fg)
-                isUser -> Text(msg.text, color = fg)
-                else -> MarkdownText(msg.text, color = fg) // render assistant Markdown
             }
         }
         msg.stats?.let { s ->
@@ -314,6 +321,55 @@ private fun MessageBubble(msg: ChatMessage) {
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+        }
+    }
+}
+
+/**
+ * The model's <think> content, shown as a collapsible block above the answer.
+ * Auto-expands while it is the only thing streaming (so a reasoning model that
+ * spends its whole budget thinking still looks alive), and collapses once the
+ * answer arrives — tap the header to toggle.
+ */
+@Composable
+private fun ThinkingBlock(thinking: String, streaming: Boolean) {
+    // `streaming` is the initial state per message; the user's tap wins after.
+    var expanded by remember(streaming) { mutableStateOf(streaming) }
+    Surface(
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+        shape = RoundedCornerShape(10.dp),
+        modifier = Modifier.fillMaxWidth().padding(bottom = 4.dp),
+    ) {
+        Column(Modifier.fillMaxWidth()) {
+            Row(
+                Modifier.fillMaxWidth().clickable { expanded = !expanded }
+                    .padding(horizontal = 10.dp, vertical = 6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                if (streaming) {
+                    CircularProgressIndicator(modifier = Modifier.size(12.dp), strokeWidth = 1.5.dp)
+                    Spacer(Modifier.width(6.dp))
+                }
+                Text(
+                    if (streaming) "Размышляю…" else "💭 Размышления модели",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(Modifier.weight(1f))
+                Text(
+                    "${thinking.length} симв. ${if (expanded) "▲" else "▼"}",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            if (expanded) {
+                Text(
+                    thinking,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = 10.dp).padding(bottom = 8.dp),
+                )
+            }
         }
     }
 }
