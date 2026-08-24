@@ -30,7 +30,7 @@ object FactoidAnswerer {
         val articlePath: String,
     ) {
         /** Rendered reply: the value, then the source, so it reads like an answer. */
-        fun render(): String = "**$value**\n\n_$label · $articleTitle_"
+        fun render(): String = "**$value**\n\n_${label} · ${articleTitle}_"
     }
 
     /**
