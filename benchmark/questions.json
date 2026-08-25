@@ -1,0 +1,122 @@
+{
+  "_meta": {
+    "version": 1,
+    "created": "2026-08-25",
+    "zim": "wikipedia_ru_all_nopic_2026-01.zim",
+    "purpose": "Reference set for measuring retrieval recall, fast-path coverage and answer accuracy. See README.md in this directory for methodology.",
+    "ground_truth_policy": "expect_article and expect_field are the stable assertions — they do not change with the ZIM snapshot and are not derived from our own output, so they cannot make the benchmark circular. expect_answer is null until verified against this specific ZIM, because values like mayors and population are snapshot-dependent.",
+    "categories": {
+      "infobox": "Answer is a single infobox field — the FactoidAnswerer fast path should handle these.",
+      "prose": "Single fact, but it lives in the article body, not the card — requires the RAG path.",
+      "list": "Enumeration — requires the list-extraction pipeline.",
+      "multihop": "Needs two or more articles, or a comparison/derivation."
+    }
+  },
+
+  "questions": [
+    { "id": "ib01", "category": "infobox", "question": "кто мэр Тольятти",
+      "expect_article": "Тольятти", "expect_field": "Глава/мэр",
+      "expect_answer": "Илья Геннадьевич Сухих",
+      "note": "Verified on device 2026-08-25 via the fast path (395 ms)." },
+
+    { "id": "ib02", "category": "infobox", "question": "кто мэр Москвы",
+      "expect_article": "Москва", "expect_field": "Глава/мэр", "expect_answer": null },
+
+    { "id": "ib03", "category": "infobox", "question": "какое население Казани",
+      "expect_article": "Казань", "expect_field": "Население", "expect_answer": null },
+
+    { "id": "ib04", "category": "infobox", "question": "какое население Екатеринбурга",
+      "expect_article": "Екатеринбург", "expect_field": "Население", "expect_answer": null },
+
+    { "id": "ib05", "category": "infobox", "question": "когда основан Новосибирск",
+      "expect_article": "Новосибирск", "expect_field": "Основан", "expect_answer": null },
+
+    { "id": "ib06", "category": "infobox", "question": "когда основан Владивосток",
+      "expect_article": "Владивосток", "expect_field": "Основан", "expect_answer": null },
+
+    { "id": "ib07", "category": "infobox", "question": "какая площадь Байкала",
+      "expect_article": "Байкал", "expect_field": "Площадь", "expect_answer": null },
+
+    { "id": "ib08", "category": "infobox", "question": "какая столица Японии",
+      "expect_article": "Япония", "expect_field": "Столица", "expect_answer": null },
+
+    { "id": "ib09", "category": "infobox", "question": "какая валюта в Бразилии",
+      "expect_article": "Бразилия", "expect_field": "Валюта", "expect_answer": null },
+
+    { "id": "ib10", "category": "infobox", "question": "когда родился Дмитрий Менделеев",
+      "expect_article": "Менделеев, Дмитрий Иванович", "expect_field": "Дата рождения",
+      "expect_answer": null,
+      "note": "Person titles in ru.wiki are inverted ('Фамилия, Имя Отчество') — a direct test of entity resolution." },
+
+    { "id": "ib11", "category": "infobox", "question": "когда умер Лев Толстой",
+      "expect_article": "Толстой, Лев Николаевич", "expect_field": "Дата смерти", "expect_answer": null },
+
+    { "id": "ib12", "category": "infobox", "question": "где родился Юрий Гагарин",
+      "expect_article": "Гагарин, Юрий Алексеевич", "expect_field": "Место рождения", "expect_answer": null },
+
+    { "id": "ib13", "category": "infobox", "question": "кто автор романа Война и мир",
+      "expect_article": "Война и мир", "expect_field": "Автор", "expect_answer": null },
+
+    { "id": "ib14", "category": "infobox", "question": "кто режиссёр фильма Сталкер",
+      "expect_article": "Сталкер (фильм)", "expect_field": "Режиссёр", "expect_answer": null,
+      "note": "Title carries a disambiguating suffix — tests that the qualifier is accepted." },
+
+    { "id": "pr01", "category": "prose", "question": "почему Юпитер называют газовым гигантом",
+      "expect_article": "Юпитер", "expect_field": null, "expect_answer": null },
+
+    { "id": "pr02", "category": "prose", "question": "из чего состоит атмосфера Марса",
+      "expect_article": "Марс", "expect_field": null, "expect_answer": null },
+
+    { "id": "pr03", "category": "prose", "question": "кто открыл пенициллин",
+      "expect_article": "Пенициллин", "expect_field": null, "expect_answer": null,
+      "note": "Answer may also live in 'Флеминг, Александр' — accept either." },
+
+    { "id": "pr04", "category": "prose", "question": "что такое фотосинтез",
+      "expect_article": "Фотосинтез", "expect_field": null, "expect_answer": null },
+
+    { "id": "pr05", "category": "prose", "question": "когда началась Вторая мировая война",
+      "expect_article": "Вторая мировая война", "expect_field": null, "expect_answer": null },
+
+    { "id": "pr06", "category": "prose", "question": "чем знаменит Большое красное пятно",
+      "expect_article": "Большое красное пятно", "expect_field": null, "expect_answer": null },
+
+    { "id": "pr07", "category": "prose", "question": "что производит АвтоВАЗ",
+      "expect_article": "АвтоВАЗ", "expect_field": null, "expect_answer": null },
+
+    { "id": "pr08", "category": "prose", "question": "какой автозавод расположен в Тольятти",
+      "expect_article": "Тольятти", "expect_field": null, "expect_answer": "АвтоВАЗ",
+      "note": "Also the coreference follow-up case: asked after a question about Тольятти it arrives as 'какой автозавод там расположен'." },
+
+    { "id": "ls01", "category": "list", "question": "перечисли мэров Тольятти",
+      "expect_article": "Тольятти", "expect_field": null, "expect_answer": null },
+
+    { "id": "ls02", "category": "list", "question": "назови планеты Солнечной системы",
+      "expect_article": "Солнечная система", "expect_field": null, "expect_answer": null },
+
+    { "id": "ls03", "category": "list", "question": "какие есть океаны на Земле",
+      "expect_article": "Океан", "expect_field": null, "expect_answer": null },
+
+    { "id": "ls04", "category": "list", "question": "перечисли произведения Достоевского",
+      "expect_article": "Достоевский, Фёдор Михайлович", "expect_field": null, "expect_answer": null },
+
+    { "id": "ls05", "category": "list", "question": "перечисли спутники Юпитера",
+      "expect_article": "Спутники Юпитера", "expect_field": null, "expect_answer": null },
+
+    { "id": "mh01", "category": "multihop", "question": "кто был предшественником нынешнего мэра Тольятти",
+      "expect_article": "Тольятти", "expect_field": "Предшественник", "expect_answer": null,
+      "note": "Two hops: city card -> current head -> that person's card." },
+
+    { "id": "mh02", "category": "multihop", "question": "в каком регионе находится город где родился Гагарин",
+      "expect_article": "Гагарин, Юрий Алексеевич", "expect_field": null, "expect_answer": null },
+
+    { "id": "mh03", "category": "multihop", "question": "сравни население Москвы и Санкт-Петербурга",
+      "expect_article": "Москва", "expect_field": "Население", "expect_answer": null,
+      "note": "Needs both city cards; must NOT take the fast path (stop-list has 'сравни')." },
+
+    { "id": "mh04", "category": "multihop", "question": "почему Байкал самое глубокое озеро",
+      "expect_article": "Байкал", "expect_field": null, "expect_answer": null },
+
+    { "id": "mh05", "category": "multihop", "question": "как связаны Менделеев и периодическая таблица",
+      "expect_article": "Менделеев, Дмитрий Иванович", "expect_field": null, "expect_answer": null }
+  ]
+}
