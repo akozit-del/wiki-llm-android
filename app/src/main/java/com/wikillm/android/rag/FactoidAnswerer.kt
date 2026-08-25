@@ -143,27 +143,14 @@ object FactoidAnswerer {
     }
 
     /**
-     * The entity as written, plus plausible nominatives for the common Russian
-     * genitive endings on place names:
-     *   Казани → Казань, Перми → Пермь   (3rd declension, -и → -ь)
-     *   Москвы → Москва, Самары → Самара (1st declension, -ы → -а)
-     *   Новосибирска → Новосибирск       (2nd declension, drop -а)
-     * Indeclinable names ("Тольятти") pass through unchanged as the first form.
+     * The entity as written, plus plausible nominatives. Shared with
+     * [EntityTitleProbe] so the retrieval lane and this one decline words the
+     * same way — they had drifted, and the wider rule set there (-ии → -ия,
+     * -ого → -ий) covers endings this lane was missing on «Японии», «Бразилии».
+     * Indeclinable names ("Тольятти") pass through as the first form.
      */
-    private fun nominativeForms(entity: String): List<String> {
-        val e = entity.trim()
-        if (e.length < 4) return listOf(e)
-        val stem = e.dropLast(1)
-        val guesses = when (e.last()) {
-            'и' -> listOf("${stem}ь", "${stem}я")
-            'ы' -> listOf("${stem}а")
-            'а' -> listOf(stem)          // masculine genitive: Новосибирска → Новосибирск
-            'е' -> listOf("${stem}а", stem)
-            'у' -> listOf("${stem}а", stem)
-            else -> emptyList()
-        }
-        return (listOf(e) + guesses).distinct()
-    }
+    private fun nominativeForms(entity: String): List<String> =
+        EntityTitleProbe.nominativeForms(entity)
 
     /** True when [title] names exactly [entity], ignoring a parenthesised qualifier. */
     private fun titleIsEntity(title: String, entity: String): Boolean {

@@ -63,9 +63,16 @@ class ZimSearcher private constructor(
      * canonical list articles ("Главы Тольятти", "Список глав Тольятти")
      * directly, without fighting BM25 ranking 700 candidates.
      */
-    suspend fun lookupExactTitle(title: String): Hit? = withContext(Dispatchers.IO) {
-        // Tier 1: O(1) exact-title lookup.
-        val exact = runCatching {
+    /**
+     * Tier 1 alone: exact title index hit, redirects followed, nothing fuzzy.
+     *
+     * [EntityTitleProbe] fires dozens of morphological guesses per question and
+     * relies on a wrong guess finding *nothing*. The SuggestionSearcher fallback
+     * below would answer «Москвы» with "Москвы имени канал", turning every bad
+     * guess into a confidently pinned wrong article.
+     */
+    suspend fun lookupTitleExact(title: String): Hit? = withContext(Dispatchers.IO) {
+        runCatching {
             var entry = archive.getEntryByTitle(title)
             var hops = 0
             while (hops < 3 && (safe { entry.isRedirect } == true)) {
@@ -79,8 +86,13 @@ class ZimSearcher private constructor(
                 snippet = "",
                 score = 1000,
             )
-        }.getOrNull()
-        if (exact != null && exact.path.isNotBlank()) return@withContext exact
+        }.getOrNull()?.takeIf { it.path.isNotBlank() }
+    }
+
+    suspend fun lookupExactTitle(title: String): Hit? = withContext(Dispatchers.IO) {
+        // Tier 1: O(1) exact-title lookup.
+        val exact = lookupTitleExact(title)
+        if (exact != null) return@withContext exact
 
         // Tier 2 (build-73): SuggestionSearcher fallback. ru.wiki's title
         // index normalises case + diacritics, so "толятти" / "Тольятти " /

@@ -267,13 +267,22 @@ class RagPromptBuilder(private val searcher: ZimSearcher) {
             } else emptyList()
         }
 
+        // Sprint 2026-08-25: head-entity title probes, for EVERY question.
+        // Xapian has no Russian stemmer in this index, so a question in the
+        // genitive («площадь Байкала») never reaches the nominative title
+        // («Байкал») — 8 of the 11 articles lost outside top-20 on the first
+        // recall baseline failed exactly this way. Probing the title index with
+        // guessed nominatives is exact and O(1), so a wrong guess costs nothing
+        // and a right one lands the article at rank 1 instead of nowhere.
+        val entityProbeHits = EntityTitleProbe.probe(question, searcher)
+
         val bm25 = searcher.search(searchQuery.ifBlank { question }, candidates)
         // build-103 fix: probes FIRST, then dedup by path keeping the first
         // (highest-score) version. The old code filtered probes OUT when their
         // path also appeared in BM25 — which silently demoted a pinned
         // score-2000 list article ("Градоначальники Тольятти") to its BM25
         // duplicate at ~50, then the score≥800 doc filter dropped it entirely.
-        var hits = (titleProbeHits + walkerProbeHits + bm25).distinctBy { it.path }
+        var hits = (titleProbeHits + walkerProbeHits + entityProbeHits + bm25).distinctBy { it.path }
         // Also pull the head-entity article on its own. When the query mixes an
         // attribute with an entity ("мэр Тольятти"), the bare entity page
         // ("Тольятти") gets crowded out of the candidates by "<Entity>ский/ская…"
