@@ -201,6 +201,16 @@ class RagPromptBuilder(private val searcher: ZimSearcher) {
         return out
     }
 
+    /**
+     * Retrieval only — no article reading, no prompt, no LLM. Exists so the
+     * reference set (benchmark/questions.json) can be scored for recall@k in
+     * about a second per question instead of the ~60 s a full RAG answer costs;
+     * measuring retrieval was otherwise gated on generating an answer we throw
+     * away.
+     */
+    suspend fun probeCandidates(question: String, candidates: Int): List<ZimSearcher.Hit> =
+        gatherSortedHits(question, candidates, emptySet())
+
     /** Shared retrieval+sort used by both single-shot and per-doc map paths. */
     private suspend fun gatherSortedHits(
         question: String,
