@@ -32,6 +32,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 import com.wikillm.android.data.Conversation
 import com.wikillm.android.data.LocalModel
+import com.wikillm.android.diag.BenchmarkBridge
 import com.wikillm.android.settings.GenerationSettings
 import com.wikillm.android.ui.MarkdownText
 import kotlinx.coroutines.launch
@@ -51,6 +52,15 @@ fun ChatScreen(navController: NavController, vm: ChatViewModel = viewModel()) {
     val drawerState = rememberDrawerState(DrawerValue.Closed)
     val scope = rememberCoroutineScope()
     fun closeDrawer() = scope.launch { drawerState.close() }
+
+    // Questions pushed in from adb so the reference set can be run unattended
+    // (see BenchmarkBridge — `adb shell input text` can't type Cyrillic).
+    // The receiver only exists in debug builds, so this never fires in release.
+    LaunchedEffect(Unit) {
+        BenchmarkBridge.questions.collect { q ->
+            if (loadState is ModelLoadState.Loaded && !vm.generating.value) vm.send(q)
+        }
+    }
 
     ModalNavigationDrawer(
         drawerState = drawerState,

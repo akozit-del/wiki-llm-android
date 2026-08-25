@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Debug-only additions. Merged into the main manifest for debug builds and
+  absent from release, so nothing declared here can ship.
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <application>
+        <!--
+          Lets the reference question set be driven from adb. `adb shell input
+          text` can't type Cyrillic on Samsung firmware, but intent extras carry
+          UTF-8 fine, so questions arrive as broadcasts instead. Exported so adb
+          can reach it — which is exactly why it must never exist in release.
+        -->
+        <receiver
+            android:name="com.wikillm.android.diag.BenchmarkReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="com.wikillm.android.ASK" />
+            </intent-filter>
+        </receiver>
+    </application>
+</manifest>
