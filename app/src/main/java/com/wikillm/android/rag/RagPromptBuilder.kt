@@ -312,21 +312,9 @@ class RagPromptBuilder(private val searcher: ZimSearcher) {
                 // 800 for prefix probes, 0/small for Xapian hits) — without this,
                 // the list-aware probes get re-buried by an "exact entity" article.
                 var score = hit.score
-                // Boost only the unpinned Xapian tail. A pinned hit already carries
-                // a deliberate ordering from EntityTitleProbe (n-gram length, proper
-                // noun, attribute penalty) and those gaps are just 20–90 points wide,
-                // so a ±130 title boost on top of them decides rank 1 by itself — and
-                // it decides it wrongly, because all three bonuses fire together
-                // exactly when the title *is* one query word. That is how «Война» beat
-                // «Вторая мировая война» and «Дмитрий» beat «Менделеев, Дмитрий
-                // Иванович»: a bare generic noun outscoring the article it came from.
-                // Boosted BM25 tops out near 200, well under the 500 pin floor, so the
-                // pins still float above the tail — only their internal order is kept.
-                if (hit.score < PINNED_SCORE_FLOOR) {
-                    if (searchTerms.any { it == title }) score += 100
-                    if (searchTerms.any { title.startsWith(it) }) score += 20
-                    if (searchTerms.any { title.contains(it) }) score += 10
-                }
+                if (searchTerms.any { it == title }) score += 100
+                if (searchTerms.any { title.startsWith(it) }) score += 20
+                if (searchTerms.any { title.contains(it) }) score += 10
                 score - title.length / 20
             })
         }
@@ -451,8 +439,8 @@ class RagPromptBuilder(private val searcher: ZimSearcher) {
     ): List<ZimSearcher.Hit> {
         if (!EmbeddingHolder.isReady() || hits.size < 3) return hits
         // Probes are pinned at score ≥ 800; BM25/Xapian hits sit well below.
-        val pinned = hits.filter { it.score >= PINNED_SCORE_FLOOR }
-        val tail = hits.filter { it.score < PINNED_SCORE_FLOOR }
+        val pinned = hits.filter { it.score >= 500 }
+        val tail = hits.filter { it.score < 500 }
         if (tail.size < 3) return hits
 
         val qv = EmbeddingHolder.embedQuery(question) ?: return hits
@@ -825,15 +813,5 @@ class RagPromptBuilder(private val searcher: ZimSearcher) {
         return decoded.replace('_', ' ')
     }
 
-    companion object {
-        private const val TAG = "RagPromptBuilder"
-
-        /**
-         * Score at or above which a hit was placed deliberately (title probe 800/1000,
-         * chain walker ~900, dedicated list article 2000) rather than scored by Xapian.
-         * Both the title-boost sort and [semanticRerank] must split the list at the
-         * same point: if they disagree, one of them reorders hits the other pinned.
-         */
-        private const val PINNED_SCORE_FLOOR = 500
-    }
+    companion object { private const val TAG = "RagPromptBuilder" }
 }
