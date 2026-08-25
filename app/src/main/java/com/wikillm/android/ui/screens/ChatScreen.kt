@@ -453,6 +453,10 @@ private fun liveStatus(p: GenProgress?): String {
  * prompts, so it's worth surfacing right under the reply.
  */
 private fun statsLine(s: GenStats): String {
+    // Answers that never ran the model (infobox fast path) have no token
+    // counts — showing "0 ток · 0,0 ток/с" is noise. Report the latency in ms,
+    // which is the whole point of that path.
+    if (s.genTokens == 0) return "${s.model} · ${s.elapsedMs} мс"
     // Prefer the precise decode rate (excludes prefill + retrieval); fall back
     // to the whole-turn rate when per-phase timing is unavailable.
     val rate = String.format("%.1f", if (s.decodeMs > 0) s.decodeTokensPerSec else s.tokensPerSec)

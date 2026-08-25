@@ -29,8 +29,12 @@ object FactoidAnswerer {
         val articleTitle: String,
         val articlePath: String,
     ) {
-        /** Rendered reply: the value, then the source, so it reads like an answer. */
-        fun render(): String = "**$value**\n\n_${label} · ${articleTitle}_"
+        /**
+         * Rendered reply: the value, then the source, so it reads like an answer.
+         * Only bold is used — MarkdownText renders `**bold**` and `code`, not
+         * underscore italics, which would otherwise show up as literal `_`.
+         */
+        fun render(): String = "**$value**\n\n$label · $articleTitle"
     }
 
     /**
