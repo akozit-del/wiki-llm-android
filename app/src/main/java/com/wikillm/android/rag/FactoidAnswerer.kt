@@ -117,15 +117,52 @@ object FactoidAnswerer {
 
     /**
      * Find the article that *is* [entity], not one that merely mentions it.
-     * Exact title lookup first; otherwise a title-prefix probe whose result must
-     * still normalise to the same string. A disambiguating suffix in parentheses
-     * ("Тольятти (город)") is accepted, a qualifier before it is not
-     * ("Улица 40 лет Победы (Тольятти)").
+     *
+     * Every candidate — including the one from lookupExactTitle — is checked
+     * against [titleIsEntity]. That check is not optional: lookupExactTitle
+     * falls back to a SuggestionSearcher fuzzy match, so it happily answers
+     * "Казани" with "Архитектура Казани". Returning that unchecked would let us
+     * give a confident sub-second answer out of the wrong article, which is the
+     * worst failure this path can have.
+     *
+     * Questions name entities in an oblique case ("население Казани",
+     * "мэр Москвы"), while article titles are nominative, so each declined form
+     * is also tried as its likely nominative. Guessing wide is safe precisely
+     * because every guess still has to pass the strict check.
      */
     private suspend fun resolveEntity(entity: String, searcher: ZimSearcher): ZimSearcher.Hit? {
-        searcher.lookupExactTitle(entity)?.let { return it }
-        return searcher.findByTitlePrefix(entity, limit = 5)
-            .firstOrNull { titleIsEntity(it.title, entity) }
+        for (form in nominativeForms(entity)) {
+            searcher.lookupExactTitle(form)
+                ?.takeIf { titleIsEntity(it.title, form) }
+                ?.let { return it }
+            searcher.findByTitlePrefix(form, limit = 5)
+                .firstOrNull { titleIsEntity(it.title, form) }
+                ?.let { return it }
+        }
+        return null
+    }
+
+    /**
+     * The entity as written, plus plausible nominatives for the common Russian
+     * genitive endings on place names:
+     *   Казани → Казань, Перми → Пермь   (3rd declension, -и → -ь)
+     *   Москвы → Москва, Самары → Самара (1st declension, -ы → -а)
+     *   Новосибирска → Новосибирск       (2nd declension, drop -а)
+     * Indeclinable names ("Тольятти") pass through unchanged as the first form.
+     */
+    private fun nominativeForms(entity: String): List<String> {
+        val e = entity.trim()
+        if (e.length < 4) return listOf(e)
+        val stem = e.dropLast(1)
+        val guesses = when (e.last()) {
+            'и' -> listOf("${stem}ь", "${stem}я")
+            'ы' -> listOf("${stem}а")
+            'а' -> listOf(stem)          // masculine genitive: Новосибирска → Новосибирск
+            'е' -> listOf("${stem}а", stem)
+            'у' -> listOf("${stem}а", stem)
+            else -> emptyList()
+        }
+        return (listOf(e) + guesses).distinct()
     }
 
     /** True when [title] names exactly [entity], ignoring a parenthesised qualifier. */
