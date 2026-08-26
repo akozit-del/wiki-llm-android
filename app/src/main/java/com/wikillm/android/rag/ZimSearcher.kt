@@ -183,6 +183,49 @@ class ZimSearcher private constructor(
             }
         }
 
+    /**
+     * Title autocomplete: up to [limit] entries the suggestion index offers for
+     * [prefix], best first. This is the second way to walk sibling titles, and
+     * it exists because the first one does not find them: on ru.wiki
+     * `findByTitlePrefix("Сталкер")` yields no «Сталкер (фильм)» even though the
+     * article is right there — the raw title-order iterator walks past the
+     * parenthesised run. The suggestion index (what Kiwix's own search bar
+     * completes against) returns them, costs a title-index lookup rather than a
+     * Xapian query, and normalises case/diacritics on the way.
+     *
+     * Ranking here is the index's, not ours: the caller still has to decide
+     * which of the siblings actually answers the question.
+     */
+    suspend fun suggestTitles(prefix: String, limit: Int): List<Hit> =
+        withContext(Dispatchers.IO) {
+            runCatching {
+                val ss = SuggestionSearcher(archive)
+                val s = ss.suggest(prefix)
+                try {
+                    val total = safe { s.estimatedMatches } ?: 0L
+                    if (total == 0L) return@runCatching emptyList<Hit>()
+                    val it = s.getResults(0, limit)
+                    val out = ArrayList<Hit>(limit)
+                    while (safe { it.hasNext() } == true) {
+                        val item = safe { it.next() } ?: break
+                        val t = safe { item.title } ?: ""
+                        val p = safe { item.path } ?: ""
+                        if (t.isNotBlank() && p.isNotBlank()) {
+                            out += Hit(title = t, path = p, snippet = "", score = 900)
+                        }
+                    }
+                    DiagLog.i(TAG, "suggestTitles('$prefix'): " + out.joinToString { it.title })
+                    out
+                } finally {
+                    runCatching { s.dispose() }
+                    runCatching { ss.dispose() }
+                }
+            }.getOrElse {
+                DiagLog.w(TAG, "suggestTitles('$prefix') failed", it)
+                emptyList()
+            }
+        }
+
     suspend fun readArticleText(path: String): String? = withContext(Dispatchers.IO) {
         readArticleHtml(path)?.let { htmlToPlainText(it) }
     }

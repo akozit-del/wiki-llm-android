@@ -156,7 +156,14 @@ object FactoidAnswerer {
         //    («Толстой, Лев Николаевич») and parenthesised qualifiers
         //    («Сталкер (фильм)»). Both are only accepted when the question
         //    itself supplies the disambiguating word.
-        val siblings = searcher.findByTitlePrefix(entity, limit = SIBLING_LOOKUPS)
+        //    Two indexes are asked, because they disagree: the raw title-order
+        //    scan finds the inverted person form but walks past the
+        //    parenthesised run («Сталкер (фильм)» never came back for
+        //    «Сталкер»), while the suggestion index returns exactly those.
+        val siblings = (
+            searcher.findByTitlePrefix(entity, limit = SIBLING_LOOKUPS) +
+                searcher.suggestTitles(entity, limit = SIBLING_LOOKUPS)
+            ).distinctBy { it.path }
         siblings.filter { personTitleMatches(it.title, entity, question) }.forEach { add(it) }
         siblings
             .mapNotNull { h -> qualifierGap(h.title, entity, question)?.let { it to h } }
