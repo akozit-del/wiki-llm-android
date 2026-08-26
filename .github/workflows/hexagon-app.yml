@@ -9,8 +9,12 @@ on:
   workflow_dispatch:
     inputs:
       llama_ref:
+        # Must match GIT_TAG in app/src/main/cpp/CMakeLists.txt — the two
+        # workflows used to build against different llama.cpp versions (this
+        # one off master, build.yml off tag b9296), which is why push builds
+        # were failing to compile while this one stayed green.
         description: "llama.cpp git ref (tag/branch/sha) with ggml-hexagon"
-        default: "master"
+        default: "d222767c7a6516559a3f49e7721b6c6b1acc87b4"
 
 jobs:
   native:
@@ -31,9 +35,16 @@ jobs:
       - name: Clone llama.cpp
         if: steps.nativecache.outputs.cache-hit != 'true'
         run: |
-          git clone --depth 1 --branch "${{ github.event.inputs.llama_ref }}" \
-            https://github.com/ggml-org/llama.cpp.git llama.cpp \
-            || git clone https://github.com/ggml-org/llama.cpp.git llama.cpp
+          # `--branch` only resolves branch and tag names, so a pinned SHA needs
+          # a fetch-then-checkout. Still shallow: one commit, no history.
+          REF="${{ github.event.inputs.llama_ref }}"
+          REF="${REF:-d222767c7a6516559a3f49e7721b6c6b1acc87b4}"
+          mkdir llama.cpp && cd llama.cpp
+          git init -q
+          git remote add origin https://github.com/ggml-org/llama.cpp.git
+          git fetch -q --depth 1 origin "$REF"
+          git checkout -q FETCH_HEAD
+          echo "llama.cpp at $(git rev-parse HEAD)"
 
       - name: Build llama.cpp(+Hexagon) and libllm.so via snapdragon-toolchain
         if: steps.nativecache.outputs.cache-hit != 'true'

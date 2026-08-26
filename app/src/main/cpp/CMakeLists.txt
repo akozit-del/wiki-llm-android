@@ -75,11 +75,23 @@ FetchContent_MakeAvailable(opencl_headers)
 set(OpenCL_INCLUDE_DIR "${opencl_headers_SOURCE_DIR}" CACHE PATH "" FORCE)
 set(OpenCL_LIBRARY "${CMAKE_CURRENT_SOURCE_DIR}/prebuilt/libOpenCL.so" CACHE FILEPATH "" FORCE)
 
+# Pinned to a specific llama.cpp commit rather than a release tag.
+#
+# The MTP work needs APIs that no tagged release carries yet — load_mtp,
+# llama_model_n_layer_nextn, ctx_other, and the n_vocab-first signature of
+# llama_sampler_init_penalties. This was pinned to b9296, which predates all
+# four, so build.yml had been failing to compile on every push since MTP
+# stage-2 landed while hexagon-app.yml built fine off master. Same ref in both
+# now: .github/workflows/hexagon-app.yml pins llama_ref to this SHA, so the two
+# workflows can't drift apart again, and neither is at the mercy of whatever
+# lands upstream on master today.
+#
+# GIT_SHALLOW must stay off: a shallow fetch can only resolve branch and tag
+# names, not an arbitrary commit.
 FetchContent_Declare(
     llama_cpp
     GIT_REPOSITORY https://github.com/ggml-org/llama.cpp.git
-    GIT_TAG        b9296
-    GIT_SHALLOW    TRUE
+    GIT_TAG        d222767c7a6516559a3f49e7721b6c6b1acc87b4
 )
 FetchContent_MakeAvailable(llama_cpp)
 
