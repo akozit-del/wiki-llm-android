@@ -90,30 +90,128 @@ object FactoidAnswerer {
 
         DiagLog.i(TAG, "Factoid candidate: label='$label' entity='$entity'")
 
-        val hit = resolveEntity(entity, searcher) ?: run {
+        val candidates = resolveCandidates(question, entity, searcher)
+        if (candidates.isEmpty()) {
             DiagLog.i(TAG, "Factoid: no confident article for '$entity' — falling back to RAG")
             return null
         }
+        DiagLog.i(TAG, "Factoid candidates: " + candidates.joinToString { it.title })
 
-        val html = searcher.readArticleHtml(hit.path) ?: return null
-        val card = InfoboxExtractor.extract(html, hit.title)
-        if (card.isEmpty) {
-            DiagLog.i(TAG, "Factoid: '${hit.title}' has no infobox — falling back to RAG")
-            return null
+        for (hit in candidates) {
+            val html = searcher.readArticleHtml(hit.path) ?: continue
+            val card = InfoboxExtractor.extract(html, hit.title)
+            if (card.isEmpty) {
+                DiagLog.i(TAG, "Factoid: '${hit.title}' has no infobox — next candidate")
+                continue
+            }
+            val value = card.field(label)
+            if (value == null) {
+                DiagLog.i(TAG, "Factoid: '${hit.title}' card has no '$label' — next candidate")
+                continue
+            }
+            if (!plausible(value)) {
+                DiagLog.i(TAG, "Factoid: value '$value' looks unusable — next candidate")
+                continue
+            }
+            DiagLog.i(TAG, "Factoid HIT: $label = '$value' (${hit.title})")
+            return Answer(label = label, value = value, articleTitle = hit.title, articlePath = hit.path)
         }
-
-        val value = card.field(label) ?: run {
-            DiagLog.i(TAG, "Factoid: '${hit.title}' card has no '$label' — falling back to RAG")
-            return null
-        }
-        if (!plausible(value)) {
-            DiagLog.i(TAG, "Factoid: value '$value' looks unusable — falling back to RAG")
-            return null
-        }
-
-        DiagLog.i(TAG, "Factoid HIT: $label = '$value' (${hit.title})")
-        return Answer(label = label, value = value, articleTitle = hit.title, articlePath = hit.path)
+        DiagLog.i(TAG, "Factoid: no candidate carried '$label' — falling back to RAG")
+        return null
     }
+
+    /**
+     * Articles that could carry the asked-for field, best guess first.
+     *
+     * The old code resolved exactly one article and gave up if it had no
+     * infobox — which is how «кто режиссёр фильма Сталкер» died on the
+     * disambiguation page «Сталкер» while «Сталкер (фильм)» sat one rank below
+     * in the very same candidate list, and how «кто автор романа Война и мир»
+     * ended up on «Война». Retrieval had already solved this (recall@3 97%);
+     * the fast path just never got to look past its first guess.
+     *
+     * Widening is safe because the caller still requires the *requested label*
+     * to be present. That check is a type check in disguise: a settlement card
+     * has no «Режиссёр», a disambiguation page has no card at all, so a wrong
+     * candidate falls through instead of answering. This is what keeps
+     * false-fast-rate at 0 while coverage goes up.
+     */
+    private suspend fun resolveCandidates(
+        question: String,
+        entity: String,
+        searcher: ZimSearcher,
+    ): List<ZimSearcher.Hit> {
+        val out = LinkedHashMap<String, ZimSearcher.Hit>()
+        fun add(hit: ZimSearcher.Hit) {
+            if (hit.path.isNotBlank()) out.putIfAbsent(hit.path, hit)
+        }
+        // 1. The strict exact-title resolve, unchanged — it produced 11 of the
+        //    14 infobox hits on the baseline, so it stays the first guess.
+        resolveEntity(entity, searcher)?.let { add(it) }
+        // 2. The retrieval lane's own entity resolver. It reads multi-word
+        //    n-grams, so it lands «Война и мир» where a single longest-token
+        //    entity can only ever see «Война».
+        EntityTitleProbe.probe(question, searcher, limit = 3).forEach { add(it) }
+        // 3. Sibling titles under the same prefix: the inverted person form
+        //    («Толстой, Лев Николаевич») and parenthesised qualifiers
+        //    («Сталкер (фильм)»). Both are only accepted when the question
+        //    itself supplies the disambiguating word.
+        val siblings = searcher.findByTitlePrefix(entity, limit = SIBLING_LOOKUPS)
+        siblings.filter { personTitleMatches(it.title, entity, question) }.forEach { add(it) }
+        siblings
+            .mapNotNull { h -> qualifierGap(h.title, entity, question)?.let { it to h } }
+            // Fewer uncovered qualifier words first: «Сталкер (фильм)» before
+            // «Сталкер (фильм, 2023)», whose "2023" the question never mentions.
+            .sortedBy { it.first }
+            .forEach { add(it.second) }
+        return out.values.take(MAX_ARTICLE_READS)
+    }
+
+    /**
+     * True when [title] is the inverted person form of [entity] and the given
+     * names in it are the ones [question] asked for.
+     *
+     * «Толстой» alone is a disambiguation page; the article is «Толстой, Лев
+     * Николаевич». Requiring every other proper noun of the question to appear
+     * in the tail is what stops «Толстой, Алексей Константинович» from
+     * answering a question about Лев.
+     */
+    private fun personTitleMatches(title: String, entity: String, question: String): Boolean {
+        val surname = title.substringBefore(',').trim()
+        if (!surname.equals(entity.trim(), ignoreCase = true)) return false
+        val tail = title.substringAfter(',', "").lowercase()
+        if (tail.isBlank()) return false
+        val given = properTokens(question).filter { !it.equals(entity, ignoreCase = true) }
+        // Without a given name in the question there is nothing to disambiguate
+        // on, and picking a namesake at random is exactly the false-fast answer
+        // this path must never give.
+        return given.isNotEmpty() && given.all { g -> tail.contains(g.lowercase()) }
+    }
+
+    /**
+     * How many words of [title]'s parenthesised qualifier the [question] does
+     * *not* mention, or null when it mentions none of them (so the qualifier is
+     * about something else entirely and the title must not be considered).
+     */
+    private fun qualifierGap(title: String, entity: String, question: String): Int? {
+        if (!title.substringBefore('(').trim().equals(entity.trim(), ignoreCase = true)) return null
+        val qualifier = title.substringAfter('(', "").substringBefore(')')
+        val parts = qualifier.split(Regex("[,\\s]+")).filter { it.length >= 3 }
+        if (parts.isEmpty()) return null
+        val q = question.lowercase()
+        // Compare on a stem, not the whole word: the question says «фильма»,
+        // the qualifier says «фильм».
+        val covered = parts.count { q.contains(it.lowercase().take(5)) }
+        return if (covered == 0) null else parts.size - covered
+    }
+
+    /** Proper nouns of the question — capitalised mid-sentence words, minus the
+     *  question shells a user may have capitalised at the start. */
+    private fun properTokens(question: String): List<String> =
+        question
+            .replace(Regex("[\\p{Punct}«»“”\"]"), " ")
+            .split(Regex("\\s+"))
+            .filter { it.length >= 3 && it.first().isUpperCase() && it.lowercase() !in EntityTitleProbe.EDGE_STOP }
 
     /**
      * Find the article that *is* [entity], not one that merely mentions it.
@@ -170,6 +268,13 @@ object FactoidAnswerer {
         if (v.count { it == '.' } > 2) return false
         return true
     }
+
+    /** Each extra candidate costs one article read + jsoup parse (~50 ms on an
+     *  S23). Four is still two orders of magnitude under the ~50 s RAG path we
+     *  are trying to avoid, and the candidate list rarely holds more. */
+    private const val MAX_ARTICLE_READS = 4
+
+    private const val SIBLING_LOOKUPS = 8
 
     private const val TAG = "FactoidAnswerer"
 }

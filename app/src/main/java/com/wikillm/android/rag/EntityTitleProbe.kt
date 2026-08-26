@@ -63,7 +63,7 @@ object EntityTitleProbe {
 
     /** Question shells: never part of a title, so an n-gram may not start or end
      *  with one. Trimming these is what turns «кто мэр Москвы» into «Москвы». */
-    private val EDGE_STOP = setOf(
+    internal val EDGE_STOP = setOf(
         "кто", "что", "где", "когда", "почему", "зачем", "как", "какой", "какая",
         "какое", "какие", "каком", "какого", "сколько", "чем", "чего", "чему",
         "это", "такое", "такой", "есть", "был", "была", "было", "были",
