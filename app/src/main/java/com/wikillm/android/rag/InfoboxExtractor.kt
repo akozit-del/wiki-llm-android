@@ -111,15 +111,12 @@ object InfoboxExtractor {
         val ib = doc.selectFirst(INFOBOX_SELECTOR) ?: return Card(title, emptyList())
 
         val byLabel = LinkedHashMap<String, Field>() // ordered, deduped by label
-        val seenValues = HashSet<String>()
 
         fun add(label: String, rawValue: String, pid: String?) {
             val value = clean(rawValue).take(maxValueLen).trim()
             if (label.isBlank() || value.isBlank()) return
             if (byLabel.keys.any { it.equals(label, ignoreCase = true) }) return
-            if (value.lowercase() in seenValues) return
             byLabel[label] = Field(label, value, pid)
-            seenValues += value.lowercase()
         }
 
         // Tier 1: guaranteed facts via Wikidata property ids.
@@ -146,8 +143,20 @@ object InfoboxExtractor {
         // `lines` stays capped because it goes into a prompt; `fields` doesn't,
         // because question-to-label matching has to see every row the card has
         // — the answer is often past the twelfth.
+        //
+        // Same asymmetry for the value dedup. In a prompt the same value under
+        // two labels («Дата рождения» from the property tier, «Родился» from the
+        // th/td row) is wasted context, so `lines` keeps the first of them. In
+        // `fields` it is a bug: «Гражданство» and «Страна» legitimately carry the
+        // same value, and dropping whichever came second is what left the card
+        // «no matching field» for «какое гражданство у Людвига Баумана».
         val all = byLabel.values.toList()
-        return Card(title, all.take(maxLines).map { "${it.label}: ${it.value}" }, all)
+        val seenValues = HashSet<String>()
+        val lines = all
+            .filter { seenValues.add(it.value.lowercase()) }
+            .take(maxLines)
+            .map { "${it.label}: ${it.value}" }
+        return Card(title, lines, all)
     }
 
     /**

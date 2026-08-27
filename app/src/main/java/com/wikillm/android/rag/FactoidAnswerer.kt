@@ -175,7 +175,9 @@ object FactoidAnswerer {
         card: InfoboxExtractor.Card,
     ): InfoboxExtractor.Field? {
         val entityStems = stems(entity)
-        val asked = stems(question).filter { it !in entityStems && it !in QUESTION_STEMS }
+        val asked = (stems(question) + synonymStems(question))
+            .filter { it !in entityStems && it !in QUESTION_STEMS }
+            .distinct()
         if (asked.isEmpty()) return null
 
         val scored = card.fields.mapNotNull { f ->
@@ -185,10 +187,18 @@ object FactoidAnswerer {
             if (hits == 0) null else f to hits.toDouble() / labelStems.size
         }.sortedByDescending { it.second }
 
-        val best = scored.firstOrNull() ?: return null
+        val best = scored.firstOrNull()
         // Every word of the label has to be accounted for: «Площадь» may match
         // «какая площадь Байкала», but «Площадь водосбора» must not.
-        if (best.second < 1.0) return null
+        if (best == null || best.second < 1.0) {
+            // The miss is the interesting case, and the two halves of it are
+            // invisible from the outside: what the question was reduced to, and
+            // what the card actually offered. «какой рост у Юрия Гагарина» hit
+            // this line with the field seemingly present in the card.
+            DiagLog.i(TAG, "Factoid: no label covers $asked in " +
+                "[${card.fields.joinToString { it.label }}]")
+            return null
+        }
         val runnerUp = scored.getOrNull(1)
         if (runnerUp != null && runnerUp.second >= 1.0) {
             DiagLog.i(TAG, "Factoid: ambiguous label match " +
@@ -206,15 +216,59 @@ object FactoidAnswerer {
             .filter { it.length >= 4 }
             .map { it.take(STEM_LEN) }
 
+    /**
+     * Extra label stems implied by the question's wording rather than spelled
+     * out in it. The card says «Место смерти»; the question says «где умер».
+     * Stemming cannot bridge that — the two share no prefix — and the
+     * all-words-covered rule in [matchByLabel] means even a correct «смерть»
+     * leaves «место» uncovered, so both halves have to be supplied.
+     *
+     * Tokenised without the length filter of [stems], because the interrogative
+     * that carries half the meaning («где») is three letters long.
+     *
+     * Deliberately tiny: every pair here is one a real question needed. Guessing
+     * pairs "for later" widens matching with no evidence behind it, and a
+     * confident answer out of the wrong field is the failure this path exists to
+     * avoid.
+     */
+    private fun synonymStems(question: String): List<String> {
+        val words = question.lowercase()
+            .replace(Regex("[\\p{Punct}«»“”\"]"), " ")
+            .split(Regex("\\s+"))
+            .filter { it.isNotBlank() }
+        return words.flatMap { w -> LABEL_SYNONYMS.filter { it.first.containsMatchIn(w) }.map { it.second } }
+    }
+
+    /** Question wording → the label stem it stands for. Anchored at the word
+     *  start so «умер» does not fire on «умеренный». */
+    private val LABEL_SYNONYMS: List<Pair<Regex, String>> = listOf(
+        Regex("^где$") to "место",
+        Regex("^(умер|сконча|погиб)") to "смерти",
+        Regex("^родил") to "рожден",
+        Regex("^(основа|учрежд)") to "основа",
+        Regex("^(снял|снима)") to "режисс",
+        Regex("^(написа|сочинил)") to "автор",
+    )
+
     /** Interrogatives that can introduce a single-field question. */
     private val INTERROGATIVE =
         Regex("\\b(кто|что|как(ой|ая|ое|ов[аоы]?)|когда|где|сколько|чему|каков)\\b")
 
-    /** Stems of question words themselves — never a field being asked for. */
-    private val QUESTION_STEMS = setOf(
-        "како", "кото", "когд", "скол", "чему", "како", "како", "чего", "нынешн",
-        "сейч", "текущ", "действ", "назов", "скаж", "имен", "назв",
-    )
+    /**
+     * Stems of question words themselves — never a field being asked for.
+     *
+     * Built through [stems] rather than hand-written, because the hand-written
+     * list was four characters wide while [stems] emits six: «какой» became
+     * "какой" and never equalled the "како" in the set, so every interrogative
+     * but the literally-four-letter «чему»/«чего» sailed through into `asked`.
+     *
+     * «имя»/«название» are deliberately absent — those are real card labels.
+     */
+    private val QUESTION_STEMS: Set<String> = stems(
+        "какой какая какое какие каков какова каковы который которая которое " +
+            "когда сколько чему чего нынешний нынешняя сейчас текущий текущая " +
+            "действующий действующая назовите скажите",
+    ).toSet()
 
     /**
      * Prefix length used for stem comparison. Six characters keeps
