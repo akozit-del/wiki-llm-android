@@ -281,7 +281,15 @@ object FactoidAnswerer {
      *  are trying to avoid, and the candidate list rarely holds more. */
     private const val MAX_ARTICLE_READS = 4
 
-    private const val SIBLING_LOOKUPS = 8
+    /**
+     * Siblings come back in title order, not in relevance order, so the window
+     * has to be wide enough to reach the qualifier the question asked for:
+     * «Сталкер» has 2/2154/(группа)/(замок)/(игра)/(кинофестиваль)/(программа)
+     * ahead of «(фильм)», and a window of 8 stopped one short of it. Widening
+     * costs only list filtering — MAX_ARTICLE_READS still caps how many of
+     * these are actually opened and parsed.
+     */
+    private const val SIBLING_LOOKUPS = 32
 
     private const val TAG = "FactoidAnswerer"
 }
