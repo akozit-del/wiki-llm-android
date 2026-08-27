@@ -97,11 +97,57 @@ object BenchmarkBridge {
         }
     }
 
+    /**
+     * Walks a random sample of articles and logs which infobox fields they
+     * carry, so field coverage can be argued from the corpus instead of from
+     * our own configuration.
+     *
+     * The question this answers: we wire question patterns to infobox fields
+     * one at a time, and had no idea whether the useful field set is ~50 or
+     * ~2000, nor which ones we're missing. [InfoboxExtractor.extract] can't
+     * tell us — it only reports fields we already decided to look for — so
+     * this uses [InfoboxExtractor.rawLabels] instead.
+     *
+     * Emits one `[FIELDS]` line per article plus a summary, so
+     * `benchmark/score_fields.py` can build the histogram off-device.
+     */
+    fun fieldScan(context: Context, sample: Int, seed: Long) {
+        probeScope.launch {
+            DiagLog.i(TAG, "[FIELDS] begin sample=$sample seed=$seed")
+            runCatching { ZimSearchHolder.ensureOpen(context.applicationContext) }
+            val searcher = ZimSearchHolder.searcher()
+            if (searcher == null) {
+                DiagLog.i(TAG, "[FIELDS] error=zim-not-open")
+                return@launch
+            }
+            val t0 = SystemClock.elapsedRealtime()
+            val articles = searcher.sampleArticles(sample, seed)
+            DiagLog.i(TAG, "[FIELDS] sampled=${articles.size} ms=${SystemClock.elapsedRealtime() - t0}")
+            var withCard = 0
+            articles.forEachIndexed { i, hit ->
+                val html = searcher.readArticleHtml(hit.path)
+                val labels = if (html == null) emptyList() else InfoboxExtractor.rawLabels(html)
+                if (labels.isNotEmpty()) withCard++
+                // Tab-separated so labels containing spaces survive parsing.
+                DiagLog.i(TAG, "[FIELDS] a=${i + 1}\tcard=${labels.size}\t" +
+                    "title=${hit.title}\tlabels=${labels.joinToString("\t")}")
+            }
+            DiagLog.i(TAG, "[FIELDS] done articles=${articles.size} withCard=$withCard " +
+                "ms=${SystemClock.elapsedRealtime() - t0}")
+        }
+    }
+
     const val ACTION = "com.wikillm.android.ASK"
     const val EXTRA_QUESTION = "q"
-    /** "search" = retrieval-only probe; anything else = full chat answer. */
+    /**
+     * "search" = retrieval-only probe, "fields" = infobox field scan over a
+     * random article sample; anything else = full chat answer.
+     */
     const val EXTRA_MODE = "m"
+    /** Probe: candidates to request. Field scan: articles to sample. */
     const val EXTRA_K = "k"
+    /** Field scan: RNG seed, so a sample can be reproduced. */
+    const val EXTRA_SEED = "seed"
     private const val TAG = "BenchmarkBridge"
 }
 
@@ -110,10 +156,14 @@ class BenchmarkReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         if (intent.action != BenchmarkBridge.ACTION) return
         val q = intent.getStringExtra(BenchmarkBridge.EXTRA_QUESTION).orEmpty()
-        if (intent.getStringExtra(BenchmarkBridge.EXTRA_MODE) == "search") {
-            BenchmarkBridge.probe(context, q, intent.getIntExtra(BenchmarkBridge.EXTRA_K, 20))
-        } else {
-            BenchmarkBridge.post(q)
+        when (intent.getStringExtra(BenchmarkBridge.EXTRA_MODE)) {
+            "search" -> BenchmarkBridge.probe(context, q, intent.getIntExtra(BenchmarkBridge.EXTRA_K, 20))
+            "fields" -> BenchmarkBridge.fieldScan(
+                context,
+                sample = intent.getIntExtra(BenchmarkBridge.EXTRA_K, 2000),
+                seed = intent.getLongExtra(BenchmarkBridge.EXTRA_SEED, 1L),
+            )
+            else -> BenchmarkBridge.post(q)
         }
     }
 }

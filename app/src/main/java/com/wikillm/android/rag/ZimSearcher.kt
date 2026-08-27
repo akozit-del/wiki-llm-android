@@ -240,6 +240,37 @@ class ZimSearcher private constructor(
             .getOrNull()
     }
 
+    /**
+     * [count] articles drawn at random from the whole archive, for measuring
+     * what the corpus actually contains rather than guessing.
+     *
+     * Uses libzim's indexed title access, so the sample is uniform over
+     * articles instead of biased toward whatever our search happens to rank
+     * well — which is the whole point when the question being asked is "which
+     * infobox fields exist and how often". [seed] keeps a run reproducible.
+     *
+     * Redirects are skipped: they carry no infobox of their own.
+     */
+    suspend fun sampleArticles(count: Int, seed: Long): List<Hit> = withContext(Dispatchers.IO) {
+        val total = runCatching { archive.articleCount }.getOrNull() ?: return@withContext emptyList()
+        if (total <= 0) return@withContext emptyList()
+        val rnd = java.util.Random(seed)
+        val out = ArrayList<Hit>(count)
+        val seen = HashSet<String>()
+        // Sampling can land on redirects or unreadable entries, so allow a few
+        // times more draws than the requested sample before giving up.
+        var draws = 0
+        while (out.size < count && draws < count * 5) {
+            draws++
+            val entry = safe { archive.getEntryByTitle(rnd.nextInt(total)) } ?: continue
+            if (safe { entry.isRedirect } == true) continue
+            val path = safe { entry.path } ?: continue
+            if (!seen.add(path)) continue
+            out += Hit(title = safe { entry.title } ?: path, path = path, snippet = "", score = 0)
+        }
+        out
+    }
+
     override fun close() {
         runCatching { searcher.dispose() }
         runCatching { archive.dispose() }

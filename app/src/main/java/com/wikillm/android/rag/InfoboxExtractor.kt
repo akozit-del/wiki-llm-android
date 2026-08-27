@@ -121,6 +121,38 @@ object InfoboxExtractor {
     }
 
     /**
+     * Every label the article's infobox carries, unfiltered and uncapped.
+     *
+     * [extract] is deliberately opinionated — it keeps only PRIORITY properties
+     * plus human rows, drops noise labels and stops at maxLines — because it
+     * feeds a prompt. That makes it useless for asking "what fields does this
+     * corpus actually have", since it can only ever report what we already
+     * decided to look for. This returns the raw truth so the field histogram
+     * measures Wikipedia, not our own configuration.
+     *
+     * Returns an empty list when the article has no infobox at all, which is
+     * itself a number worth counting.
+     */
+    fun rawLabels(html: String): List<String> {
+        val doc = runCatching { Jsoup.parse(html) }.getOrNull() ?: return emptyList()
+        val ib = doc.selectFirst(INFOBOX_SELECTOR) ?: return emptyList()
+        val out = LinkedHashSet<String>()
+        // Wikidata-tagged rows report the property id: language-agnostic and
+        // exactly comparable across articles, unlike the visible label.
+        for (el in ib.select("[data-wikidata-property-id]")) {
+            val pid = el.attr("data-wikidata-property-id").trim()
+            if (pid.isNotEmpty()) out += pid
+        }
+        for (tr in ib.select("tr")) {
+            val th = tr.selectFirst("th") ?: continue
+            tr.selectFirst("td") ?: continue
+            val label = clean(th.text())
+            if (label.length in 1..40) out += label
+        }
+        return out.toList()
+    }
+
+    /**
      * Wikilink returned by [extractWikilinks]: the property the link came from
      * (P6/P1365/…), the visible text of the link, and the ZIM-relative href
      * (e.g. `A/Жилкин,_Сергей_Фёдорович`). The href is what we feed back into

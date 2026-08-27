@@ -1,0 +1,124 @@
+#!/usr/bin/env python3
+"""Build the infobox field histogram from a `[FIELDS]` scan in diag.log.
+
+Answers the question we had been guessing at: how many distinct infobox fields
+does the corpus actually use, how concentrated is the distribution, and which of
+them can our question patterns already reach.
+
+    adb -s <serial> shell 'run-as com.wikillm.android.debug cat files/diag.log' \
+      | python3 benchmark/score_fields.py
+
+Reads stdin, or a file given as the first argument.
+"""
+import re
+import sys
+from collections import Counter
+
+# Fields FactoidAnswerer can currently route a question to, as Wikidata property
+# ids. Kept here rather than parsed out of Kotlin: this script has to keep
+# working when the intent table is edited, and a stale number is worse than an
+# explicit one.
+WIRED = {
+    "P6": "Глава/мэр",
+    "P1082": "Население",
+    "P2046": "Площадь",
+    "P571": "Основан",
+    "P36": "Столица",
+    "P38": "Валюта",
+    "P569": "Дата рождения",
+    "P570": "Дата смерти",
+    "P19": "Место рождения",
+    "P102": "Партия",
+    "P39": "Должность",
+    "P50": "Автор",
+    "P57": "Режиссёр",
+}
+
+LINE = re.compile(r"\[FIELDS\] a=\d+\tcard=(\d+)\ttitle=([^\t]*)\tlabels=(.*)$")
+DONE = re.compile(r"\[FIELDS\] done articles=(\d+) withCard=(\d+)")
+
+
+def main() -> None:
+    src = open(sys.argv[1], encoding="utf-8", errors="replace") if len(sys.argv) > 1 else sys.stdin
+    labels = Counter()          # every label, wikidata id or human text
+    pids = Counter()            # wikidata property ids only
+    per_card = []               # field count per article that has a card
+    articles = with_card = 0
+
+    # A scan may appear more than once in the log; keep only the last one.
+    runs, current = [], None
+    for line in src:
+        if "[FIELDS] begin" in line:
+            current = []
+            runs.append(current)
+        elif current is not None:
+            current.append(line)
+    if not runs:
+        sys.exit("no [FIELDS] scan found in the log — run run_fields.sh first")
+
+    for line in runs[-1]:
+        m = LINE.search(line)
+        if m:
+            articles += 1
+            n = int(m.group(1))
+            if n:
+                with_card += 1
+                per_card.append(n)
+            for lab in filter(None, m.group(3).rstrip("\n").split("\t")):
+                labels[lab] += 1
+                if re.fullmatch(r"P\d+", lab):
+                    pids[lab] += 1
+            continue
+        d = DONE.search(line)
+        if d:
+            articles = max(articles, int(d.group(1)))
+            with_card = max(with_card, int(d.group(2)))
+
+    if not articles:
+        sys.exit("scan produced no article lines")
+
+    print(f"articles sampled     {articles}")
+    print(f"with an infobox      {with_card}  ({with_card / articles:.0%})")
+    if per_card:
+        per_card.sort()
+        print(f"fields per card      median {per_card[len(per_card) // 2]}, "
+              f"max {per_card[-1]}")
+    print(f"distinct labels      {len(labels)}")
+    print(f"distinct wikidata P  {len(pids)}")
+
+    # How concentrated is the tail? This is the number that decides whether
+    # wiring fields by hand is tractable at all.
+    if pids:
+        total = sum(pids.values())
+        print("\ncoverage by top-N wikidata properties")
+        print("|  N | share of all tagged fields |")
+        print("|---|---|")
+        running = 0
+        for i, (_, c) in enumerate(pids.most_common(), 1):
+            running += c
+            if i in (10, 25, 50, 100, 150, 200):
+                print(f"| {i} | {running / total:.1%} |")
+        print(f"| all {len(pids)} | 100% |")
+
+        print("\ntop 40 properties — ✅ = a question can already reach it")
+        print("| # | prop | articles | wired |")
+        print("|---|---|---|---|")
+        for i, (p, c) in enumerate(pids.most_common(40), 1):
+            mark = f"✅ {WIRED[p]}" if p in WIRED else ""
+            print(f"| {i} | {p} | {c} | {mark} |")
+
+        reachable = sum(c for p, c in pids.items() if p in WIRED)
+        print(f"\nwired properties     {len(WIRED)} of {len(pids)} present in the sample")
+        print(f"tagged fields we can reach  {reachable / total:.1%}")
+
+    human = [(l, c) for l, c in labels.most_common() if not re.fullmatch(r"P\d+", l)]
+    if human:
+        print("\ntop 25 human labels (rows with no wikidata id)")
+        print("| # | label | articles |")
+        print("|---|---|---|")
+        for i, (l, c) in enumerate(human[:25], 1):
+            print(f"| {i} | {l} | {c} |")
+
+
+if __name__ == "__main__":
+    main()
