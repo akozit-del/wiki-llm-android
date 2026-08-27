@@ -34,8 +34,11 @@ sleep 1
 
 # Wait until the stream carries at least $1 "done" lines, or ~20 s have passed.
 await_done() {
-    local want="$1" waited=0
-    while [[ $(grep -c '\[PROBE\] done' "$STREAM" 2>/dev/null || echo 0) -lt "$want" ]]; do
+    local want="$1" waited=0 have
+    # grep -c always prints exactly one number, 0 included; a `|| echo 0` here
+    # appended a second line and [[ -lt ]] then failed on the two-line string,
+    # which silently turned every wait into no wait at all.
+    while have=$(grep -c '\[PROBE\] done' "$STREAM" 2>/dev/null); [[ "${have:-0}" -lt "$want" ]]; do
         sleep 0.5
         waited=$((waited + 1))
         if [[ $waited -gt 40 ]]; then
