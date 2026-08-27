@@ -85,10 +85,24 @@ object FactoidAnswerer {
         val q = question.lowercase()
         if (NOT_FACTOID.containsMatchIn(q)) return null
 
-        val label = INTENTS.firstOrNull { it.pattern.containsMatchIn(q) }?.label ?: return null
+        // Two ways to know which field is being asked for.
+        //
+        // The curated intent table is precise: it knows "кто мэр" means P6 even
+        // though the card labels that row «Мэр», «Глава» or «Градоначальник»
+        // depending on the article. But it only covers 13 properties, and a
+        // scan of 5000 random articles put that at 18.6% of all tagged fields —
+        // 520 distinct properties are in use, and the top 200 cover 96%.
+        //
+        // So when no intent matches, fall through to matching the question
+        // against the card's own labels. That needs no table at all: the labels
+        // already say what a question says («Дата рождения», «Население»,
+        // «Место смерти»), and coverage then grows with Wikipedia rather than
+        // with how many regexes we have written.
+        val intentLabel = INTENTS.firstOrNull { it.pattern.containsMatchIn(q) }?.label
+        if (intentLabel == null && !looksLikeFieldQuestion(q)) return null
         val entity = QueryExtractor.extractEntity(question) ?: return null
 
-        DiagLog.i(TAG, "Factoid candidate: label='$label' entity='$entity'")
+        DiagLog.i(TAG, "Factoid candidate: label='${intentLabel ?: "(by card label)"}' entity='$entity'")
 
         val candidates = resolveCandidates(question, entity, searcher)
         if (candidates.isEmpty()) {
@@ -104,21 +118,110 @@ object FactoidAnswerer {
                 DiagLog.i(TAG, "Factoid: '${hit.title}' has no infobox — next candidate")
                 continue
             }
-            val value = card.field(label)
-            if (value == null) {
-                DiagLog.i(TAG, "Factoid: '${hit.title}' card has no '$label' — next candidate")
-                continue
+            val hitLabel: String
+            val value: String
+            val direct = intentLabel?.let { card.field(it) }
+            if (direct != null) {
+                hitLabel = intentLabel
+                value = direct
+            } else {
+                val m = matchByLabel(question, entity, card)
+                if (m == null) {
+                    DiagLog.i(TAG, "Factoid: '${hit.title}' card has no matching field — next candidate")
+                    continue
+                }
+                hitLabel = m.label
+                value = m.value
             }
             if (!plausible(value)) {
                 DiagLog.i(TAG, "Factoid: value '$value' looks unusable — next candidate")
                 continue
             }
-            DiagLog.i(TAG, "Factoid HIT: $label = '$value' (${hit.title})")
-            return Answer(label = label, value = value, articleTitle = hit.title, articlePath = hit.path)
+            DiagLog.i(TAG, "Factoid HIT: $hitLabel = '$value' (${hit.title})")
+            return Answer(label = hitLabel, value = value, articleTitle = hit.title, articlePath = hit.path)
         }
-        DiagLog.i(TAG, "Factoid: no candidate carried '$label' — falling back to RAG")
+        DiagLog.i(TAG, "Factoid: no candidate carried the field — falling back to RAG")
         return null
     }
+
+    /**
+     * Whether the question is shaped like a request for one field, so it is
+     * worth reading a card even though no curated intent matched.
+     *
+     * Deliberately narrow: an interrogative, and short. Length is the useful
+     * signal — a single-fact question is a handful of words, while anything
+     * longer is asking for prose the card can't give.
+     */
+    private fun looksLikeFieldQuestion(q: String): Boolean {
+        if (!INTERROGATIVE.containsMatchIn(q)) return false
+        return q.split(Regex("\\s+")).count { it.isNotBlank() } <= 7
+    }
+
+    /**
+     * The card row whose label the question is asking about, or null when the
+     * match is weak or ambiguous.
+     *
+     * Matching is on word stems rather than whole words, because the question
+     * declines what the label states in the nominative («какое **население**
+     * Казани» against the label «Население», but also «какова **численность
+     * населения**»). Ambiguity is fatal rather than resolved by score: two
+     * plausible rows mean we don't actually know which fact was asked for, and
+     * answering the wrong field confidently is the failure this whole path is
+     * built to avoid.
+     */
+    private fun matchByLabel(
+        question: String,
+        entity: String,
+        card: InfoboxExtractor.Card,
+    ): InfoboxExtractor.Field? {
+        val entityStems = stems(entity)
+        val asked = stems(question).filter { it !in entityStems && it !in QUESTION_STEMS }
+        if (asked.isEmpty()) return null
+
+        val scored = card.fields.mapNotNull { f ->
+            val labelStems = stems(f.label)
+            if (labelStems.isEmpty()) return@mapNotNull null
+            val hits = labelStems.count { ls -> asked.any { it.startsWith(ls) || ls.startsWith(it) } }
+            if (hits == 0) null else f to hits.toDouble() / labelStems.size
+        }.sortedByDescending { it.second }
+
+        val best = scored.firstOrNull() ?: return null
+        // Every word of the label has to be accounted for: «Площадь» may match
+        // «какая площадь Байкала», but «Площадь водосбора» must not.
+        if (best.second < 1.0) return null
+        val runnerUp = scored.getOrNull(1)
+        if (runnerUp != null && runnerUp.second >= 1.0) {
+            DiagLog.i(TAG, "Factoid: ambiguous label match " +
+                "('${best.first.label}' vs '${runnerUp.first.label}') — falling back to RAG")
+            return null
+        }
+        return best.first
+    }
+
+    /** Lowercased word stems, long enough to be discriminating. */
+    private fun stems(text: String): List<String> =
+        text.lowercase()
+            .replace(Regex("[\\p{Punct}«»“”\"]"), " ")
+            .split(Regex("\\s+"))
+            .filter { it.length >= 4 }
+            .map { it.take(STEM_LEN) }
+
+    /** Interrogatives that can introduce a single-field question. */
+    private val INTERROGATIVE =
+        Regex("\\b(кто|что|как(ой|ая|ое|ов[аоы]?)|когда|где|сколько|чему|каков)\\b")
+
+    /** Stems of question words themselves — never a field being asked for. */
+    private val QUESTION_STEMS = setOf(
+        "како", "кото", "когд", "скол", "чему", "како", "како", "чего", "нынешн",
+        "сейч", "текущ", "действ", "назов", "скаж", "имен", "назв",
+    )
+
+    /**
+     * Prefix length used for stem comparison. Six characters keeps
+     * «населени»/«население» together while still separating «площадь» from
+     * «плотность».
+     */
+    private const val STEM_LEN = 6
 
     /**
      * Articles that could carry the asked-for field, best guess first.
