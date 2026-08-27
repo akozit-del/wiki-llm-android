@@ -34,5 +34,12 @@ for _ in $(seq 1 400); do
 done
 echo
 
-"${ADB[@]}" shell "run-as $PKG cat files/diag.log" > "$HERE/last-fields.log" 2>/dev/null
+# diag.log is a bounded ring buffer, and a few thousand article lines overflow
+# it. logcat holds a different window of the same run, so take both and let the
+# scorer dedupe — together they usually cover the whole scan.
+{
+  "${ADB[@]}" shell "run-as $PKG cat files/diag.log" 2>/dev/null
+  "${ADB[@]}" logcat -d -s BenchmarkBridge 2>/dev/null
+} > "$HERE/last-fields.log"
+
 python3 "$HERE/score_fields.py" "$HERE/last-fields.log" | tee "$HERE/fields-$(date +%Y-%m-%d).md"
