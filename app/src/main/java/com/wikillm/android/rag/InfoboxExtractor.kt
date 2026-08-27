@@ -137,17 +137,29 @@ object InfoboxExtractor {
         val doc = runCatching { Jsoup.parse(html) }.getOrNull() ?: return emptyList()
         val ib = doc.selectFirst(INFOBOX_SELECTOR) ?: return emptyList()
         val out = LinkedHashSet<String>()
-        // Wikidata-tagged rows report the property id: language-agnostic and
-        // exactly comparable across articles, unlike the visible label.
-        for (el in ib.select("[data-wikidata-property-id]")) {
-            val pid = el.attr("data-wikidata-property-id").trim()
-            if (pid.isNotEmpty()) out += pid
-        }
+        // Emitted per row as `Pxxx=visible label` when the row carries both,
+        // because the pairing is what lets a property table be generated from
+        // the corpus instead of hand-written: the id is the stable key, the
+        // visible label is what a question actually says.
+        val taggedRows = HashSet<String>()
         for (tr in ib.select("tr")) {
             val th = tr.selectFirst("th") ?: continue
-            tr.selectFirst("td") ?: continue
-            val label = clean(th.text())
-            if (label.length in 1..40) out += label
+            val td = tr.selectFirst("td") ?: continue
+            val label = clean(th.text()).takeIf { it.length in 1..40 } ?: continue
+            val pid = td.selectFirst("[data-wikidata-property-id]")
+                ?.attr("data-wikidata-property-id")?.trim().orEmpty()
+            if (pid.isNotEmpty()) {
+                out += "$pid=$label"
+                taggedRows += pid
+            } else {
+                out += label
+            }
+        }
+        // Properties that live outside a th/td row (image, coordinates and
+        // friends) still get counted, just without a label.
+        for (el in ib.select("[data-wikidata-property-id]")) {
+            val pid = el.attr("data-wikidata-property-id").trim()
+            if (pid.isNotEmpty() && pid !in taggedRows) out += pid
         }
         return out.toList()
     }
