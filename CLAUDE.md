@@ -1,188 +1,154 @@
 # Wiki LLM (Android)
 
-Offline-чат с локальной LLM, дополнённый полнотекстовым поиском по русской
-Википедии в формате ZIM. Приложение разрабатывается под Samsung Galaxy S26 Ultra
-(Android 16), но архитектурно работает на любом arm64-устройстве с Android 12+.
+Offline chat: a local GGUF model answering from a full-text search over Wikipedia
+in ZIM format. Everything runs on the phone — no network at inference time.
 
-## Поток данных
+Primary target is Snapdragon with a Hexagon NPU (tested on S23 / v73 and
+S26 / v81); it degrades to CPU elsewhere. arm64 only, Android 12+.
+
+Written in English deliberately: this file is loaded into context every session,
+and Cyrillic costs roughly 2-3× the tokens per character.
+
+## Request flow
 
 ```
-Пользователь → ChatViewModel
-                ├─ RAG ON  → QueryExtractor → ZimSearchHolder (libkiwix)
-                │            → RagPromptBuilder (склейка топ-K параграфов)
-                │            → LlmRepository → LlamaContext (llama.cpp, JNI)
-                └─ RAG OFF → прямой prompt в LlamaContext
+question
+   │
+   ├─→ FactoidAnswerer: factoid intent + entity resolves to an article
+   │   carrying the asked-for infobox field?  →  answer from the card,
+   │   no model involved                                        (~0.4 s)
+   │
+   └─→ ChatViewModel → ZimSearchHolder (libkiwix)
+       → RagPromptBuilder: BM25 + title-index probe + mE5 rerank
+       → infobox + body into the prompt
+       → LlmRepository → LlamaContext (llama.cpp JNI)           (~30 s)
 ```
 
-## Стек
+RAG off sends the prompt straight to the model.
 
-| Компонент            | Версия                                  |
-|----------------------|-----------------------------------------|
-| Язык                 | Kotlin 2.0.0                            |
-| UI                   | Jetpack Compose (BOM 2024.09.02), M3    |
-| AGP / Gradle / JDK   | 8.5.2 / 8.9 / 17                        |
-| compileSdk / target  | 34 / 34                                 |
-| minSdk               | 31                                      |
-| ABI                  | `arm64-v8a` (single)                    |
-| NDK / CMake          | 26.1.10909125 / 3.22.1                  |
-| Сборка нативки       | CMake + FetchContent llama.cpp `b3789`  |
+## Stack
 
-### Ключевые библиотеки
+| Component | Version |
+|---|---|
+| Kotlin | 2.0.0 |
+| UI | Jetpack Compose (BOM 2024.09.02), M3 |
+| AGP / Gradle / JDK | 8.5.2 / 8.9 / 17 |
+| compileSdk / target / minSdk | 34 / 34 / 31 |
+| ABI | `arm64-v8a` only |
+| NDK / CMake | 26.1.10909125 / 3.22.1 |
+| llama.cpp | pinned `d222767c` in **both** CMakeLists and hexagon-app.yml |
 
-| Зависимость                              | Назначение                                              |
-|------------------------------------------|---------------------------------------------------------|
-| `androidx.compose.*`                     | UI                                                      |
-| `androidx.navigation:navigation-compose` | Навигация между экранами                                |
-| `androidx.documentfile`                  | SAF tree URIs (выбор папки с ZIM)                       |
-| `com.squareup.okhttp3:okhttp`            | Скачивание моделей и ZIM, GitHub Issues, pastebin       |
-| `org.jetbrains.kotlinx:serialization-json` | Парсинг HF/Kiwix каталогов                            |
-| `org.kiwix:libkiwix:2.6.0`               | libzim + libkiwix (.so + Java bindings)                 |
-| `com.getkeepsafe.relinker:relinker:1.4.5`| Загрузка .so из подкаталогов внутри AAR                 |
-| `org.jsoup:jsoup:1.18.1`                 | Парсинг HTML статьи: инфобокс (карточка) + тело для RAG  |
+Key libraries: `org.kiwix:libkiwix:2.6.0` (libzim + bindings),
+`com.getkeepsafe.relinker` (loads .so from AAR subdirs), `org.jsoup` (infobox and
+body extraction), `okhttp` (model/ZIM downloads), `kotlinx-serialization`.
 
-Нативная llama.cpp линкуется как одиночная `libllm.so` без `common` (см.
-`app/src/main/cpp/CMakeLists.txt`). Все GGML-бэкенды (BLAS / VULKAN / CUDA /
-OPENMP / METAL / LLAMAFILE) выключены.
+llama.cpp links as a single `libllm.so` without `common`. All GGML backends except
+CPU/OpenCL/Hexagon are off.
 
-## Архитектура
+## Layout
 
-MVVM с Compose-VM-уровневыми StateFlow. Слои:
+- `data/` — repositories: HF model catalog, Kiwix catalog, local models/ZIM,
+  `LlmRepository` over JNI, `ChatHistoryStore`.
+- `llm/` — `LlamaContext`, the Kotlin side of the JNI bridge.
+- `rag/` — `ZimSearcher`, `ZimSearchHolder` (app-scoped), `RagPromptBuilder`,
+  `QueryExtractor`, `InfoboxExtractor`, `FactoidAnswerer`, `EntityTitleProbe`,
+  `EmbeddingHolder` (mE5 rerank).
+- `diag/` — `DiagLog` (persistent, survives crashes), diag screen, GitHub issue
+  reporter, `BenchmarkBridge` (adb-driven benchmark, debug builds only).
+- `settings/` — `GenerationSettings` (SharedPreferences) and the settings screen.
+- `ui/screens/` — Compose screens; chat is the start destination, everything else
+  lives behind the drawer.
+- `cpp/llm_jni.cpp` — the JNI bridge.
 
-- `data/` — репозитории и API-клиенты (модели Hugging Face, каталог Kiwix,
-  локальные скачанные модели и ZIM, `LlmRepository` поверх JNI).
-- `llm/` — Kotlin-обёртка над нативной llama.cpp (`LlamaContext`).
-- `rag/` — поиск по ZIM, склейка контекста, выделение keywords,
-  Application-scoped `ZimSearchHolder`.
-- `diag/` — персистентный лог-буфер, отправка в GitHub Issues / clipboard /
-  0x0.st.
-- `settings/` — SharedPreferences и экран настроек (PAT-токен для авто-отправки).
-- `ui/screens/` — Compose-экраны: Home, Models, Wiki, Chat, плюс RAG-контролы.
-- `cpp/` — JNI-мост к llama.cpp (`llm_jni.cpp`), регистрирует
-  `nativeLoad/nativeGenerate/nativeLastError/nativeFree`.
-
-`MainActivity` — единственное Activity, навигация — Compose Nav. `Application`
-(`WikiLLMApplication`) поднимает libzim/libkiwix/wrapper-нативки через ReLinker
-и привязывает глобальный crash-handler.
-
-## Build / Install / Run
-
-CI собирает Debug APK на каждый push в `main` (`.github/workflows/build.yml`),
-тэг релиза — `build-<run_number>`. Подпись — стабильный `app/debug.keystore`
-(коммитнут в репо, пароли `android`/`android`).
+## Build, install, measure
 
 ```bash
-# Debug APK без CI
+# NPU build — this is the one that goes on the device
+gh workflow run hexagon-app.yml --ref main
+gh run download <run-id> -n wiki-llm-hexagon-apk
+adb install -r wiki-llm-hexagon-*.apk
+
+# Plain build (also green; both pin the same llama.cpp)
 ./gradlew :app:assembleDebug
 
-# Установить на подключённое устройство и запустить
-./gradlew :app:installDebug
-adb shell am start -n com.wikillm.android.debug/com.wikillm.android.MainActivity
-
-# Lint / тесты (юнит-тестов пока нет; команды оставлены для совместимости)
-./gradlew :app:lint
-./gradlew :app:test
-
-# Удобный цикл (см. scripts/dev-loop.sh)
-./scripts/dev-loop.sh
+# Benchmark: 32 questions, retrieval-only, no model
+./benchmark/run_probe.sh 20 <adb-serial>
 ```
 
-`applicationId` в debug-сборке — `com.wikillm.android.debug` (`.debug` суффикс).
-В release он будет `com.wikillm.android`.
+Debug `applicationId` is `com.wikillm.android.debug`. Signing uses the committed
+`app/debug.keystore` (passwords `android`/`android`), so builds stay installable
+over each other.
 
-## Что уже сделано (stages)
+Devices: S23 `R5CW12RVLKZ`, S26 `R5GL21SQX6Z`.
 
-- **1 — Скелет + CI.** Compose-приложение, GitHub Actions сборка, стабильный
-  debug keystore (`app/debug.keystore`).
-- **2 — Каталог моделей.** Поиск GGUF на Hugging Face через `HfApi`, выкачка
-  выбранного файла в `getExternalFilesDir/models/`. Прогресс, отмена,
-  миграция со старого `filesDir`.
-- **3 — Каталог ZIM.** Поиск ZIM-файлов в каталоге Kiwix + ручной picker через
-  SAF, авто-скан выбранной директории через `DocumentFile.fromTreeUri`.
-- **4 — llama.cpp + чат.** `LlamaContext.load` грузит модель через mmap, чат
-  стримит токены через `channelFlow`. Chat template из метаданных модели,
-  sampler-chain: penalties → min_p → temp → dist. Системный промпт через
-  `llama_chat_apply_template`. `nativeLastError` пробрасывает текст
-  `llama_log_set` в Kotlin.
-- **5 — libzim.** Подключён `org.kiwix:libkiwix:2.6.0`, нативки грузятся через
-  ReLinker (libzim.so и libkiwix.so) и `System.loadLibrary` (libzim_wrapper.so,
-  libkiwix_wrapper.so). Открытие ZIM через `/proc/self/fd/N` поверх
-  SAF-`ParcelFileDescriptor`. Прямой File-API на `/Android/media/<other_pkg>/`
-  заработал только после явной выдачи `MANAGE_EXTERNAL_STORAGE`.
-- **6 — RAG-чат.** Переключатель «Без вики / Вся вики», слайдер 10/20/50
-  кандидатов. `QueryExtractor` чистит вопрос от стоп-слов, склейка топ-K
-  параграфов идёт в prompt с инструкцией «отвечай только по выдержкам».
-  Fallback на самое длинное слово, если AND-поиск дал ноль кандидатов.
-- **Диагностика.** Персистентный `DiagLog` в `filesDir/diag.log` (выживает
-  при crash), Compose-экран, авто-отправка в GitHub Issues через
-  `GitHubIssueReporter` (PAT из SharedPreferences или CI-секрета `DIAG_PAT`),
-  плюс fallback-аплоад на 0x0.st / ix.io.
+## Hexagon constraints — learned the hard way, don't rediscover
 
-## Конвенции
+- **Q4_0 only.** k-quants (`Q4_K_M` etc.) fall off the NPU onto the CPU: measured
+  0.4 tok/s versus ~8 for the same model in Q4_0.
+- **Dense transformers only.** Qwen2.5/Qwen3 and Llama work. Hybrid SSM/DeltaNet
+  (Qwen3.5) is ~2× slower — no delta-net kernel, those layers go to CPU. Phi-4's
+  scaled rotary aborts the backend outright (`ggml_abort` in `flush_pending`).
+- **≤4B parameters.** 7B/8B fail at load: the KV cache exceeds what the DSP will
+  allocate (`HTP0 buffer mapping failed`).
+- **KV cache must stay F16.** Quantized K/V is rejected by `set_rows`,
+  `flash_attn_ext` and `mul_mat` alike, silently moving attention to the CPU.
+- `flash_attn_type = AUTO` and `n_ubatch = 1024` — Qualcomm's own scripts use
+  these; together they roughly doubled prefill.
+- `ADSP_LIBRARY_PATH` must be set in `Application.onCreate`, else the DSP can't
+  find `libggml-htp-vNN.so` (error `0x80000406`).
+- `useLegacyPackaging=true` — otherwise `dladdr` returns an in-APK path and the
+  backend .so files aren't found.
+- `libOpenCL.so` and `libcdsprpc.so` are declared via `<uses-native-library>`, not
+  packaged.
+- The MTP staging functions live in a C++ (not `extern "C"`) header. Declaring
+  them `extern "C"` breaks loading of the entire `libllm.so`.
 
-- Стиль Kotlin — официальный, 4 пробела, `kotlinx.coroutines` для асинхронки,
-  `StateFlow` в VM, без LiveData.
-- Compose: один `Composable` на файл/экран не обязательно, но связанные
-  виджеты живут рядом с экраном.
-- В JNI-обёртке (`llm_jni.cpp`) все native-методы пишут ошибки в
-  `__android_log_print` + добавляют их в `g_last_error` через `llama_log_set`.
-- Имена тэгов в `DiagLog`: `WikiLLMApp`, `ChatVM`, `ZimSearcher`,
-  `RagPromptBuilder`, `WikiSearchVM`, `ZimSearchHolder`, `GitHubReporter`.
-- Сообщения коммитов: префикс этапа или короткий тэг (`Stage 6 fix:`,
-  `build-13 fix:`, `Stage 5e:`), затем суть на английском. Из `git log`
-  ввыводится понятный таймлайн стейджей.
-- Sandbox / CI / PROJECT.md — обновляются вручную при крупных архитектурных
-  сдвигах. CLAUDE.md (этот файл) — то же самое.
+## Other non-obvious facts
 
-## В работе
+- A token can end mid-UTF-8-sequence; `NewStringUTF` aborts on that. `run_generation`
+  buffers bytes (`utf8_complete_len`) and hands Kotlin a `ByteArray`.
+- ZIM opens over SAF through `/proc/self/fd/N`. Direct File API on
+  `/Android/media/<other_pkg>/` needs `MANAGE_EXTERNAL_STORAGE`.
+- `ZimSearcher.lookupExactTitle` is **not** exact — tier 2 is a fuzzy
+  `SuggestionSearcher`. Anything relying on identity must re-check the title.
+- `adb shell input text` throws on Cyrillic on Samsung firmware. Benchmark
+  questions arrive via intent instead — see `BenchmarkBridge`.
 
-Ближайших задач в очереди нет — следующий этап обсуждается с пользователем.
-Идеи на потом: вынести системный промпт/параметры сэмплинга в настройки;
-прогресс-бар загрузки модели в RAM; персист истории чатов между сессиями.
+## Conventions
 
-### Готово
+- Kotlin official style, 4 spaces, coroutines + `StateFlow`, no LiveData.
+- Comment *why*, not *what*. Prefer a note explaining a non-obvious constraint
+  over a restatement of the code.
+- `DiagLog` tags: `WikiLLMApp`, `ChatVM`, `ZimSearcher`, `RagPromptBuilder`,
+  `ZimSearchHolder`, `FactoidAnswerer`, `BenchmarkBridge`.
+- Commit subject: `area: what changed` (`rag:`, `llm:`, `chat:`, `bench:`,
+  `build:`, `docs:`). Body explains the reasoning and cites measurements.
+- A wrong fast answer is worse than a miss. Every uncertain step in
+  `FactoidAnswerer` returns null and falls through to the full pipeline.
 
-- **Stage 11 — Карточко-first RAG (инфобокс через jsoup).** `InfoboxExtractor`
-  достаёт карточку статьи как чистые «Метка: значение» и ставит её ПЕРВЫМ блоком
-  каждой выдержки, чтобы фактоиды (мэр/глава/население/площадь) модель брала из
-  структуры, а не угадывала из прозы. Два тира, как у официального гаджета
-  Wikidata «infobox-export»: (1) по `data-wikidata-property-id` (P6=глава/мэр,
-  P1082=население, P2046=площадь, P571=основан…) — язык-агностично; (2) fallback
-  на `<th>метка</th><td>значение</td>`. `ZimSearcher.readArticleHtml` отдаёт сырой
-  HTML; `InfoboxExtractor.bodyText` чистит тело (jsoup) для `relevantChunk`.
-  Работает и в single-shot, и в агентном «Глубоком поиске».
-  - **Слой C — агентные цепочки/списки.** `runAgentic` дедуплицирует статьи между
-    шагами (`searchExcerpts(excludeTitles=…)`), глушит повтор одинаковых запросов,
-    ограничивает накопленный контекст под nCtx (seed + хвост, `AGENTIC_CTX_CAP`),
-    `MAX_HOPS 3→5`. Системный промпт велит идти по полям карточки
-    «Предшественник»/«Преемник» и собирать перечень списком.
+## Measuring
 
-- **Stage 9 — OpenWebUI-редизайн + докачка моделей.**
-  - 9a: `ModelDownloader` хранит `.part` при отмене/ошибке и докачивает через
-    HTTP Range (206 resume / 200 restart / 416 done). `ModelRepository.partialBytes`,
-    `ModelsViewModel.partials`; в каталоге — проценты загрузки и кнопка «Продолжить».
-  - 9b: тёмная-only палитра в стиле OpenWebUI (`Theme.kt`); чат — стартовый
-    экран, остальное — в `ModalNavigationDrawer` (бургер). `HomeScreen` удалён.
-    Выбор модели — выпадающий список в шапке. Живой статус «думаю» вынесен в
-    фиксированную строку над вводом (не уезжает за длинным ответом).
-  - Fix: краш на кириллице. Токен мог обрываться посреди многобайтового UTF-8
-    символа → `NewStringUTF` делал `abort()`. Теперь `run_generation` буферизует
-    байты (`utf8_complete_len`) и отдаёт в Kotlin `ByteArray` (декод
-    `String(bytes, UTF_8)`); `TokenCallback.onToken(ByteArray)`.
+`benchmark/questions.json` — 32 questions. Ground truth is the **article and
+infobox field**, not the answer value: values depend on the ZIM snapshot, and
+seeding them from our own output would make the benchmark circular.
 
-- **Stage 8 — llama.cpp upgrade + статистика генерации.**
-  - `llama.cpp` обновлён `b3789 → b9296` (репо `ggml-org/llama.cpp`) — грузятся
-    `gemma4` и др. новые архитектуры.
-  - `llm_jni.cpp` переписан под новый API: `llama_model_load_from_file`,
-    `llama_init_from_model`, vocab-функции (`llama_vocab_*`),
-    `llama_chat_apply_template(tmpl_str, …)` (шаблон из `llama_model_chat_template`),
-    `llama_batch_get_one(tokens, n)` (авто-позиции), `llama_memory_clear`,
-    упрощённые `penalties`; `llama_sampler_sample` сам делает accept.
-  - `TokenCallback.onComplete` + тип `LlmEvent` (`Token`/`Done`) — точные счётчики
-    токенов. `GenProgress` (живой таймер + ETA), `GenStats` (модель, c, ток, ток/с).
+`benchmark/LATEST.md` — digest of the scheduled runs, newest first. **Read this
+first**; it carries current numbers and open issues.
 
-- **Stage 7 — Chat history + RAG fixes.** `nativeGenerateChat` (roles/contents,
-  шаблон на всю историю), `generateChat`-обёртки, история обменов в модель,
-  `maxTokens 256→512`, RAG `topK 3→5` / `budgetChars 1500→2000` + title-boost
-  (фикс «спидвей вместо Тольятти»), понятная ошибка неподдерживаемых архитектур,
-  coreference-резолв местоимений в follow-up вопросах.
+Two scheduled tasks (11:37 and 02:47 daily) each spend half an hour on one
+improvement and report to Notion plus `LATEST.md`. Their prompts live in
+`~/.claude/scheduled-tasks/`.
 
+Metrics that matter: recall@k, fast-path hit rate, false-fast-rate, latency by
+phase. Note that recall@1 swings ~3 points between runs of the same build, so
+smaller differences are noise.
+
+## Current state
+
+Retrieval and the fast path are in good shape (recall@3 97%, infobox fast path
+93-100%, zero wrong-article fast answers). Decode is now the dominant cost of a
+full RAG turn — about 90% of wall time.
+
+Open: `recall@1` around 53% — the right article is retrieved but not ranked first,
+because ordering set by the title probe is lost somewhere downstream. The UI and
+the whole retrieval side are Russian-only; English support is not started.
