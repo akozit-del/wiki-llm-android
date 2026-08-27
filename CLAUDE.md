@@ -149,6 +149,8 @@ Retrieval and the fast path are in good shape (recall@3 97%, infobox fast path
 93-100%, zero wrong-article fast answers). Decode is now the dominant cost of a
 full RAG turn — about 90% of wall time.
 
-Open: `recall@1` around 53% — the right article is retrieved but not ranked first,
-because ordering set by the title probe is lost somewhere downstream. The UI and
-the whole retrieval side are Russian-only; English support is not started.
+`recall@1` was 52% until 2026-08-27 and is now 78%: the probe's ordering was
+being lost to `distinctBy { it.path }`, which keeps the *first* copy of a path,
+not the highest-scored one. Six questions are still ranked 2-3, five of them the
+whole `list` category. The UI and the whole retrieval side are Russian-only;
+English support is not started.
