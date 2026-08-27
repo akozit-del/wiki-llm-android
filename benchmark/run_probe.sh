@@ -18,14 +18,37 @@ PKG=com.wikillm.android.debug
 RECV="$PKG/com.wikillm.android.diag.BenchmarkReceiver"
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
+# Probes run on their own coroutine, so a probe still in flight interleaves its
+# log lines with the next question's and the scorer, which reads the log
+# sequentially, attributes them to the wrong question. A fixed sleep can't fix
+# that: "кто мэр Москвы" took 3.44 s on 2026-08-27 and was silently dropped from
+# the table (31/32 scored) because the runner waited 3. So watch logcat instead
+# and fire the next question only after this one has printed "[PROBE] done".
+"${ADB[@]}" logcat -c 2>/dev/null || true
+STREAM="$(mktemp -t wikillm-probe)"
+"${ADB[@]}" logcat -s BenchmarkBridge >> "$STREAM" &
+TAIL_PID=$!
+cleanup() { kill "$TAIL_PID" 2>/dev/null || true; rm -f "$STREAM"; }
+trap cleanup EXIT
+sleep 1
+
+# Wait until the stream carries at least $1 "done" lines, or ~20 s have passed.
+await_done() {
+    local want="$1" waited=0
+    while [[ $(grep -c '\[PROBE\] done' "$STREAM" 2>/dev/null || echo 0) -lt "$want" ]]; do
+        sleep 0.5
+        waited=$((waited + 1))
+        if [[ $waited -gt 40 ]]; then
+            echo "  (timeout waiting for probe $want — continuing)" >&2
+            return
+        fi
+    done
+}
+
 # Mark where this run starts, so scoring never picks up a previous run's lines.
 MARKER="PROBE-RUN-$(date +%s)"
 "${ADB[@]}" shell "am broadcast -n $RECV -a com.wikillm.android.ASK --es m search --es q '$MARKER'" >/dev/null
-# Probes run on their own coroutine, so a probe still in flight interleaves its
-# log lines with the next one and the scorer mis-attributes them. Give the
-# marker the same breathing room every question gets (first run lost ib01/ib02
-# exactly this way).
-sleep 3
+await_done 1
 
 mapfile -t QUESTIONS < <(python3 -c "
 import json,sys
@@ -40,12 +63,11 @@ for q in "${QUESTIONS[@]}"; do
     # Nested quoting is mandatory: adb shell hands the whole line to a remote
     # shell, which would otherwise split the Russian question on spaces.
     "${ADB[@]}" shell "am broadcast -n $RECV -a com.wikillm.android.ASK --es m search --ei k $K --es q '$q'" >/dev/null
-    # A probe is search + one infobox read; ~1-2 s is enough, and probes are
-    # serialised by the ZIM searcher anyway.
-    sleep 3
+    # +1 for the marker probe, which prints a "done" of its own.
+    await_done $((i + 1))
 done
 
-sleep 3
+sleep 2
 LOG="$HERE/last-probe.log"
 "${ADB[@]}" shell "run-as $PKG cat files/diag.log" > "$LOG"
 echo "diag.log -> $LOG"
