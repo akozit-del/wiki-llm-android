@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.Intent
 import android.os.SystemClock
 import com.wikillm.android.rag.FactoidAnswerer
+import com.wikillm.android.rag.InfoboxExtractor
 import com.wikillm.android.rag.RagPromptBuilder
 import com.wikillm.android.rag.ZimSearchHolder
 import kotlinx.coroutines.CoroutineScope
