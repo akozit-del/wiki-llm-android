@@ -4,8 +4,7 @@
 #
 #   ./benchmark/run_fields.sh [sample] [serial] [seed]
 #
-# sample defaults to 2000 articles, which takes a couple of minutes — each one
-# is a ZIM read plus a jsoup parse.
+# sample defaults to 2000 articles; the device does roughly 100/second.
 set -euo pipefail
 
 SAMPLE="${1:-2000}"
@@ -17,29 +16,35 @@ ADB=(adb)
 PKG=com.wikillm.android.debug
 RECV="$PKG/com.wikillm.android.diag.BenchmarkReceiver"
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+RAW="$HERE/last-fields.log"
+
+# diag.log is a bounded ring buffer and a few thousand article lines overflow
+# it, so capture logcat as a stream for the whole run instead of reading either
+# log afterwards. Start the tail before the broadcast so nothing is missed.
+"${ADB[@]}" logcat -c 2>/dev/null || true
+: > "$RAW"
+"${ADB[@]}" logcat -s BenchmarkBridge >> "$RAW" &
+TAIL_PID=$!
+cleanup() { kill "$TAIL_PID" 2>/dev/null || true; }
+trap cleanup EXIT
+sleep 1
 
 echo "sampling $SAMPLE articles (seed $SEED)…"
 "${ADB[@]}" shell "am broadcast -n $RECV -a com.wikillm.android.ASK \
   --es m fields --ei k $SAMPLE --el seed $SEED" >/dev/null
 
-# The scan runs on its own coroutine; poll the log for its own done marker
-# rather than guessing a duration.
-for _ in $(seq 1 400); do
-  sleep 3
-  if "${ADB[@]}" shell "run-as $PKG cat files/diag.log" 2>/dev/null \
-      | grep -q "\[FIELDS\] done"; then
+# Wait for THIS run's marker. A bare "done" also matches a previous scan still
+# sitting in the log, which made the runner exit before the new one had written
+# anything.
+for _ in $(seq 1 600); do
+  sleep 2
+  if grep -q "\[FIELDS\] done seed=$SEED " "$RAW" 2>/dev/null; then
     break
   fi
   printf '.'
 done
 echo
+cleanup
 
-# diag.log is a bounded ring buffer, and a few thousand article lines overflow
-# it. logcat holds a different window of the same run, so take both and let the
-# scorer dedupe — together they usually cover the whole scan.
-{
-  "${ADB[@]}" shell "run-as $PKG cat files/diag.log" 2>/dev/null
-  "${ADB[@]}" logcat -d -s BenchmarkBridge 2>/dev/null
-} > "$HERE/last-fields.log"
-
-python3 "$HERE/score_fields.py" "$HERE/last-fields.log" | tee "$HERE/fields-$(date +%Y-%m-%d).md"
+python3 "$HERE/score_fields.py" "$RAW" "${TOP_N:-200}" \
+  | tee "$HERE/fields-$(date +%Y-%m-%d).md"

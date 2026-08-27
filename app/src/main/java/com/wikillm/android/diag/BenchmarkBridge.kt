@@ -133,8 +133,12 @@ object BenchmarkBridge {
                 DiagLog.i(TAG, "[FIELDS] a=${i + 1}\tcard=${labels.size}\t" +
                     "title=${hit.title}\tlabels=${labels.joinToString("\t")}")
             }
-            DiagLog.i(TAG, "[FIELDS] done articles=${articles.size} withCard=$withCard " +
-                "ms=${SystemClock.elapsedRealtime() - t0}")
+            // Seed goes in the marker so a runner can wait for *this* run: an
+            // earlier scan's "done" is still sitting in the log and a bare
+            // marker made the runner exit before the new scan had written a
+            // single line.
+            DiagLog.i(TAG, "[FIELDS] done seed=$seed articles=${articles.size} " +
+                "withCard=$withCard ms=${SystemClock.elapsedRealtime() - t0}")
         }
     }
 
