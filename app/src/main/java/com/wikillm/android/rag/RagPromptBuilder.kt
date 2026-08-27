@@ -282,7 +282,18 @@ class RagPromptBuilder(private val searcher: ZimSearcher) {
         // path also appeared in BM25 — which silently demoted a pinned
         // score-2000 list article ("Градоначальники Тольятти") to its BM25
         // duplicate at ~50, then the score≥800 doc filter dropped it entirely.
-        var hits = (titleProbeHits + walkerProbeHits + entityProbeHits + bm25).distinctBy { it.path }
+        // ...and keep the HIGHEST-scoring copy of each path, not the first one.
+        // The concatenation order stopped matching descending score once the
+        // chain walker moved ahead of EntityTitleProbe: the walker pins its seed
+        // at whatever lookupExactTitle returned (1000), while the probe scores
+        // the very same article 1090 because it matched the full n-gram
+        // «Гагарин, Юрий Алексеевич». distinctBy keeps the first, so the article
+        // reached the sort at 1000 and lost rank 1 to the bare «Юрий» (1070).
+        // That is why 829b7ff (boost gate, reverted) measured no change: the
+        // probe's ranking was already gone before the sort ran.
+        var hits = (titleProbeHits + walkerProbeHits + entityProbeHits + bm25)
+            .groupBy { it.path }
+            .map { (_, dupes) -> dupes.maxByOrNull { it.score }!! }
         // Also pull the head-entity article on its own. When the query mixes an
         // attribute with an entity ("мэр Тольятти"), the bare entity page
         // ("Тольятти") gets crowded out of the candidates by "<Entity>ский/ская…"
@@ -312,9 +323,21 @@ class RagPromptBuilder(private val searcher: ZimSearcher) {
                 // 800 for prefix probes, 0/small for Xapian hits) — without this,
                 // the list-aware probes get re-buried by an "exact entity" article.
                 var score = hit.score
-                if (searchTerms.any { it == title }) score += 100
-                if (searchTerms.any { title.startsWith(it) }) score += 20
-                if (searchTerms.any { title.contains(it) }) score += 10
+                // Boost only the unpinned Xapian tail. A pinned hit already
+                // carries a deliberate ordering from EntityTitleProbe (n-gram
+                // length, proper-noun bonus, attribute penalty) and those gaps
+                // are 20–90 points wide, so a ±130 title boost on top decides
+                // rank 1 by itself — wrongly, because all three bonuses fire
+                // together exactly when the title *is* one query word. That is
+                // how «Дмитрий» beat «Менделеев, Дмитрий Иванович» and «Юрий»
+                // beat «Гагарин, Юрий Алексеевич». Boosted BM25 tops out near
+                // 200, well under the floor, so pins still sit above the tail —
+                // only their internal order is left alone.
+                if (hit.score < PINNED_SCORE_FLOOR) {
+                    if (searchTerms.any { it == title }) score += 100
+                    if (searchTerms.any { title.startsWith(it) }) score += 20
+                    if (searchTerms.any { title.contains(it) }) score += 10
+                }
                 score - title.length / 20
             })
         }
@@ -439,8 +462,8 @@ class RagPromptBuilder(private val searcher: ZimSearcher) {
     ): List<ZimSearcher.Hit> {
         if (!EmbeddingHolder.isReady() || hits.size < 3) return hits
         // Probes are pinned at score ≥ 800; BM25/Xapian hits sit well below.
-        val pinned = hits.filter { it.score >= 500 }
-        val tail = hits.filter { it.score < 500 }
+        val pinned = hits.filter { it.score >= PINNED_SCORE_FLOOR }
+        val tail = hits.filter { it.score < PINNED_SCORE_FLOOR }
         if (tail.size < 3) return hits
 
         val qv = EmbeddingHolder.embedQuery(question) ?: return hits
@@ -635,7 +658,15 @@ class RagPromptBuilder(private val searcher: ZimSearcher) {
         if (seed.path.isBlank()) return emptyList()
         val hits = mutableListOf<ZimSearcher.Hit>()
         val seenPaths = HashSet<String>()
-        hits += seed
+        // lookupExactTitle is not exact — tier 2 is a fuzzy SuggestionSearcher —
+        // so the seed can be anything that merely starts with the entity, and it
+        // used to enter the candidate list at that tier's own 950: «Москвы имени
+        // канал» for «Москвы», «Администрация Екатеринбурга» for «Екатеринбурга»
+        // (which took rank 1 away from «Екатеринбург» itself). The walker's job
+        // is the chain, not the head article, so the seed enters at the walker's
+        // own tier. Costs nothing when the seed is right: EntityTitleProbe hands
+        // in the same path at 1070/1090 and the max-score dedup above keeps that.
+        hits += seed.copy(score = minOf(seed.score, WALKER_SEED_SCORE))
         seenPaths += seed.path
         val walked = InfoboxGraphWalker.walk(
             searcher = searcher,
@@ -813,5 +844,18 @@ class RagPromptBuilder(private val searcher: ZimSearcher) {
         return decoded.replace('_', ' ')
     }
 
-    companion object { private const val TAG = "RagPromptBuilder" }
+    companion object {
+        private const val TAG = "RagPromptBuilder"
+
+        /**
+         * Where the pinned probes end and the Xapian tail begins. Shared by the
+         * title-boost gate and [semanticRerank] on purpose: the two split the
+         * same list, and if the thresholds ever drift, one of them reorders what
+         * the other pinned.
+         */
+        private const val PINNED_SCORE_FLOOR = 500
+
+        /** Walker tier: the seed sits with its own chain nodes (900 - depth). */
+        private const val WALKER_SEED_SCORE = 900
+    }
 }
