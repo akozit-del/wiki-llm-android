@@ -248,6 +248,11 @@ object FactoidAnswerer {
         Regex("^(основа|учрежд)") to "основа",
         Regex("^(снял|снима)") to "режисс",
         Regex("^(написа|сочинил)") to "автор",
+        // Person cards label citizenship «Страна», not «Гражданство» — measured
+        // on «Бауман, Людвиг», whose card reads
+        // [Дата рождения, Дата смерти, Место рождения, Место смерти,
+        //  Образование, Страна, Учёба].
+        Regex("^(гражданств|подданств)") to "страна",
     )
 
     /** Interrogatives that can introduce a single-field question. */
