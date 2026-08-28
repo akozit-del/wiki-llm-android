@@ -328,7 +328,7 @@ object FactoidAnswerer {
             ).distinctBy { it.path }
         siblings.filter { personTitleMatches(it.title, entity, question) }.forEach { add(it) }
         siblings
-            .mapNotNull { h -> qualifierGap(h.title, entity, question)?.let { it to h } }
+            .mapNotNull { h -> EntityTitleProbe.qualifierGap(h.title, entity, question)?.let { it to h } }
             // Fewer uncovered qualifier words first: «Сталкер (фильм)» before
             // «Сталкер (фильм, 2023)», whose "2023" the question never mentions.
             .sortedBy { it.first }
@@ -355,23 +355,6 @@ object FactoidAnswerer {
         // on, and picking a namesake at random is exactly the false-fast answer
         // this path must never give.
         return given.isNotEmpty() && given.all { g -> tail.contains(g.lowercase()) }
-    }
-
-    /**
-     * How many words of [title]'s parenthesised qualifier the [question] does
-     * *not* mention, or null when it mentions none of them (so the qualifier is
-     * about something else entirely and the title must not be considered).
-     */
-    private fun qualifierGap(title: String, entity: String, question: String): Int? {
-        if (!title.substringBefore('(').trim().equals(entity.trim(), ignoreCase = true)) return null
-        val qualifier = title.substringAfter('(', "").substringBefore(')')
-        val parts = qualifier.split(Regex("[,\\s]+")).filter { it.length >= 3 }
-        if (parts.isEmpty()) return null
-        val q = question.lowercase()
-        // Compare on a stem, not the whole word: the question says «фильма»,
-        // the qualifier says «фильм».
-        val covered = parts.count { q.contains(it.lowercase().take(5)) }
-        return if (covered == 0) null else parts.size - covered
     }
 
     /** Proper nouns of the question — capitalised mid-sentence words, minus the

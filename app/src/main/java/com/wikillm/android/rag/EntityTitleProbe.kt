@@ -199,6 +199,28 @@ object EntityTitleProbe {
         return capitalized(phrase.joinToString(" "))
     }
 
+    /**
+     * How many words of [title]'s parenthesised qualifier the [question] does
+     * *not* mention, or null when it mentions none of them (so the qualifier is
+     * about something else entirely and the title must not be considered).
+     *
+     * Shared with [FactoidAnswerer] and [RagPromptBuilder]: both lanes face the
+     * same ru.wiki convention, where the bare title is a disambiguation page and
+     * the article is «Сталкер (фильм)». Requiring the question to supply the
+     * qualifier is what keeps «Сталкер (игра)» out of a question about a film.
+     */
+    fun qualifierGap(title: String, entity: String, question: String): Int? {
+        if (!title.substringBefore('(').trim().equals(entity.trim(), ignoreCase = true)) return null
+        val qualifier = title.substringAfter('(', "").substringBefore(')')
+        val parts = qualifier.split(Regex("[,\\s]+")).filter { it.length >= 3 }
+        if (parts.isEmpty()) return null
+        val q = question.lowercase()
+        // Compare on a stem, not the whole word: the question says «фильма»,
+        // the qualifier says «фильм».
+        val covered = parts.count { q.contains(it.lowercase().take(5)) }
+        return if (covered == 0) null else parts.size - covered
+    }
+
     /** ru.wiki titles start with a capital; the rest of the phrase is left as
      *  typed, so «Солнечной системы» keeps its inner casing. */
     private fun capitalized(phrase: String): String =

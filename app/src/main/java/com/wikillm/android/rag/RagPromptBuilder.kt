@@ -294,6 +294,7 @@ class RagPromptBuilder(private val searcher: ZimSearcher) {
         var hits = (titleProbeHits + walkerProbeHits + entityProbeHits + bm25)
             .groupBy { it.path }
             .map { (_, dupes) -> dupes.maxByOrNull { it.score }!! }
+        hits = promoteQualifiedSiblings(question, hits)
         // Also pull the head-entity article on its own. When the query mixes an
         // attribute with an entity ("мэр Тольятти"), the bare entity page
         // ("Тольятти") gets crowded out of the candidates by "<Entity>ский/ская…"
@@ -358,6 +359,52 @@ class RagPromptBuilder(private val searcher: ZimSearcher) {
             })
         }
         return hits
+    }
+
+    /**
+     * Lift «Сталкер (фильм)» above the pinned «Сталкер» when the question itself
+     * said «фильма».
+     *
+     * A bare pinned title is only the right answer while nothing disambiguates
+     * it. «кто режиссёр фильма Сталкер» pinned «Сталкер» — a disambiguation page
+     * with no card and no body — at 1070, while «Сталкер (фильм)» sat one rank
+     * below at BM25 s=99, in the very same candidate list. The fast path already
+     * refuses to stop at the bare page ([EntityTitleProbe.qualifierGap] picked
+     * the film and answered «Андрей Тарковский» in 108 ms); retrieval kept
+     * handing the LLM the disambiguation stub.
+     *
+     * No lookup is added: the qualified sibling is already a candidate — BM25
+     * finds it, since the question's own words are in its title. Only its score
+     * changes, so this costs nothing in latency.
+     */
+    private fun promoteQualifiedSiblings(
+        question: String,
+        hits: List<ZimSearcher.Hit>,
+    ): List<ZimSearcher.Hit> {
+        // Only a *pinned* bare title is worth overriding: below the floor the
+        // title boost and the rerank already decide the order, and a BM25 hit
+        // carries no claim that it is the entity the question names.
+        val pinned = hits
+            .filter { it.score >= PINNED_SCORE_FLOOR && '(' !in it.title }
+            .associateBy { it.title.trim().lowercase() }
+        if (pinned.isEmpty()) return hits
+        var promoted = 0
+        val out = hits.map { hit ->
+            if ('(' !in hit.title) return@map hit
+            val base = pinned[hit.title.substringBefore('(').trim().lowercase()] ?: return@map hit
+            val gap = EntityTitleProbe.qualifierGap(hit.title, base.title, question) ?: return@map hit
+            promoted++
+            // Above its own base, and ordered by how much of the qualifier the
+            // question left uncovered: «Сталкер (фильм)» before «Сталкер (фильм,
+            // 2023)», whose "2023" nobody asked about.
+            hit.copy(score = base.score + QUALIFIER_PROMOTION - gap)
+        }
+        if (promoted > 0) {
+            DiagLog.i(TAG, "Qualified siblings promoted: " + out
+                .filter { '(' in it.title && it.score >= PINNED_SCORE_FLOOR }
+                .joinToString { "${it.title}(${it.score})" })
+        }
+        return out
     }
 
     /** Build one concatenated excerpt block from already-sorted [hits]. */
@@ -866,5 +913,13 @@ class RagPromptBuilder(private val searcher: ZimSearcher) {
 
         /** Walker tier: the seed sits with its own chain nodes (900 - depth). */
         private const val WALKER_SEED_SCORE = 900
+
+        /**
+         * How far a question-disambiguated sibling sits above its bare base
+         * title. Wide enough to clear the sort's length tiebreak
+         * (`title.length / 20`, ~1-2 points), narrow enough that it never
+         * reorders two different pinned entities: the probe's own gaps between
+         * n-gram tiers are 20 points. */
+        private const val QUALIFIER_PROMOTION = 15
     }
 }
