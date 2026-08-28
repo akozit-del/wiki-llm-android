@@ -172,6 +172,33 @@ object EntityTitleProbe {
         return combos.map { capitalized(it.joinToString(" ")) }.distinct()
     }
 
+    /**
+     * The question's own noun phrase as a title guess: «перечисли спутники
+     * Юпитера» → «Спутники Юпитера».
+     *
+     * ru.wiki names its enumeration articles the way the question asks for
+     * them, so once the instruction shell is trimmed off a list question what
+     * remains often *is* the dedicated list article, verbatim. That article is
+     * unreachable any other way: [ATTRIBUTE_STEMS] penalises «спутники» — the
+     * rule that keeps «Мэр Москвы» from outranking «Москва» — so the n-gram
+     * probe scores «Спутники Юпитера» below the bare entity «Юпитер».
+     *
+     * Null unless the trimmed phrase is 2-4 tokens with no stop word left
+     * inside it: «Океаны на Земле» is a sentence, not a title.
+     */
+    fun listPhrase(question: String): String? {
+        val tokens = question
+            .replace(Regex("[\\p{Punct}«»“”\"]"), " ")
+            .split(Regex("\\s+"))
+            .filter { it.isNotBlank() }
+        val phrase = tokens
+            .dropWhile { it.lowercase() in EDGE_STOP }
+            .dropLastWhile { it.lowercase() in EDGE_STOP }
+        if (phrase.size !in 2..4) return null
+        if (phrase.any { it.lowercase() in EDGE_STOP }) return null
+        return capitalized(phrase.joinToString(" "))
+    }
+
     /** ru.wiki titles start with a capital; the rest of the phrase is left as
      *  typed, so «Солнечной системы» keeps its inner casing. */
     private fun capitalized(phrase: String): String =

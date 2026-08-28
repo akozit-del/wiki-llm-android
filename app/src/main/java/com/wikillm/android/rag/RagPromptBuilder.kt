@@ -232,7 +232,7 @@ class RagPromptBuilder(private val searcher: ZimSearcher) {
             val entity = QueryExtractor.extractEntity(question)
             val role = QueryExtractor.extractRolePlural(question)
             if (!entity.isNullOrBlank()) {
-                listAwareTitleProbes(entity, role).also { probes ->
+                listAwareTitleProbes(entity, role, EntityTitleProbe.listPhrase(question)).also { probes ->
                     if (probes.isNotEmpty()) {
                         DiagLog.i(TAG, "List probes (entity='$entity', role='$role'): " +
                             probes.joinToString { it.title })
@@ -568,7 +568,11 @@ class RagPromptBuilder(private val searcher: ZimSearcher) {
      * Returned hits carry path/title only — bodies are read later in the
      * normal excerpt-building loop, so this stays cheap (~few µs per probe).
      */
-    private suspend fun listAwareTitleProbes(entity: String, role: String?): List<ZimSearcher.Hit> {
+    private suspend fun listAwareTitleProbes(
+        entity: String,
+        role: String?,
+        questionPhrase: String? = null,
+    ): List<ZimSearcher.Hit> {
         val templates = mutableListOf<String>()
         // Role-specific templates first (more precise).
         if (role != null) {
@@ -608,6 +612,11 @@ class RagPromptBuilder(private val searcher: ZimSearcher) {
         // 2000 so it becomes candidate #1 → the open-extraction seed → the
         // whole list reaches the model in one focused call.
         val listTitles = buildList {
+            // The question's own phrase first: it is direct evidence of what the
+            // user is enumerating, where the templates below are guesses. Only
+            // the leadership templates existed, so «Спутники Юпитера» and its
+            // kind had no tier-0 route at all.
+            if (questionPhrase != null) add(questionPhrase)
             if (role != null) { add("$role $entity"); add("Список ${role.lowercase()} $entity") }
             add("Градоначальники $entity"); add("Главы $entity"); add("Список глав $entity")
             add("Мэры $entity"); add("Список мэров $entity")
