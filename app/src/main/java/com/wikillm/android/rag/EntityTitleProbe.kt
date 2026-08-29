@@ -37,6 +37,21 @@ object EntityTitleProbe {
      *  common-noun phrase but not a longer phrase containing it. */
     private const val PROPER_NOUN_BONUS = 50
 
+    /**
+     * A guess whose title came back unchanged names the article outright; one
+     * that arrived through a redirect only points at it, and the redirect may
+     * well be about something else — «Океаны» lands on «Мировой океан» and
+     * «Океана» on the asteroid «(224) Океана», while «Океан» is the article the
+     * question is about.
+     *
+     * Deliberately smaller than one n-gram step (20), so this decides *only*
+     * ties — between forms of one n-gram, which all carry the same score — and
+     * never lets a shorter or common-noun guess overtake a longer or proper-noun
+     * one. Otherwise the city «Гагарин» would outrank «Гагарин, Юрий
+     * Алексеевич», which the probe reaches through exactly such a redirect.
+     */
+    private const val TITLE_IDENTITY_BONUS = 10
+
     /** Cost ceiling. Each probe is an exact index lookup, but a miss costs a
      *  thrown JNI exception, so the candidate list stays bounded. */
     private const val MAX_LOOKUPS = 48
@@ -95,13 +110,18 @@ object EntityTitleProbe {
             lookups++
             val hit = searcher.lookupTitleExact(c.title) ?: continue
             if (hit.path.isBlank() || !seenPaths.add(hit.path)) continue
-            out += hit.copy(score = c.score)
+            val itself = hit.title.equals(c.title, ignoreCase = true)
+            out += hit.copy(score = c.score + if (itself) TITLE_IDENTITY_BONUS else 0)
         }
         if (out.isNotEmpty()) {
             DiagLog.i(TAG, "Title probes ($lookups lookups): " +
                 out.joinToString { "${it.title}(${it.score})" })
         }
-        return out
+        // Probing runs in candidate order, which is score order only until the
+        // identity bonus fires; re-sorting keeps "most specific first" true for
+        // callers that do not sort themselves (FactoidAnswerer reads this list
+        // in order and answers from the first card that carries the field).
+        return out.sortedByDescending { it.score }
     }
 
     /**
