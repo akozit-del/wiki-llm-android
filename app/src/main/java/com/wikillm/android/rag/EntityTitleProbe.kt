@@ -52,6 +52,31 @@ object EntityTitleProbe {
      */
     private const val TITLE_IDENTITY_BONUS = 10
 
+    /**
+     * Tie-break for two guesses that are equally good on every cheap signal:
+     * the one with the longer article wins.
+     *
+     * «из чего состоит атмосфера Марса» produces «Марса» (written form) and
+     * «Марс» (guessed nominative), both exact titles, both identity hits, both
+     * 1080 — and the written form is first only because [phraseForms] emits it
+     * first. It is the Maltese town Marsa; the question is about the planet.
+     * Article length is the standard prominence prior for exactly this case: a
+     * homograph that is a stub is not what a question is about.
+     *
+     * 5, so [TITLE_IDENTITY_BONUS] + this (15) still sits under one n-gram step
+     * (20) and this stays a tie-break inside one n-gram, never a promotion.
+     */
+    private const val PROMINENCE_BONUS = 5
+
+    /** Prominence has to be unambiguous to count: the winner must be this many
+     *  times longer. Two comparable articles are a real ambiguity and the
+     *  cheaper signals' ordering is left alone. */
+    private const val PROMINENCE_RATIO = 2
+
+    /** Reading an article costs a cluster decompression, so the tie-break only
+     *  looks at a tie small enough to be worth resolving. */
+    private const val MAX_TIE_READS = 3
+
     /** Cost ceiling. Each probe is an exact index lookup, but a miss costs a
      *  thrown JNI exception, so the candidate list stays bounded. */
     private const val MAX_LOOKUPS = 48
@@ -121,7 +146,37 @@ object EntityTitleProbe {
         // identity bonus fires; re-sorting keeps "most specific first" true for
         // callers that do not sort themselves (FactoidAnswerer reads this list
         // in order and answers from the first card that carries the field).
-        return out.sortedByDescending { it.score }
+        return breakTopTie(out.sortedByDescending { it.score }, searcher)
+    }
+
+    /**
+     * Nudge the most prominent article to the front when the whole ranking above
+     * has failed to separate the best guesses — see [PROMINENCE_BONUS].
+     *
+     * Only the *leading* score group is considered: a tie further down cannot
+     * change which article the question lands on, and would only spend
+     * decompressions. Anything but a clear winner leaves the list untouched.
+     */
+    private suspend fun breakTopTie(
+        hits: List<ZimSearcher.Hit>,
+        searcher: ZimSearcher,
+    ): List<ZimSearcher.Hit> {
+        val top = hits.firstOrNull()?.score ?: return hits
+        val tied = hits.takeWhile { it.score == top }
+        if (tied.size !in 2..MAX_TIE_READS) return hits
+
+        val sized = tied.map { it to (searcher.readArticleHtml(it.path)?.length ?: 0) }
+            .sortedByDescending { (_, len) -> len }
+        val (winner, best) = sized[0]
+        val runnerUp = sized[1].second
+        DiagLog.i(TAG, "Top tie at $top: " + sized.joinToString { (h, len) -> "${h.title}=$len" })
+        if (best < PROMINENCE_RATIO * maxOf(runnerUp, 1)) return hits
+
+        // Re-score rather than just reordering: RagPromptBuilder sorts pinned
+        // hits by score again, so a bare reordering would survive only by
+        // accident of a stable sort.
+        return (listOf(winner.copy(score = top + PROMINENCE_BONUS)) +
+            hits.filter { it.path != winner.path })
     }
 
     /**
