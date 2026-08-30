@@ -5,10 +5,11 @@ Reads the [PROBE] lines BenchmarkBridge writes to diag.log and reports the
 metrics the reference set exists for: recall@k, fast-path hit-rate,
 false-fast-rate and search latency.
 
-Only expect_article is used as ground truth. It is a stable assertion (the
-mayor of Togliatti lives in the article "Тольятти" whatever the snapshot says
-his name is today), so scoring cannot become circular the way comparing against
-our own generated answers would.
+Ground truth is expect_article plus expect_field — both stable assertions (the
+mayor of Togliatti lives in the row "Глава/мэр" of the article "Тольятти"
+whatever the snapshot says his name is today), so scoring cannot become
+circular the way comparing against our own generated answers would. The value
+itself is never compared.
 
     python3 benchmark/score.py last-probe.log [--marker PROBE-RUN-123]
 """
@@ -83,6 +84,30 @@ def same_article(expect: str, got: str) -> bool:
     return e == g or ("," in e and e.split(",")[0].strip() == g)
 
 
+def same_field(expect: str, got: str) -> bool:
+    """Match a reference field label against the label the fast path answered from.
+
+    The reference set writes the label the card shows ("Глава/мэр"), and the
+    fast path reports the same string, so most pairs are equal outright. Two
+    kinds of drift are accepted: a slashed reference stands for either
+    alternative ("Глава/мэр" is satisfied by a card that only says "Мэр"), and
+    one label containing the other passes ("Основан" vs "Основан(а)").
+
+    Deliberately lenient. This check exists to catch a *gross* mismatch — the
+    right article answered out of the wrong row, «Площадь» when «Население» was
+    asked — which is what widening matchByLabel to every card label risks.
+    Spelling drift between snapshots is not that failure, and flagging it would
+    bury the real one.
+    """
+    e, g = norm(expect), norm(got)
+    if not e or not g:
+        return True  # nothing to judge against; counted as unjudged by the caller
+    for alt in (a.strip() for a in e.split("/")):
+        if alt and (alt == g or alt in g or g in alt):
+            return True
+    return False
+
+
 def rank_of(expect: str, titles: list[str]) -> int | None:
     for i, t in enumerate(titles, start=1):
         if same_article(expect, t):
@@ -118,10 +143,22 @@ def main() -> int:
             "search_ms": rec.get("search_ms"),
             "fast_ms": rec.get("fast_ms"),
             "fast_article": fast["article"] if fast else None,
+            "fast_field": fast["field"] if fast else None,
             "fast_value": fast["value"] if fast else None,
             # A fast answer read out of the wrong article is the worst failure
             # mode there is: confident, instant and wrong.
             "false_fast": bool(fast) and not same_article(q["expect_article"], fast["article"]),
+            # The same failure one level down, and until now invisible: the
+            # right article answered out of the wrong row. expect_field has been
+            # in the reference set since the beginning and nothing ever read it,
+            # so every wrong-field answer scored as a clean fast hit. Judgeable
+            # only where the reference names a field — pr*/ls* questions have
+            # none, and a fast answer there is reported as unjudged rather than
+            # guessed at.
+            "wrong_field": bool(fast) and bool(q.get("expect_field"))
+            and same_article(q["expect_article"], fast["article"])
+            and not same_field(q["expect_field"], fast["field"]),
+            "field_judged": bool(fast) and bool(q.get("expect_field")),
         })
 
     if args.json:
@@ -152,6 +189,13 @@ def main() -> int:
     bad = [r for r in fast_all if r["false_fast"]]
     if fast_all:
         print(f"| false-fast-rate | {len(bad)}/{len(fast_all)} = {100 * len(bad) / len(fast_all):.0f}% |")
+    judged = [r for r in fast_all if r["field_judged"]]
+    if judged:
+        wf = [r for r in judged if r["wrong_field"]]
+        print(f"| wrong-field-rate | {len(wf)}/{len(judged)} = {100 * len(wf) / len(judged):.0f}% |")
+    unjudged = len(fast_all) - len(judged)
+    if unjudged:
+        print(f"| fast answers with no reference field | {unjudged} |")
     ms = [r["search_ms"] for r in rows if r["search_ms"] is not None]
     if ms:
         print(f"| search latency median / p90 | {statistics.median(ms):.0f} ms / {sorted(ms)[int(0.9 * (len(ms) - 1))]} ms |")
@@ -163,7 +207,12 @@ def main() -> int:
         rank = r["rank"] if r["rank"] else "MISS"
         fast = "—"
         if r["fast_article"]:
-            fast = ("WRONG:" if r["false_fast"] else "") + r["fast_article"]
+            if r["false_fast"]:
+                fast = "WRONG:" + r["fast_article"]
+            elif r["wrong_field"]:
+                fast = f"WRONGFIELD:{r['fast_field']}"
+            else:
+                fast = r["fast_article"]
         print(f"| {r['id']} | {r['category']} | {rank} | {r['candidates']} | "
               f"{r['search_ms']} | {fast} | {r['question']} |")
 
