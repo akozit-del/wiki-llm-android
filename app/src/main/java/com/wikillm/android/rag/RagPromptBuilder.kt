@@ -1,5 +1,6 @@
 package com.wikillm.android.rag
 
+import android.os.SystemClock
 import com.wikillm.android.diag.DiagLog
 
 /**
@@ -122,11 +123,26 @@ class RagPromptBuilder(private val searcher: ZimSearcher) {
         budgetChars: Int,
         excludeTitles: Set<String> = emptySet(),
     ): Excerpts {
+        // Index work and article reading are billed apart on purpose. They are
+        // optimised by different levers — the first by ranking, the second by
+        // how much body we decompress and keep — and until now both hid inside
+        // one opaque "everything before the first token". `ctx` is the number
+        // the context-trimming work has to move.
+        val tSearch = SystemClock.elapsedRealtime()
         val hits = gatherSortedHits(question, candidates, excludeTitles)
-        if (hits.isEmpty()) return Excerpts("", emptyList(), 0)
+        val searchMs = SystemClock.elapsedRealtime() - tSearch
+        if (hits.isEmpty()) {
+            DiagLog.i(TAG, "[PHASE] search=${searchMs}ms read=0ms docs=0 ctx=0")
+            return Excerpts("", emptyList(), 0)
+        }
         val searchTerms = QueryExtractor.extract(question)
             .split(" ").filter { it.length >= 3 }.map { it.lowercase() }
-        return buildExcerptsFromHits(question, hits, topK, budgetChars, searchTerms)
+        val tRead = SystemClock.elapsedRealtime()
+        val ex = buildExcerptsFromHits(question, hits, topK, budgetChars, searchTerms)
+        DiagLog.i(TAG, "[PHASE] search=${searchMs}ms " +
+            "read=${SystemClock.elapsedRealtime() - tRead}ms " +
+            "docs=${ex.titles.size} ctx=${ex.block.length}")
+        return ex
     }
 
     /**

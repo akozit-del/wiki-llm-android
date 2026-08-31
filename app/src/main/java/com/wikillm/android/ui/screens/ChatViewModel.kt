@@ -299,17 +299,25 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
             _ragEnabled.value && _deepSearch.value && ZimSearchHolder.searcher() != null
 
         generationJob = viewModelScope.launch {
+            DiagLog.i(TAG, "[TURN] begin q=${userText.trim().replace('\n', ' ')}")
+            // Every RAG turn pays for the fast path first and only then falls
+            // through, so a factoid MISS is pure added latency on the slow
+            // path — and it was never billed anywhere. Measured on both
+            // outcomes, not just the hit.
+            var factoidMs = 0L
             // Fast path: a single-fact question whose answer is a field of the
             // article's infobox needs no model at all. Reading the field takes
             // well under a second against ~50 s for a full RAG turn, and it
             // can't hallucinate. Falls through to the normal pipeline whenever
             // the match isn't certain.
             if (_ragEnabled.value && !listIntent) {
+                val tFast = System.currentTimeMillis()
                 val fast = ZimSearchHolder.searcher()?.let { s ->
                     runCatching { FactoidAnswerer.tryAnswer(userText.trim(), s) }
                         .onFailure { DiagLog.w(TAG, "Factoid path failed, using RAG", it) }
                         .getOrNull()
                 }
+                factoidMs = System.currentTimeMillis() - tFast
                 if (fast != null) {
                     val elapsed = System.currentTimeMillis() - startMs
                     DiagLog.i(TAG, "Factoid answer in ${elapsed}ms (no LLM): " +
@@ -330,9 +338,11 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                     }
                     _genProgress.value = null
                     _generating.value = false
+                    logTurn("factoid", elapsed, factoidMs, null, fast.render().length)
                     persistConversation(convId)
                     return@launch
                 }
+                DiagLog.i(TAG, "[PHASE] factoid=miss ms=$factoidMs")
             }
 
             val builder = StringBuilder()
@@ -423,6 +433,13 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                     ", think ${finalSplit.thinking.length} chars" else ""
                 DiagLog.i(TAG, "Reply (${finalText.length} chars, ${finalStats.genTokens} tok, " +
                         "${finalStats.elapsedMs}ms$perf$think): ${finalText.take(200).replace('\n', ' ')}")
+                val path = when {
+                    listExtraction -> "list"
+                    agentic -> "agentic"
+                    _ragEnabled.value -> "rag"
+                    else -> "raw"
+                }
+                logTurn(path, finalStats.elapsedMs, factoidMs, finalStats, finalText.length)
                 _messages.value = _messages.value.map {
                     if (it.id == assistantId) {
                         it.copy(
@@ -437,6 +454,32 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                 persistConversation(convId)
             }
         }
+    }
+
+    /**
+     * One machine-parseable line per finished turn, so the wall clock of a real
+     * answer can be attributed by phase over the whole reference set instead of
+     * argued from a single hand-timed question. The `Reply (…)` line above is
+     * for humans and its shape is free to change; this one is a contract with
+     * `benchmark/score_turn.py`.
+     *
+     * Everything between `[TURN] begin` and `[TURN] end` belongs to that turn —
+     * that is how the `[PHASE]` lines (search / read / factoid), which are
+     * written by other classes while the turn is still running, get attributed.
+     * `[TURN] end` is also what the runner waits for before asking the next
+     * question; a fixed sleep can't work when a turn takes 0.4 s or 60 s.
+     */
+    private fun logTurn(
+        path: String,
+        totalMs: Long,
+        factoidMs: Long,
+        stats: GenStats?,
+        answerChars: Int,
+    ) {
+        DiagLog.i(TAG, "[TURN] end path=$path total=${totalMs}ms factoid=${factoidMs}ms " +
+            "ptok=${stats?.promptTokens ?: 0} gtok=${stats?.genTokens ?: 0} " +
+            "prefill=${stats?.prefillMs ?: 0}ms decode=${stats?.decodeMs ?: 0}ms " +
+            "chars=$answerChars")
     }
 
     /** Save the current (non-streaming) messages as a conversation under [convId]. */
