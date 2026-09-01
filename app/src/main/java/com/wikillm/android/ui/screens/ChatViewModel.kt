@@ -121,7 +121,12 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     private val _genProgress = MutableStateFlow<GenProgress?>(null)
     val genProgress: StateFlow<GenProgress?> = _genProgress.asStateFlow()
 
-    private val _ragEnabled = MutableStateFlow(false)
+    // Persisted, unlike the other toggles: with RAG silently off the app still
+    // answers — out of the model's own weights, with no wiki behind it and no
+    // sign in the UI that anything is missing. A default of false therefore
+    // turns every reinstall and every cold start into a run of undetected
+    // hallucination, and it invalidated benchmark runs the same way.
+    private val _ragEnabled = MutableStateFlow(prefs.getBoolean(KEY_RAG_ENABLED, false))
     val ragEnabled: StateFlow<Boolean> = _ragEnabled.asStateFlow()
 
     private val _ragCandidates = MutableStateFlow(20)
@@ -146,6 +151,13 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         // ZIM is opened lazily only when RAG is switched on (see setRagEnabled),
         // so its ~14 GB mmap doesn't compete with the model when RAG is off.
         autoLoadLastModel()
+        // ...but "switched on" now includes a previous session having switched it
+        // on, so restore that here. ensureOpen() re-picks the ZIM by rescanning,
+        // so only the toggle needs storing, not the file choice.
+        if (_ragEnabled.value) {
+            val ctx = getApplication<Application>().applicationContext
+            viewModelScope.launch { runCatching { ZimSearchHolder.ensureOpen(ctx) } }
+        }
         viewModelScope.launch {
             while (isActive) {
                 _freeMemBytes.value = readFreeMem()
@@ -170,6 +182,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
 
     fun setRagEnabled(v: Boolean) {
         _ragEnabled.value = v
+        prefs.edit().putBoolean(KEY_RAG_ENABLED, v).apply()
         val ctx = getApplication<Application>().applicationContext
         viewModelScope.launch {
             if (v) runCatching { ZimSearchHolder.ensureOpen(ctx) }
@@ -934,6 +947,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     companion object {
         private const val TAG = "ChatVM"
         private const val KEY_LAST_MODEL = "last_model_path"
+        private const val KEY_RAG_ENABLED = "rag_enabled"
 
         /** How many prior messages [buildHistory] replays — three exchanges. */
         private const val HISTORY_MESSAGES = 6
