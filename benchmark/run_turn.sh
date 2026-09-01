@@ -31,17 +31,27 @@ cleanup() { kill "$TAIL_PID" 2>/dev/null || true; rm -f "$STREAM"; }
 trap cleanup EXIT
 sleep 1
 
-# Wait until the stream carries at least $1 "[TURN] end" lines. The cap is
-# generous (5 min): a stuck turn should be visible in the report as a timeout,
-# not silently skipped the way a short wait would skip a slow list question.
+# Wait until the stream carries at least $1 "[TURN] end" lines.
+#
+# Continuing past a timeout is NOT safe, which the first real run showed. The
+# 5-min cap fired on a 228 s turn, the script broadcast the next question while
+# the model was still generating, and ChatViewModel.send() returns immediately
+# when _generating is true — so that question was dropped with no trace, the
+# next await_end was satisfied by the PREVIOUS turn's end line, and every later
+# answer was attributed to the wrong row. A run that silently mislabels its
+# results is worse than one that stops.
+#
+# So: wait long enough that only a genuinely wedged turn trips it (a verbose
+# 1000-token answer at 5 tok/s is ~4 min), and abort loudly when it does.
 await_end() {
     local want="$1" waited=0 have
     while have=$(grep -c '\[TURN\] end' "$STREAM" 2>/dev/null); [[ "${have:-0}" -lt "$want" ]]; do
         sleep 1
         waited=$((waited + 1))
-        if [[ $waited -gt 300 ]]; then
-            echo "  (timeout waiting for turn $want — continuing)" >&2
-            return
+        if [[ $waited -gt 900 ]]; then
+            echo "  turn $want never ended after 15 min — aborting rather than" >&2
+            echo "  firing into a busy chat and mislabelling every later answer." >&2
+            exit 1
         fi
     done
 }
