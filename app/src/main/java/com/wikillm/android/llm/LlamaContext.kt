@@ -43,12 +43,21 @@ class LlamaContext private constructor(private val handle: Long) : AutoCloseable
     @Volatile private var closed = false
 
     /** Multi-turn chat: messages is a list of (role, content) pairs. */
+    /**
+     * [onStats] receives prefill/decode timings the moment native reports them,
+     * which is the only delivery that survives a stopped generation: the final
+     * [LlmEvent.Done] goes through the flow's channel, and a collector that was
+     * cancelled has already closed it, so that `trySend` is dropped on the floor.
+     * Native has computed the numbers by then either way — a stopped turn used to
+     * report prefill=0/decode=0 and quietly poison the phase medians with zeros.
+     */
     fun generateChat(
         messages: List<Pair<String, String>>,
         maxTokens: Int = 512,
         systemPrompt: String,
         temperature: Float,
         noThink: Boolean,
+        onStats: (promptTokens: Int, genTokens: Int, prefillMs: Long, decodeMs: Long) -> Unit = { _, _, _, _ -> },
     ): Flow<LlmEvent> =
         channelFlow {
             if (closed) { close(); return@channelFlow }
@@ -66,6 +75,7 @@ class LlamaContext private constructor(private val handle: Long) : AutoCloseable
                 override fun onComplete(promptTokens: Int, genTokens: Int, prefill: Long, decode: Long) {
                     promptTok.set(promptTokens); genTok.set(genTokens)
                     prefillMs.set(prefill); decodeMs.set(decode)
+                    onStats(promptTokens, genTokens, prefill, decode)
                 }
             }
             val roles    = messages.map { it.first  }.toTypedArray()

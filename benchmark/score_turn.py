@@ -111,8 +111,18 @@ def main() -> int:
     fast = [r for r in rows if r["path"] == "factoid"]
     slow = [r for r in rows if r["path"] != "factoid"]
 
+    # A model-path turn with no prefill and no decode never got its numbers from
+    # native — before the onStats fix that happened to every stopped generation.
+    # Averaging those zeros in would understate decode, which is the one phase
+    # this script exists to size, so they are counted apart and never scored.
+    unmeasured = [r for r in slow if r["prefill"] == 0 and r["decode"] == 0]
+    slow = [r for r in slow if r not in unmeasured]
+
     print(f"turns scored: {len(rows)}  "
           f"(fast path {len(fast)}, model {len(slow)})")
+    if unmeasured:
+        print(f"unmeasured model turns (no native stats): {len(unmeasured)} "
+              f"— excluded from every median below")
     print()
 
     if slow:

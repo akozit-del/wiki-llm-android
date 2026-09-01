@@ -37,6 +37,14 @@ sealed interface ModelLoadState {
     data class Failed(val message: String) : ModelLoadState
 }
 
+/** Raw counters as native reported them, before they become a [GenStats]. */
+private data class NativeStats(
+    val promptTokens: Int,
+    val genTokens: Int,
+    val prefillMs: Long,
+    val decodeMs: Long,
+)
+
 /** Stats shown under a finished assistant reply. */
 data class GenStats(
     val model: String,
@@ -347,6 +355,10 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
 
             val builder = StringBuilder()
             var stats: GenStats? = null
+            // Set straight from the native callback, so a turn the user (or the
+            // next benchmark question) stopped still knows its real prefill and
+            // decode — see LlamaContext.generateChat's onStats.
+            var nativeStats: NativeStats? = null
             val temp = genSettings.currentTemperature()
             val noThink = genSettings.currentNoThink()
             // Variant 3: keep the mE5 reranker loaded iff RAG + rerank are both
@@ -386,6 +398,9 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                     llmRepo.generateChat(
                         history, maxTokens = maxTokens,
                         systemPrompt = sysPrompt, temperature = temp, noThink = noThink,
+                        onStats = { ptok, gtok, prefill, decode ->
+                            nativeStats = NativeStats(ptok, gtok, prefill, decode)
+                        },
                     ).collect { ev ->
                         when (ev) {
                             is LlmEvent.Token -> {
@@ -418,7 +433,19 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                 _genProgress.value = null
                 val finalSplit = splitThinking(builder.toString())
                 val finalText = finalSplit.answer
-                val finalStats = stats ?: GenStats(
+                // Prefer what native measured. `stats` is only set on the flow's
+                // terminal Done event, which never arrives for a stopped
+                // generation; nativeStats does, and carries the same numbers.
+                val finalStats = stats ?: nativeStats?.let {
+                    GenStats(
+                        model = currentModelName(),
+                        elapsedMs = System.currentTimeMillis() - startMs,
+                        genTokens = it.genTokens,
+                        promptTokens = it.promptTokens,
+                        prefillMs = it.prefillMs,
+                        decodeMs = it.decodeMs,
+                    )
+                } ?: GenStats(
                     model = currentModelName(),
                     elapsedMs = System.currentTimeMillis() - startMs,
                     genTokens = tokenCount.get(),

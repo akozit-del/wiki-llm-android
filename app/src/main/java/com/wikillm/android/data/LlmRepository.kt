@@ -47,9 +47,10 @@ class LlmRepository {
         systemPrompt: String,
         temperature: Float,
         noThink: Boolean,
+        onStats: (promptTokens: Int, genTokens: Int, prefillMs: Long, decodeMs: Long) -> Unit = { _, _, _, _ -> },
     ): Flow<LlmEvent> {
         val ctx = synchronized(mutex) { current } ?: return emptyFlow()
-        return ctx.generateChat(messages, maxTokens, systemPrompt, temperature, noThink)
+        return ctx.generateChat(messages, maxTokens, systemPrompt, temperature, noThink, onStats)
     }
 
     /** Interrupt a running generation on the loaded context (Stop button). */
