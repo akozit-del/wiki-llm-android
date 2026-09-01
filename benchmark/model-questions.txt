@@ -1,0 +1,22 @@
+# The 13 questions out of questions.json that actually reach the model.
+#
+# Not a guess: these are the rows that logged `[TURN] end path=rag` in the
+# build-40 and build-42 runs. The other 19 are answered from the infobox in
+# ~0.4 s and never touch prefill or decode, so for anything model-shaped —
+# garbage rate, tok/s, prefill share — they are 19 rows of nothing at 0.4 s
+# each and 13 rows of everything at 30-90 s each.
+#
+# Ground truth still lives in questions.json; this file only chooses rows.
+почему Юпитер называют газовым гигантом
+из чего состоит атмосфера Марса
+кто открыл пенициллин
+что такое фотосинтез
+когда началась Вторая мировая война
+чем знаменит Большое красное пятно
+что производит АвтоВАЗ
+какой автозавод расположен в Тольятти
+назови планеты Солнечной системы
+кто был предшественником нынешнего мэра Тольятти
+сравни население Москвы и Санкт-Петербурга
+почему Байкал самое глубокое озеро
+как связаны Менделеев и периодическая таблица
