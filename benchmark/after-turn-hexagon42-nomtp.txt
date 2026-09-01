@@ -1,0 +1,28 @@
+turns scored: 32  (fast path 15, model 13)
+unmeasured model turns (no native stats): 4 — excluded from every median below
+
+model-path turns: 13, median total 32054 ms
+
+phase                  median ms   share of turn
+------------------------------------------------
+factoid attempt                1            0.0%
+ZIM search                  1103            3.4%
+article reading              299            0.9%
+prefill                     7025           21.9%
+decode                     22502           70.2%
+unattributed                1124            3.5%
+
+context: median 4482 chars, median 2625 prompt tokens, median 4 articles
+output:  median 131 tokens, 327 chars
+decode:  5.8 tok/s (median)
+prefill: 374 tok/s (median)
+
+fast path: 15 turns, median 481 ms (factoid lookup 481 ms)
+fast-path miss cost: median 64 ms on 8 model-path turns
+
+slowest turns:
+   320433 ms  [rag    ] ptok=2669  gtok=1600 почему Байкал самое глубокое озеро
+    57987 ms  [rag    ] ptok=2318  gtok=292  почему Юпитер называют газовым гигантом
+    43912 ms  [rag    ] ptok=2248  gtok=230  чем знаменит Большое красное пятно
+    38452 ms  [rag    ] ptok=2493  gtok=182  что производит АвтоВАЗ
+    35855 ms  [list   ] ptok=0     gtok=7    какие есть океаны на Земле

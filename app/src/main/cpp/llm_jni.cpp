@@ -82,10 +82,23 @@ static llama_sampler* make_sampler(float temp, const llama_vocab* vocab) {
     return s;
 }
 
-// Rebuild the sampler only when the requested temperature changed.
+// Rebuild the sampler only when the requested temperature changed, and clear
+// its history either way.
+//
+// The reset is not housekeeping. The penalties sampler keeps a ring buffer of
+// the last `penalty_last_n` (128) tokens it accepted, and without a reset that
+// buffer arrives at a new answer still holding the tail of the previous one —
+// so the first token of every answer after the first is sampled with the
+// previous answer's tokens divided by 1.15. Between two Russian answers those
+// 128 tokens are mostly the shared function words and punctuation the new
+// answer needs most, and with min_p 0.05 and temp 0.7 on top, the first token
+// can land outside the intended distribution. Once it does the model is off
+// its own distribution and does not come back: the benchmark saw whole answers
+// of «Population征收核定 hopeenzahi质量的技术…», garbage from the first token,
+// 1600 tokens and 320 s of it, on ~1-2 of 17 model turns per run.
 static void ensure_temp(LlmHandle* h, float temp) {
     if (temp < 0.05f) temp = 0.05f;
-    if (h->smpl && temp == h->temp) return;
+    if (h->smpl && temp == h->temp) { llama_sampler_reset(h->smpl); return; }
     if (h->smpl) llama_sampler_free(h->smpl);
     h->smpl = make_sampler(temp, h->vocab);
     h->temp = temp;
