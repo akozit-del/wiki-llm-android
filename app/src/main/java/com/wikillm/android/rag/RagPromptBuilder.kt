@@ -559,11 +559,11 @@ class RagPromptBuilder(private val searcher: ZimSearcher) {
         s.replace(Regex("<[^>]+>"), " ").replace(Regex("\\s+"), " ").trim()
 
     /**
-     * Take a [cap]-char window of [body] over the DENSEST cluster of query-term
-     * matches (stem-matched for Russian inflections). For "list all …" questions
-     * the answer sits where the relevant word repeats most (e.g. the "Городская
-     * власть" section full of "глава"), not at the first mention. The article's
-     * own title word is ignored (it's everywhere). Falls back to the start.
+     * Pick up to [cap] chars of [body] that actually bear on the question:
+     * derive stems from the query terms (stem-matched for Russian inflections,
+     * the article's own title word ignored because it is everywhere) and hand
+     * them to [packSentences]. Falls back to the article's lead when no stem
+     * matches at all.
      */
     private fun relevantChunk(body: String, title: String, terms: List<String>, cap: Int): String {
         if (body.length <= cap) return body
@@ -603,23 +603,81 @@ class RagPromptBuilder(private val searcher: ZimSearcher) {
         }
         if (stems.isEmpty()) return body.take(cap)
 
-        val anchors = ArrayList<Int>()
-        for (s in stems) {
-            var i = lower.indexOf(s)
-            while (i >= 0) { anchors.add(i); i = lower.indexOf(s, i + s.length) }
-        }
-        if (anchors.isEmpty()) return body.take(cap)
-        anchors.sort()
-        // Pick the window position covering the most anchors.
-        var bestStart = anchors[0]
-        var bestCount = -1
-        for (a in anchors) {
-            val count = anchors.count { it in a until (a + cap) }
-            if (count > bestCount) { bestCount = count; bestStart = a }
-        }
-        val start = (bestStart - 100).coerceIn(0, (body.length - cap).coerceAtLeast(0))
-        return body.substring(start, (start + cap).coerceAtMost(body.length))
+        // No stem occurs anywhere: nothing to select on, so the lead is the best
+        // guess (it is what defines the article).
+        if (stems.none { lower.contains(it) }) return body.take(cap)
+        return packSentences(body, stems, cap)
     }
+
+    /**
+     * Split [body] on sentence boundaries and keep only the sentences that carry
+     * an anchor stem, in document order, until [cap] is spent.
+     *
+     * The window this replaced was contiguous: it found the densest cluster and
+     * then paid for every filler sentence *between* the matches, and cut both
+     * ends mid-sentence. Two consequences, both measurable on the reference set:
+     * the prompt carried text the question never asked about (prefill is ~23 %
+     * of a RAG turn and scales with it), and matches outside the one window —
+     * mayors listed in a later section, a birth date in the lead — were dropped
+     * even when the budget had room.
+     *
+     * The lead sentence is always kept: it is what says *what the article is*,
+     * and without it a pile of matched sentences has no referent.
+     */
+    private fun packSentences(body: String, stems: Set<String>, cap: Int): String {
+        val sentences = splitSentences(body)
+        if (sentences.size <= 1) return body.take(cap)
+
+        // Score = how many DISTINCT stems the sentence carries. Distinct, not
+        // total: a sentence repeating «глава» six times is one fact, a sentence
+        // holding «глава» and «Тольятти» is the answer.
+        data class Scored(val idx: Int, val text: String, val score: Int)
+        val scored = sentences.mapIndexed { i, s ->
+            val low = s.lowercase()
+            Scored(i, s, stems.count { low.contains(it) })
+        }
+
+        val keep = sortedSetOf<Int>()
+        var used = 0
+        fun take(s: Scored): Boolean {
+            if (s.idx in keep) return true
+            if (used + s.text.length + 1 > cap) return false
+            keep += s.idx
+            used += s.text.length + 1
+            return true
+        }
+        // The lead first, then by descending score; ties by document order so
+        // the article's own narrative sequence survives inside a score band.
+        take(scored[0])
+        for (s in scored.drop(1).filter { it.score > 0 }
+            .sortedWith(compareByDescending<Scored> { it.score }.thenBy { it.idx })) {
+            if (!take(s)) break
+        }
+        // Budget left over (short article, few matches): backfill in document
+        // order rather than returning a prompt smaller than we're allowed.
+        if (used < cap) for (s in scored) { if (!take(s)) break }
+
+        val sb = StringBuilder()
+        var prev = -1
+        for (i in keep) {
+            // Mark elisions: without it the model reads two distant sentences as
+            // consecutive and invents the connection between them.
+            if (prev >= 0 && i != prev + 1) sb.append("… ")
+            sb.append(sentences[i]).append(' ')
+            prev = i
+        }
+        return sb.toString().trim()
+    }
+
+    /**
+     * Sentence boundaries for Russian article text. Jsoup's `.text()` gives one
+     * whitespace-joined blob, so punctuation is all we have: split after . ! ? …
+     * only when the next token starts with a capital. That keeps «1985 г. в
+     * Москве» and «им. Ленина» whole — Russian prose is dense with those
+     * abbreviations and splitting on a bare dot shreds it.
+     */
+    private fun splitSentences(body: String): List<String> =
+        body.split(SENTENCE_BREAK).map { it.trim() }.filter { it.isNotEmpty() }
 
     /**
      * For list-style questions, probe libzim's title index directly for the
@@ -918,6 +976,9 @@ class RagPromptBuilder(private val searcher: ZimSearcher) {
 
     companion object {
         private const val TAG = "RagPromptBuilder"
+
+        /** See [splitSentences]: break only where a capital actually follows. */
+        private val SENTENCE_BREAK = Regex("(?<=[.!?…])\\s+(?=[А-ЯЁA-Z«\"])")
 
         /**
          * Where the pinned probes end and the Xapian tail begins. Shared by the
