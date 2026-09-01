@@ -605,8 +605,10 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     /**
      * Follow-up questions often refer to the previous topic via pronouns
      * («Какой автозавод *там* расположен?»). The ZIM search can't resolve those,
-     * so when the current question is short or pronoun-laden we append the
-     * previous user question's keywords to give the search its missing referent.
+     * so a question that points at the previous topic — or names no topic at all
+     * — gets the previous question's keywords appended to supply the referent.
+     * A question that names its own entity is left alone; borrowing there does
+     * not add a referent, it adds a second unrelated one.
      */
     private fun resolveCoreference(userText: String, previous: List<ChatMessage>): String {
         val lastUser = previous.lastOrNull { it.role == ChatMessage.Role.USER }?.text ?: return userText
@@ -614,10 +616,19 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
             .replace(Regex("[\\p{Punct}«»“”\"]"), " ")
             .split(Regex("\\s+"))
         val hasPronoun = tokens.any { it in PRONOUNS }
-        // Only borrow the previous topic for genuinely context-dependent follow-ups:
-        // a pronoun/locative, or a very short question. Self-contained questions
-        // (like "Перечисли всех мэров города…") must not be polluted.
-        if (userText.length >= 25 && !hasPronoun) return userText
+        // Borrow the previous topic only when this question genuinely lacks one:
+        // it either points at the last one with a pronoun, or names no entity of
+        // its own.
+        //
+        // The old test was "shorter than 25 characters", and length is not the
+        // same thing. On the phase run «что производит АвтоВАЗ» (22 chars, no
+        // pronoun, and about as self-contained as a question gets) was rewritten
+        // to «что производит АвтоВАЗ чем знаменит большое красное пятно» — the
+        // previous question's topic — and the answer came back as «АвтоВАЗ
+        // производит автомобили… Большое кра…». Half the reference set is under
+        // 25 characters («какая столица Японии» is 20), so every one of them was
+        // one turn away from the same corruption.
+        if (!hasPronoun && !QueryExtractor.extractEntity(userText).isNullOrBlank()) return userText
 
         val topic = QueryExtractor.extract(lastUser)
         if (topic.isBlank()) return userText

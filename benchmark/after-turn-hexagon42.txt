@@ -1,0 +1,28 @@
+turns scored: 32  (fast path 15, model 13)
+unmeasured model turns (no native stats): 4 — excluded from every median below
+
+model-path turns: 13, median total 72309 ms
+
+phase                  median ms   share of turn
+------------------------------------------------
+factoid attempt                1            0.0%
+ZIM search                  1746            2.4%
+article reading              470            0.6%
+prefill                     7064            9.8%
+decode                     64162           88.7%
+unattributed               -1134           -1.6%
+
+context: median 4482 chars, median 2409 prompt tokens, median 4 articles
+output:  median 367 tokens, 198 chars
+decode:  5.7 tok/s (median)
+prefill: 341 tok/s (median)
+
+fast path: 15 turns, median 413 ms (factoid lookup 413 ms)
+fast-path miss cost: median 98 ms on 8 model-path turns
+
+slowest turns:
+   330705 ms  [rag    ] ptok=2579  gtok=1600 почему Байкал самое глубокое озеро
+    94182 ms  [rag    ] ptok=2007  gtok=500  когда началась Вторая мировая война
+    93127 ms  [rag    ] ptok=2323  gtok=447  что производит АвтоВАЗ
+    90428 ms  [rag    ] ptok=2066  gtok=485  чем знаменит Большое красное пятно
+    80864 ms  [rag    ] ptok=2085  gtok=410  сравни население Москвы и Санкт-Петербурга

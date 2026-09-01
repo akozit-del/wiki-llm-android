@@ -1,0 +1,28 @@
+turns scored: 32  (fast path 15, model 13)
+unmeasured model turns (no native stats): 4 — excluded from every median below
+
+model-path turns: 13, median total 153140 ms
+
+phase                  median ms   share of turn
+------------------------------------------------
+factoid attempt                0            0.0%
+ZIM search                  1686            1.1%
+article reading              435            0.3%
+prefill                    20890           13.6%
+decode                    132510           86.5%
+unattributed               -2381           -1.6%
+
+context: median 4522 chars, median 5608 prompt tokens, median 4 articles
+output:  median 501 tokens, 607 chars
+decode:  3.8 tok/s (median)
+prefill: 268 tok/s (median)
+
+fast path: 15 turns, median 422 ms (factoid lookup 421 ms)
+fast-path miss cost: median 253 ms on 6 model-path turns
+
+slowest turns:
+   230207 ms  [rag    ] ptok=4994  gtok=839  чем знаменит Большое красное пятно
+   227950 ms  [rag    ] ptok=3554  gtok=1053 почему Юпитер называют газовым гигантом
+   211427 ms  [rag    ] ptok=4652  gtok=798  когда началась Вторая мировая война
+   185435 ms  [rag    ] ptok=4093  gtok=783  из чего состоит атмосфера Марса
+   157318 ms  [rag    ] ptok=4666  gtok=595  что такое фотосинтез
