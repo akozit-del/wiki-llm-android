@@ -558,7 +558,14 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         currentUserText: String,
     ): List<Pair<String, String>> {
         val result = mutableListOf<Pair<String, String>>()
-        for (msg in previous) {
+        // Replay only the last few exchanges. The whole conversation used to go
+        // in, so prefill grew with every turn a session lasted — a 32-question
+        // benchmark run reached "Generating: 61 msgs", and the 32nd question was
+        // paying for the other 31 in a phase measurement meant to be per-turn.
+        // A wiki answer needs the earlier turns for one thing only, resolving
+        // «там»/«его» against what was asked before, and resolveCoreference
+        // already does that by rewriting the question — so the tail is enough.
+        for (msg in previous.takeLast(HISTORY_MESSAGES)) {
             if (msg.text.isNotBlank()) {
                 result += Pair(
                     if (msg.role == ChatMessage.Role.USER) "user" else "assistant",
@@ -916,6 +923,9 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     companion object {
         private const val TAG = "ChatVM"
         private const val KEY_LAST_MODEL = "last_model_path"
+
+        /** How many prior messages [buildHistory] replays — three exchanges. */
+        private const val HISTORY_MESSAGES = 6
         // Sprint 3: dropped from 5. SOTA agentic-RAG papers for ≤8B models
         // (PRISM 2510.14278, Search-o1 EMNLP-2025) converge on a 3-hop ceiling —
         // beyond that, 4B models start paraphrasing the user query instead of

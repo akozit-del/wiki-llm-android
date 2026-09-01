@@ -80,9 +80,20 @@ class RagPromptBuilder(private val searcher: ZimSearcher) {
                 append("Если совсем ничего подходящего нет — скажи «не знаю по приведённым выдержкам». ")
                 append("Отвечай на русском.\n\n")
             } else {
+                // Sprint 31: "собери ВСЕ факты" is the list branch's instruction
+                // and it had leaked into every non-list question. On the phase
+                // baseline «почему Юпитер называют газовым гигантом» came back
+                // as 1053 tokens — 213 s of decode out of a 228 s turn, 93 %.
+                // Decode is the whole cost of a RAG answer and its length is set
+                // right here, not by the model's speed: the same 4.9 tok/s spent
+                // on 150 tokens is a 30 s turn. Ask for the answer, not for a
+                // digest of the excerpts.
                 append("Тебе даны выдержки из Википедии. Отвечай на их основе. ")
-                append("Извлеки и собери ВСЕ относящиеся к вопросу факты из выдержек, даже частичные ")
-                append("(имена, даты, перечни). Если в выдержках совсем нет нужной информации — ")
+                append("Ответь коротко и по существу: 1–3 предложения, только то, ")
+                append("о чём спрашивают. Не пересказывай выдержки, не добавляй ")
+                append("посторонние факты и не нумеруй пункты, если вопрос не про перечень. ")
+                append("Если вопрос требует сравнения двух и более вещей — до 5 предложений. ")
+                append("Если в выдержках совсем нет нужной информации — ")
                 append("скажи «не знаю по приведённым выдержкам». Отвечай на русском языке.\n\n")
             }
             append("=== ВЫДЕРЖКИ ИЗ ВИКИ ===\n")
