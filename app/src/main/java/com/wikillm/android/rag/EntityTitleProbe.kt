@@ -113,6 +113,13 @@ object EntityTitleProbe {
         "перечисли", "перечислите", "назови", "назовите", "список", "спиши",
         "расскажи", "опиши", "напиши", "сравни", "сравните", "дай", "покажи",
         "все", "всех", "весь", "вся", "всё", "нынешнего", "нынешний",
+        // The superlative paradigm. «почему Байкал самое глубокое озеро» spent
+        // two of its four excerpt slots on «Само» and «Самоа» — both invented
+        // nominatives of «самое», both real articles, neither about anything the
+        // question asks. An intensifier is never an entity, so it never starts
+        // or ends a title.
+        "самый", "самая", "самое", "самые", "самом", "самой", "самого", "самых",
+        "более", "менее", "очень",
     )
 
     /** One title guess plus how good a guess it is. */
@@ -129,18 +136,26 @@ object EntityTitleProbe {
 
         val out = ArrayList<ZimSearcher.Hit>(limit)
         val seenPaths = HashSet<String>()
+        val acceptedStems = HashSet<String>()
+        val dropped = ArrayList<String>()
         var lookups = 0
         for (c in candidates) {
             if (out.size >= limit || lookups >= MAX_LOOKUPS) break
             lookups++
             val hit = searcher.lookupTitleExact(c.title) ?: continue
             if (hit.path.isBlank() || !seenPaths.add(hit.path)) continue
+            if (isRedundant(hit.title, acceptedStems)) {
+                dropped += hit.title
+                continue
+            }
+            acceptedStems += stems(hit.title)
             val itself = hit.title.equals(c.title, ignoreCase = true)
             out += hit.copy(score = c.score + if (itself) TITLE_IDENTITY_BONUS else 0)
         }
         if (out.isNotEmpty()) {
             DiagLog.i(TAG, "Title probes ($lookups lookups): " +
-                out.joinToString { "${it.title}(${it.score})" })
+                out.joinToString { "${it.title}(${it.score})" } +
+                if (dropped.isEmpty()) "" else " | redundant: ${dropped.joinToString()}")
         }
         // Probing runs in candidate order, which is score order only until the
         // identity bonus fires; re-sorting keeps "most specific first" true for
@@ -148,6 +163,47 @@ object EntityTitleProbe {
         // in order and answers from the first card that carries the field).
         return breakTopTie(out.sortedByDescending { it.score }, searcher)
     }
+
+    /**
+     * True when [title] is a one-word article whose word a better-scoring probe
+     * hit already carried — «Гигант» after «Газовые гиганты», «Атмосфера» after
+     * «Атмосфера Марса», «Вторая» and «Война» after «Вторая мировая война».
+     *
+     * The probe guesses wide because a wrong guess finds no entry (see the class
+     * comment), and that holds for invented word *forms*. It does not hold for
+     * bare common words: ru.wiki has an article for very nearly every one of
+     * them, so a fragment of the question always resolves, always pins at ~1000,
+     * and always takes an excerpt slot. The 2026-09-07 full pass spent 36% of
+     * the excerpt (20 278 of 56 502 chars, 19 of 49 articles) this way.
+     *
+     * Redundancy, not relevance, is the test: the word is already represented by
+     * a more specific article the same question produced, so the one-word
+     * homograph can only add noise. Deliberately limited to single-stem titles —
+     * a two-word title that is a subset of a longer one is a different article,
+     * not a fragment, and dropping those would delete the reference answer for
+     * pr02 («Марс» under «Атмосфера Марса») and ls02 («Солнечная система» under
+     * «Планеты Солнечной системы»).
+     */
+    private fun isRedundant(title: String, acceptedStems: Set<String>): Boolean {
+        val s = stems(title)
+        return s.size == 1 && s.first() in acceptedStems
+    }
+
+    /**
+     * Crude stems of [title]'s words, enough to see «Марса» and «Марс», or
+     * «Солнечной» and «Солнечная», as the same word.
+     *
+     * Trailing vowels and the soft sign carry Russian inflection, and stripping
+     * them is all this comparison needs: it only ever runs between titles drawn
+     * from one question, so the over-stemming a real analyser would avoid has no
+     * unrelated vocabulary to collide with.
+     */
+    private fun stems(title: String): Set<String> =
+        title.lowercase()
+            .split(Regex("[^\\p{L}\\p{Nd}]+"))
+            .map { it.trimEnd('а', 'я', 'ы', 'и', 'о', 'е', 'ь', 'й', 'у', 'ю', 'ъ') }
+            .filter { it.length >= 3 }
+            .toSet()
 
     /**
      * Nudge the most prominent article to the front when the whole ranking above
