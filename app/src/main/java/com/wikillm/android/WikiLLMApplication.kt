@@ -3,6 +3,7 @@ package com.wikillm.android
 import android.app.Application
 import com.getkeepsafe.relinker.ReLinker
 import com.wikillm.android.diag.DiagLog
+import com.wikillm.android.diag.TurnDump
 import com.wikillm.android.ui.theme.ThemePrefs
 
 /**
@@ -25,6 +26,7 @@ class WikiLLMApplication : Application() {
         super.onCreate()
         DiagLog.attach(this)
         DiagLog.installCrashHandler()
+        TurnDump.attach(this)
         ThemePrefs.init(this)
         setupHexagonEnv()
         loadKiwixNatives()

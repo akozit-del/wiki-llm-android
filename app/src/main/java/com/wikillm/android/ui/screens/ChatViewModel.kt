@@ -17,6 +17,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import com.wikillm.android.diag.DiagLog
+import com.wikillm.android.diag.TurnDump
 import com.wikillm.android.rag.FactoidAnswerer
 import com.wikillm.android.rag.ListExtractor
 import com.wikillm.android.rag.QueryExtractor
@@ -408,6 +409,12 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                     val history = buildHistory(previousMessages, userText.trim())
                     val sysPrompt = genSettings.effectiveSystemPrompt()
                     DiagLog.i(TAG, "Generating: ${history.size} msgs, maxTokens=$maxTokens, temp=$temp, noThink=$noThink")
+                    // Verbatim copy of the model input, off in its own file — see
+                    // TurnDump. Dumped here rather than where the RAG string is
+                    // built because that string is only part of what the model
+                    // sees; the system prompt and the replayed history are the
+                    // rest, and both have already hidden defects this month.
+                    TurnDump.prompt(userText.trim(), sysPrompt, history)
                     llmRepo.generateChat(
                         history, maxTokens = maxTokens,
                         systemPrompt = sysPrompt, temperature = temp, noThink = noThink,
@@ -473,6 +480,13 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                     ", think ${finalSplit.thinking.length} chars" else ""
                 DiagLog.i(TAG, "Reply (${finalText.length} chars, ${finalStats.genTokens} tok, " +
                         "${finalStats.elapsedMs}ms$perf$think): ${finalText.take(200).replace('\n', ' ')}")
+                // The full reply next to the prompt that produced it: garbage
+                // tends to start well past the 200 chars diag.log keeps, so the
+                // truncated line cannot show where the answer turns.
+                TurnDump.reply(
+                    finalSplit.thinking.let { if (it.isEmpty()) finalText else "<think>$it</think>\n$finalText" },
+                    "q=${userText.trim().replace('\n', ' ')} ${finalStats.genTokens}tok ${finalStats.elapsedMs}ms",
+                )
                 val path = when {
                     listExtraction -> "list"
                     agentic -> "agentic"
