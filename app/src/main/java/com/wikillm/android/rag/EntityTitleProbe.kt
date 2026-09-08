@@ -134,40 +134,37 @@ object EntityTitleProbe {
         val candidates = candidates(question)
         if (candidates.isEmpty()) return emptyList()
 
-        val out = ArrayList<ZimSearcher.Hit>(limit)
+        // Collect past [limit]: dropRedundant below removes hits, and stopping
+        // at [limit] first would hand the caller a short list whose tail was
+        // spent on fragments.
+        val collectCap = limit * 2
+        val out = ArrayList<ZimSearcher.Hit>(collectCap)
         val seenPaths = HashSet<String>()
-        val acceptedStems = HashSet<String>()
-        val dropped = ArrayList<String>()
         var lookups = 0
         for (c in candidates) {
-            if (out.size >= limit || lookups >= MAX_LOOKUPS) break
+            if (out.size >= collectCap || lookups >= MAX_LOOKUPS) break
             lookups++
             val hit = searcher.lookupTitleExact(c.title) ?: continue
             if (hit.path.isBlank() || !seenPaths.add(hit.path)) continue
-            if (isRedundant(hit.title, acceptedStems)) {
-                dropped += hit.title
-                continue
-            }
-            acceptedStems += stems(hit.title)
             val itself = hit.title.equals(c.title, ignoreCase = true)
             out += hit.copy(score = c.score + if (itself) TITLE_IDENTITY_BONUS else 0)
         }
         if (out.isNotEmpty()) {
             DiagLog.i(TAG, "Title probes ($lookups lookups): " +
-                out.joinToString { "${it.title}(${it.score})" } +
-                if (dropped.isEmpty()) "" else " | redundant: ${dropped.joinToString()}")
+                out.joinToString { "${it.title}(${it.score})" })
         }
         // Probing runs in candidate order, which is score order only until the
         // identity bonus fires; re-sorting keeps "most specific first" true for
         // callers that do not sort themselves (FactoidAnswerer reads this list
         // in order and answers from the first card that carries the field).
-        return breakTopTie(out.sortedByDescending { it.score }, searcher)
+        val ordered = breakTopTie(out.sortedByDescending { it.score }, searcher)
+        return dropRedundant(ordered).take(limit)
     }
 
     /**
-     * True when [title] is a one-word article whose word a better-scoring probe
-     * hit already carried — «Гигант» after «Газовые гиганты», «Атмосфера» after
-     * «Атмосфера Марса», «Вторая» and «Война» after «Вторая мировая война».
+     * Drop every one-word article whose word a better-ranked hit already
+     * carried — «Гигант» under «Газовые гиганты», «Атмосфера» under «Атмосфера
+     * Марса», «Вторая» and «Война» under «Вторая мировая война».
      *
      * The probe guesses wide because a wrong guess finds no entry (see the class
      * comment), and that holds for invented word *forms*. It does not hold for
@@ -181,12 +178,32 @@ object EntityTitleProbe {
      * homograph can only add noise. Deliberately limited to single-stem titles —
      * a two-word title that is a subset of a longer one is a different article,
      * not a fragment, and dropping those would delete the reference answer for
-     * pr02 («Марс» under «Атмосфера Марса») and ls02 («Солнечная система» under
-     * «Планеты Солнечной системы»).
+     * ls02 («Солнечная система» under «Планеты Солнечной системы»).
+     *
+     * **Runs on the finished ranking, never during collection.** Two titles that
+     * share the single stem are exactly the case [TITLE_IDENTITY_BONUS] and
+     * [PROMINENCE_BONUS] exist to order, and both are applied after the lookup
+     * loop. Filtering inside that loop measured recall@1 91% → 84% (build-46):
+     * lookup order put the Maltese town «Марса» ahead of the planet «Марс» and
+     * the redirect «Океаны»→«Мировой океан» ahead of «Океан», so each reference
+     * article was dropped as a duplicate of the homograph that would have lost
+     * the tie a moment later. Keep this after [breakTopTie].
      */
-    private fun isRedundant(title: String, acceptedStems: Set<String>): Boolean {
-        val s = stems(title)
-        return s.size == 1 && s.first() in acceptedStems
+    private fun dropRedundant(hits: List<ZimSearcher.Hit>): List<ZimSearcher.Hit> {
+        val kept = ArrayList<ZimSearcher.Hit>(hits.size)
+        val seenStems = HashSet<String>()
+        val dropped = ArrayList<String>()
+        for (hit in hits) {
+            val s = stems(hit.title)
+            if (s.size == 1 && s.first() in seenStems) {
+                dropped += hit.title
+                continue
+            }
+            seenStems += s
+            kept += hit
+        }
+        if (dropped.isNotEmpty()) DiagLog.i(TAG, "Redundant probes: ${dropped.joinToString()}")
+        return kept
     }
 
     /**
