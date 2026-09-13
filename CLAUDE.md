@@ -132,12 +132,20 @@ Devices: S23 `R5CW12RVLKZ`, S26 `R5GL21SQX6Z`.
 infobox field**, not the answer value: values depend on the ZIM snapshot, and
 seeding them from our own output would make the benchmark circular.
 
-`benchmark/LATEST.md` — digest of the scheduled runs, newest first. **Read this
+`benchmark/LATEST.md` — digest of benchmark runs, newest first. **Read this
 first**; it carries current numbers and open issues.
 
-Two scheduled tasks (11:37 and 02:47 daily) each spend half an hour on one
-improvement and report to Notion plus `LATEST.md`. Their prompts live in
-`~/.claude/scheduled-tasks/`.
+The daily improvement tasks (11:37 and 02:47) were cancelled on 2026-09-13.
+What runs now is one weekly review, Sundays 11:00: what changed in small
+open models, the Hexagon backend and ZIM data over the past week, and
+whether anything in this system should change because of it. It writes to
+`docs/weekly-review.md` (newest first) and, when the workspace allows, a
+Notion page. It reviews and recommends; it does not touch code. Prompt in
+`~/.claude/scheduled-tasks/wiki-llm-weekly-review/`.
+
+Where results are finalized: `benchmark/LATEST.md` for measurements,
+`docs/weekly-review.md` for the weekly landscape review, and Notion sprint
+pages under «⚡ Wiki-LLM: скорость локального инференса» for full reports.
 
 Metrics that matter: recall@k, fast-path hit rate, false-fast-rate, latency by
 phase. Note that recall@1 swings ~3 points between runs of the same build, so
