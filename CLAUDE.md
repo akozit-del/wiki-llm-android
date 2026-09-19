@@ -151,7 +151,15 @@ Notion page. It reviews and recommends; it does not touch code. Prompt in
 
 Where results are finalized: `benchmark/LATEST.md` for measurements,
 `docs/weekly-review.md` for the weekly landscape review, and Notion sprint
-pages under «⚡ Wiki-LLM: скорость локального инференса» for full reports.
+pages under «⚡ Wiki-LLM: скорость локального инференса» for full reports
+(Notion is out of free blocks since 2026-09-08 — page creation fails; try
+once, don't retry).
+
+**The user reads everything from Google Drive**, not from the repo:
+`~/Library/CloudStorage/GoogleDrive-akozit@gmail.com/Мой диск/AI/LLM wiki/`.
+It is a mirror written by `benchmark/publish_drive.sh` — run it after every
+commit that touches LATEST.md, docs/, CLAUDE.md or benchmark results. The git
+working tree stays in `~/Projects`; never move `.git` into the Drive folder.
 
 Metrics that matter: recall@k, fast-path hit rate, false-fast-rate, latency by
 phase. Note that recall@1 swings ~3 points between runs of the same build, so
