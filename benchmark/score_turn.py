@@ -143,10 +143,16 @@ def main() -> int:
             v = med(slow, key)
             print(f"{label:<22}{v:>10.0f}{pct(v, m_total):>16}")
         # Whatever the phases don't explain: UI, tokenisation, model warm-up.
-        explained = sum(med(slow, k) for k in
-                        ("factoid", "search", "read", "prefill", "decode"))
-        print(f"{'unattributed':<22}{m_total - explained:>10.0f}"
-              f"{pct(m_total - explained, m_total):>16}")
+        # Computed PER TURN and then reduced, not as median(total) minus the
+        # sum of phase medians: those medians come from different turns, and
+        # their difference is not a quantity any turn ever had. On the b10920
+        # bump it printed 3201 ms and looked like a 2-second backend regression;
+        # the per-turn figure was 61 ms against 46 before.
+        for r in slow:
+            r["unattributed"] = r["total"] - sum(
+                r[k] for k in ("factoid", "search", "read", "prefill", "decode"))
+        v = med(slow, "unattributed")
+        print(f"{'unattributed':<22}{v:>10.0f}{pct(v, m_total):>16}")
         print()
         print(f"context: median {med(slow, 'ctx'):.0f} chars, "
               f"median {med(slow, 'ptok'):.0f} prompt tokens, "
