@@ -478,8 +478,12 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                 else ""
                 val think = if (finalSplit.thinking.isNotEmpty())
                     ", think ${finalSplit.thinking.length} chars" else ""
+                // One log line per reply, whatever the model emitted: a garbage
+                // answer once carried a bare '\r', every per-line parser of
+                // diag.log split the Reply there, and score_garbage.py scored a
+                // 111-second junk answer as clean on its first five characters.
                 DiagLog.i(TAG, "Reply (${finalText.length} chars, ${finalStats.genTokens} tok, " +
-                        "${finalStats.elapsedMs}ms$perf$think): ${finalText.take(200).replace('\n', ' ')}")
+                        "${finalStats.elapsedMs}ms$perf$think): ${finalText.take(200).replace(LINE_BREAKS, " ")}")
                 // The full reply next to the prompt that produced it: garbage
                 // tends to start well past the 200 chars diag.log keeps, so the
                 // truncated line cannot show where the answer turns.
@@ -965,6 +969,9 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
 
         /** How many prior messages [buildHistory] replays — three exchanges. */
         private const val HISTORY_MESSAGES = 6
+
+        /** Every line/paragraph separator, not just '\n' — see the Reply log line. */
+        private val LINE_BREAKS = Regex("[\\r\\n\\u2028\\u2029\\u0085]")
         // Sprint 3: dropped from 5. SOTA agentic-RAG papers for ≤8B models
         // (PRISM 2510.14278, Search-o1 EMNLP-2025) converge on a 3-hop ceiling —
         // beyond that, 4B models start paraphrasing the user query instead of

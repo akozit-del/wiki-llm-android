@@ -58,7 +58,12 @@ def main() -> int:
     question = None
     total = 0
     bad = []
-    with open(args.log, encoding="utf-8", errors="replace") as fh:
+    # newline="\n": a garbage answer can carry a bare "\r" (the 2026-09-19
+    # baseline had «<>();\r愤卷.negative…», 1999 chars), and Python's default
+    # universal-newline reading splits the Reply line there. The scorer then saw
+    # a five-character body, called it clean, and reported 0/13 on a run with a
+    # 111-second junk answer in it. Only "\n" ends a diag.log line.
+    with open(args.log, encoding="utf-8", errors="replace", newline="\n") as fh:
         for line in fh:
             m = BEGIN.search(line)
             if m:
@@ -73,6 +78,11 @@ def main() -> int:
             share = cyr / letters if letters else 1.0
             if letters >= MIN_LETTERS and share < args.floor:
                 bad.append((question, tok, ms, share, text[:90]))
+            elif chars >= 200 and len(text) < chars // 4:
+                # The header says the answer was long but the line holds a
+                # fraction of it: something cut the body and the ratio above
+                # was computed on the wrong text. Never count that as clean.
+                bad.append((question, tok, ms, share, f"[body truncated: {len(text)} of {chars} chars] {text[:60]}"))
             question = None
 
     if not total:
