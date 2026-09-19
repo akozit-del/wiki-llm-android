@@ -27,6 +27,10 @@ jobs:
 
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
+        with:
+          # See hexagon-app.yml: the default "tools platform-tools" requests a
+          # package Google removed in September 2026, and sdkmanager fails on it.
+          packages: platform-tools
 
       - name: Install NDK and CMake
         shell: bash

@@ -1,0 +1,26 @@
+turns scored: 13  (fast path 0, model 13)
+
+model-path turns: 13, median total 18452 ms
+
+phase                  median ms   share of turn
+------------------------------------------------
+factoid attempt                0            0.0%
+ZIM search                  1240            6.7%
+article reading              311            1.7%
+prefill                     6385           34.6%
+decode                      9532           51.7%
+unattributed                 984            5.3%
+
+context: median 4544 chars, median 2396 prompt tokens, median 4 articles
+output:  median 61 tokens, 164 chars
+decode:  6.4 tok/s (median)
+prefill: 375 tok/s (median)
+
+fast-path miss cost: median 186 ms on 6 model-path turns
+
+slowest turns:
+   111357 ms  [rag    ] ptok=2625  gtok=598  что производит АвтоВАЗ
+    37529 ms  [rag    ] ptok=2324  gtok=196  что такое фотосинтез
+    29019 ms  [rag    ] ptok=2710  gtok=118  почему Байкал самое глубокое озеро
+    23326 ms  [rag    ] ptok=3285  gtok=61   какой автозавод расположен в Тольятти
+    19671 ms  [rag    ] ptok=2171  gtok=56   почему Юпитер называют газовым гигантом
