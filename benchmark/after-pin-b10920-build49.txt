@@ -1,0 +1,26 @@
+turns scored: 13  (fast path 0, model 13)
+
+model-path turns: 13, median total 21493 ms
+
+phase                  median ms   share of turn
+------------------------------------------------
+factoid attempt                1            0.0%
+ZIM search                  1673            7.8%
+article reading              484            2.3%
+prefill                     7750           36.1%
+decode                      8384           39.0%
+unattributed                  61            0.3%
+
+context: median 4544 chars, median 2703 prompt tokens, median 4 articles
+output:  median 50 tokens, 100 chars
+decode:  6.0 tok/s (median)
+prefill: 349 tok/s (median)
+
+fast-path miss cost: median 111 ms on 8 model-path turns
+
+slowest turns:
+   261850 ms  [rag    ] ptok=2828  gtok=1315 что такое фотосинтез
+    93403 ms  [rag    ] ptok=2171  gtok=521  почему Юпитер называют газовым гигантом
+    28368 ms  [rag    ] ptok=2419  gtok=117  как связаны Менделеев и периодическая таблица
+    26399 ms  [rag    ] ptok=2818  gtok=96   из чего состоит атмосфера Марса
+    22885 ms  [rag    ] ptok=3500  gtok=55   чем знаменит Большое красное пятно

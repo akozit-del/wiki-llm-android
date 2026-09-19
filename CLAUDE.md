@@ -83,11 +83,17 @@ Devices: S23 `R5CW12RVLKZ`, S26 `R5GL21SQX6Z`.
 
 ## Hexagon constraints — learned the hard way, don't rediscover
 
-- **Q4_0 only.** k-quants (`Q4_K_M` etc.) fall off the NPU onto the CPU: measured
-  0.4 tok/s versus ~8 for the same model in Q4_0.
+- **Native Q4_0 only.** On our pin k-quants (`Q4_K_M` etc.) fall off the NPU onto
+  the CPU: measured 0.4 tok/s versus ~8 for the same model in Q4_0. Upstream
+  added Q4_K/Q6_K to the backend on 2026-09-16 (#28994), but it *repacks* them
+  to Q4_0 on the DSP — same speed, worse quality than a GGUF quantized to Q4_0
+  directly. So the rule survives a pin bump; only the failure mode changes.
 - **Dense transformers only.** Qwen2.5/Qwen3 and Llama work. Hybrid SSM/DeltaNet
-  (Qwen3.5) is ~2× slower — no delta-net kernel, those layers go to CPU. Phi-4's
-  scaled rotary aborts the backend outright (`ggml_abort` in `flush_pending`).
+  (Qwen3.5) measured ~2× slower. The "no delta-net kernel" explanation is stale:
+  `ggml-hexagon` handles `GGML_OP_GATED_DELTA_NET` and `SSM_CONV` already on our
+  pin, so the 2× is either an old measurement or a slow kernel — re-measure
+  before ruling Qwen3.5 out again. Phi-4's scaled rotary aborts the backend
+  outright (`ggml_abort` in `flush_pending`).
 - **≤4B parameters.** 7B/8B fail at load: the KV cache exceeds what the DSP will
   allocate (`HTP0 buffer mapping failed`).
 - **KV cache must stay F16.** Quantized K/V is rejected by `set_rows`,
@@ -154,8 +160,21 @@ smaller differences are noise.
 ## Current state
 
 Retrieval and the fast path are in good shape (recall@3 97%, infobox fast path
-93-100%, zero wrong-article fast answers). Decode is now the dominant cost of a
-full RAG turn — about 90% of wall time.
+93-100%, zero wrong-article fast answers). A model-path turn (S23, QVikhr-3-4B,
+thinking off) is ~18 s median: prefill ~35%, decode ~50%, retrieval ~8%
+(2026-09-19, `benchmark/before-pin-b10920-build47.txt`). Decode was 90% until
+the 2026-09-01 prompt/history/thinking changes cut it 4.5×.
+
+Open defect: ~1 model answer in 10 is garbage — random tokens across scripts,
+often to the 1600-token cap. Tied to a few questions (АвтоВАЗ, Байкал, БКП,
+now also Юпитер/фотосинтез), not to MTP, not to the sampler, not to context
+size. `score_garbage.py` counts it; `turns.log` (TurnDump) holds the exact
+prompt. Reproduce from a *sequence* of turns, not a single question.
+
+llama.cpp pin: b10920 (`eafe15a5`) builds green with unmodified `llm_jni.cpp`
+(run 35430043900) and loads on S23, but one 13-turn pass measured −6% decode,
+−7% prefill and 2/13 garbage vs 1/13 — within noise, unconfirmed. Not shipped;
+a second pass decides.
 
 `recall@1` was 52% until 2026-08-27 and is now 91%: the probe's ordering was
 being lost to `distinctBy { it.path }`, which keeps the *first* copy of a path,
