@@ -53,11 +53,13 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("log")
     ap.add_argument("--floor", type=float, default=CYRILLIC_FLOOR)
+    ap.add_argument("--turns", type=int, default=None,
+                    help="score only the last N replies — diag.log is a ring "
+                         "buffer and carries the previous runs' answers too")
     args = ap.parse_args()
 
     question = None
-    total = 0
-    bad = []
+    replies = []  # (question, chars, tok, ms, text) in file order
     # newline="\n": a garbage answer can carry a bare "\r" (the 2026-09-19
     # baseline had «<>();\r愤卷.negative…», 1999 chars), and Python's default
     # universal-newline reading splits the Reply line there. The scorer then saw
@@ -73,17 +75,26 @@ def main() -> int:
             if not m:
                 continue
             chars, tok, ms, text = int(m.group(1)), int(m.group(2)), int(m.group(3)), m.group(4)
-            total += 1
-            cyr, letters = script_mix(text)
-            share = cyr / letters if letters else 1.0
-            if letters >= MIN_LETTERS and share < args.floor:
-                bad.append((question, tok, ms, share, text[:90]))
-            elif chars >= 200 and len(text) < chars // 4:
-                # The header says the answer was long but the line holds a
-                # fraction of it: something cut the body and the ratio above
-                # was computed on the wrong text. Never count that as clean.
-                bad.append((question, tok, ms, share, f"[body truncated: {len(text)} of {chars} chars] {text[:60]}"))
+            replies.append((question, chars, tok, ms, text))
             question = None
+
+    if args.turns:
+        replies = replies[-args.turns:]
+    total = len(replies)
+    bad = []
+    for question, chars, tok, ms, text in replies:
+        cyr, letters = script_mix(text)
+        share = cyr / letters if letters else 1.0
+        if letters >= MIN_LETTERS and share < args.floor:
+            bad.append((question, tok, ms, share, text[:90]))
+        elif len(text) < min(chars, 200) // 2:
+            # The Reply line keeps at most 200 chars of the answer by design,
+            # so compare against what it *should* hold, not the full answer
+            # length — the first version of this check flagged every long
+            # clean answer. When the line holds less than half of that,
+            # something cut the body and the ratio above was computed on the
+            # wrong text. Never count that as clean.
+            bad.append((question, tok, ms, share, f"[body truncated: {len(text)} of {chars} chars] {text[:60]}"))
 
     if not total:
         print("no `Reply (...)` lines in this log — wrong file, or no model turn ran")
