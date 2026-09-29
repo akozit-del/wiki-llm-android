@@ -9,6 +9,91 @@
 
 ---
 
+## Неделя до 2026-09-29 (обзор 27-го не запустился — Mac спал; собран 29-го интерактивно)
+
+Модели — снова пусто. Рантайм — за неделю Hexagon-бэкенд закрыл **все три
+причины**, по которым Qwen3.5-4B был у нас «в 2 раза медленнее». Это меняет
+ответ на вопрос «какую модель гонять», а не проценты.
+
+### Что вышло
+
+| Что | Размер / тип | Дата | На телефон? | Почему |
+|---|---|---|---|---|
+| Ничего нового ≤4B открытого | — | 09-21…09-29 | — | Ни одного релиза весов в классе; русскоязычных — тоже |
+| Qwen 4 27B — **анонс**, не релиз (Apsara) | 27B | 09-22 | нет | Веса не опубликованы, даты нет; и 27B не наш размер |
+| Claude Opus 5.5 / Sonnet 5.5, GPT-6 Luna/Sol, Grok 4.7, MiMo V2.6 | закрытые | 09-21…09-28 | нет | — |
+
+### Рантайм и данные
+
+llama.cpp, `ggml/src/ggml-hexagon`, 12 коммитов за неделю. По значимости для нас:
+
+- [#29199](https://github.com/ggml-org/llama.cpp/pull/29199) `58367713`, 09-21 —
+  **HMX-ядро GATED_DELTA_NET.** Qwen3.5-4B Q4_0 на Galaxy S26: prefill
+  **615 → 1113 tok/s (1.8×)**, генерация без изменений. Тестировано на S26/S25/S24,
+  IQ9, X2 Elite; про v73 (S23) отдельно не сказано — HMX у S23 есть (`hmx 1` в
+  нашем логе загрузки), так что должно применяться, но не проверено.
+- [#29123](https://github.com/ggml-org/llama.cpp/pull/29123) `4de09265`, 09-25 —
+  **нативный Q5_K на HTP** (не перепаковка). Повод — в `unsloth/Qwen3.5-4B` «Q4_0»
+  тензор `ssm_out` лежит в Q5_K и уезжал на CPU. Замер автора на Qwen3.5-4B:
+  **212 / 11.2 → 375.9 / 12.2 tok/s** (pp / tg).
+- [#28906](https://github.com/ggml-org/llama.cpp/pull/28906) 09-15, уже в прошлом
+  обзоре — DMA-копии: **+30 % генерации на том же Qwen3.5-4B, 13.47 t/s на v81.**
+- [#29197](https://github.com/ggml-org/llama.cpp/pull/29197) `0c3626ec`, 09-21 —
+  64-битные маппинги буферов, **только v81+** (S26 — да, S23 — нет). Снимает
+  map/unmap на каждом проходе для больших моделей (gemma-4-26B, gpt-oss-20b);
+  для Gemma 4 E4B (4.6 ГБ Q4_0) на S26 — прямо в тему. Отключается
+  `GGML_HEXAGON_DMA64=0`.
+- [#29502](https://github.com/ggml-org/llama.cpp/pull/29502) `2b129ccf`, 09-27 —
+  сэмплинг на NPU (ARGMAX/ARGSORT/TOP_K). **Автор сам пишет: заметного прироста
+  нет**, это энергия и разгрузка CPU. Не наш рычаг.
+- [#29395](https://github.com/ggml-org/llama.cpp/pull/29395) 09-24 — динамический
+  квантизатор активаций: шкала на 32 значения вместо 128 — точность prefill,
+  чисел нет. [#29282](https://github.com/ggml-org/llama.cpp/pull/29282),
+  [#29404](https://github.com/ggml-org/llama.cpp/pull/29404),
+  [#29511](https://github.com/ggml-org/llama.cpp/pull/29511) — DMA-кэш для маски FA,
+  DMA для CONCAT, tiled GET_ROWS — мелкие ускорения по пути.
+- Ядро llama.cpp: [#24669](https://github.com/ggml-org/llama.cpp/pull/24669) 09-24
+  — **`llama_batch_ext`**, новый API батчей. Наш `llm_jni.cpp` живёт на
+  `llama_batch_get_one`; при бампе проверить, не помечен ли он deprecated.
+  [#24364](https://github.com/ggml-org/llama.cpp/pull/24364) W4A4 — только CUDA/Blackwell, мимо.
+
+Данные: новых русских ZIM нет (проверено 09-20, за неделю релизов kiwix не было).
+
+### Стоит ли что-то менять у нас
+
+**Да, и это смена модели, а не настройка: Qwen3.5-4B Q4_0 на мастере ≥ 09-27.**
+До этой недели наше «Qwen3.5 в 2× медленнее» держалось на трёх дефектах
+бэкенда, и все три закрыты: копии не через DMA (09-15), DeltaNet без HMX (09-21),
+`ssm_out` на CPU (09-25). Числа апстрима на S26: **~12–13.5 t/s генерация,
+~1100 t/s prefill** — против наших 6.0–6.4 и 350–375 на S23 с QVikhr-3-4B
+(разные телефоны, так что сравнивать надо на одном; но именно поэтому мерить
+на S26). Цена: бамп пина на одну строку, `unsloth/Qwen3.5-4B-GGUF` Q4_0, один
+прогон. Риск номер один — **русский**: QVikhr дообучен на русском, Qwen3.5 —
+нет; смотреть ответы глазами на всех 32 вопросах, не только tok/s. Риск два —
+`llama_batch_ext` при сборке.
+
+**Вторым — Gemma 4 E4B + MTP, той же сборкой, на S26:** #29197 убирает
+map/unmap как раз для её 4.6 ГБ, `ggml-org/gemma-4-E4B-it-GGUF` даёт Q4_0 и
+MTP-голову, наш MTP-путь написан.
+
+Не делать: сэмплинг на NPU (автор: прироста нет), W4A4 (CUDA), ждать Qwen 4.
+
+**Что апстрим не чинит:** наш главный дефект качества — ~1 ответ из 10 мусор —
+остаётся нашим. Смена модели может его случайно убрать или усугубить; это
+второй критерий прогона после скорости.
+
+### Что из прошлых рекомендаций сделано
+
+Ничего: спринта на неделе 21–27 не было. Второй проход по b10920 и Gemma 4 E4B
+на S26 — по-прежнему в очереди, и теперь обе рекомендации сливаются в одну
+сборку с мастером ≥ 09-27.
+
+### Источники
+
+- [ggml-org/llama.cpp — коммиты ggml-hexagon](https://github.com/ggml-org/llama.cpp/commits/master/ggml/src/ggml-hexagon)
+- PR: [#29199](https://github.com/ggml-org/llama.cpp/pull/29199), [#29123](https://github.com/ggml-org/llama.cpp/pull/29123), [#28906](https://github.com/ggml-org/llama.cpp/pull/28906), [#29197](https://github.com/ggml-org/llama.cpp/pull/29197), [#29502](https://github.com/ggml-org/llama.cpp/pull/29502), [#29395](https://github.com/ggml-org/llama.cpp/pull/29395), [#24669](https://github.com/ggml-org/llama.cpp/pull/24669), [#24364](https://github.com/ggml-org/llama.cpp/pull/24364)
+- Модели: [Qwen 4 — анонс на Apsara](https://www.versely.studio/blog/qwen-4-announced-at-apsara-2026), [llmgateway timeline](https://llmgateway.io/timeline), [unsloth/Qwen3.5-4B-GGUF](https://huggingface.co/unsloth/Qwen3.5-4B-GGUF), [ggml-org/gemma-4-E4B-it-GGUF](https://huggingface.co/ggml-org/gemma-4-E4B-it-GGUF)
+
 ## Неделя до 2026-09-20
 
 Первая запись в этом файле: недельный обзор введён 2026-09-13 вместо двух
