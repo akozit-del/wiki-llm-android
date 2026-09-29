@@ -191,8 +191,17 @@ by the draft work-queue fix #29606; DMA-copy #28906 was cleared. Mechanism
 unknown; batch #1 of a 1024-token prefill (layers 0–12, 205 ops) completes and
 the DSP dies within 1 ms of batch #2 starting (`ffn_up` q4_0 MUL_MAT, M=1024).
 Bisect logs: `benchmark/LATEST.md` 2026-09-29. The pin stays at `d222767c`.
-v81 (S26) is untested — everything after 09-16 (HMX DeltaNet, Q5_K, 64-bit
-DMA) may well work there.
+
+**On v81 (S26) the same master runs, and it is the whole point:** Qwen3.5-4B
+goes from 49.9 s / 2.2 tok/s / 241 pp (our pin) to **10.9 s / 12.5 tok/s /
+836 pp** — 4.6× per turn — and QVikhr decode 9.9 → 13.2 tok/s (13 turns each,
+cool phone, 0/13 garbage on every S26 run). So the two devices now want two
+pins: S23 stays on `d222767c` until upstream fixes v73, S26 runs a master
+artifact (`gh workflow run hexagon-app.yml -f llama_ref=<master sha>`).
+S26 was left on that master build (2026-09-29 evening). The S26 ZIM is a copy
+in `Android/data/<pkg>/files/zim/` (SAF folder pick cannot be driven from
+adb); Google Play Protect stalls `adb install` on S26 with a "scan this app?"
+dialog until answered on screen.
 
 The newest commit that runs on S23 is `82324fc5` (2026-09-16). Measured there
 (13 model turns, phone at 48 °C after 5 h of runs — numbers are throttled):

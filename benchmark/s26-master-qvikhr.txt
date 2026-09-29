@@ -1,0 +1,26 @@
+turns scored: 13  (fast path 0, model 13)
+
+model-path turns: 13, median total 8774 ms
+
+phase                  median ms   share of turn
+------------------------------------------------
+factoid attempt                0            0.0%
+ZIM search                  1424           16.2%
+article reading              287            3.3%
+prefill                     2401           27.4%
+decode                      4932           56.2%
+unattributed                  34            0.4%
+
+context: median 4544 chars, median 2445 prompt tokens, median 4 articles
+output:  median 65 tokens, 166 chars
+decode:  13.2 tok/s (median)
+prefill: 1018 tok/s (median)
+
+fast-path miss cost: median 221 ms on 6 model-path turns
+
+slowest turns:
+    13530 ms  [rag    ] ptok=2710  gtok=117  почему Байкал самое глубокое озеро
+    13280 ms  [rag    ] ptok=2171  gtok=138  почему Юпитер называют газовым гигантом
+    11669 ms  [rag    ] ptok=2156  gtok=68   когда началась Вторая мировая война
+    10206 ms  [rag    ] ptok=2477  gtok=76   как связаны Менделеев и периодическая таблица
+    10038 ms  [rag    ] ptok=2088  gtok=60   сравни население Москвы и Санкт-Петербурга

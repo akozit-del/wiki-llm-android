@@ -1,0 +1,26 @@
+turns scored: 13  (fast path 0, model 13)
+
+model-path turns: 13, median total 49871 ms
+
+phase                  median ms   share of turn
+------------------------------------------------
+factoid attempt                1            0.0%
+ZIM search                  1156            2.3%
+article reading              239            0.5%
+prefill                     8307           16.7%
+decode                     41259           82.7%
+unattributed                  19            0.0%
+
+context: median 4544 chars, median 1999 prompt tokens, median 4 articles
+output:  median 89 tokens, 320 chars
+decode:  2.2 tok/s (median)
+prefill: 241 tok/s (median)
+
+fast-path miss cost: median 127 ms on 7 model-path turns
+
+slowest turns:
+    67373 ms  [rag    ] ptok=1996  gtok=137  что такое фотосинтез
+    64910 ms  [rag    ] ptok=1931  gtok=113  сравни население Москвы и Санкт-Петербурга
+    55698 ms  [rag    ] ptok=2345  gtok=92   почему Байкал самое глубокое озеро
+    54019 ms  [rag    ] ptok=2372  gtok=88   какой автозавод расположен в Тольятти
+    51082 ms  [rag    ] ptok=1999  gtok=91   чем знаменит Большое красное пятно

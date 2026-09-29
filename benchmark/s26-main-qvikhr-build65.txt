@@ -1,0 +1,26 @@
+turns scored: 13  (fast path 0, model 13)
+
+model-path turns: 13, median total 8837 ms
+
+phase                  median ms   share of turn
+------------------------------------------------
+factoid attempt                1            0.0%
+ZIM search                  1110           12.6%
+article reading              260            2.9%
+prefill                     2455           27.8%
+decode                      4644           52.6%
+unattributed                  30            0.3%
+
+context: median 4544 chars, median 2490 prompt tokens, median 4 articles
+output:  median 46 tokens, 122 chars
+decode:  9.9 tok/s (median)
+prefill: 1014 tok/s (median)
+
+fast-path miss cost: median 73 ms on 8 model-path turns
+
+slowest turns:
+    22132 ms  [rag    ] ptok=2171  gtok=201  почему Юпитер называют газовым гигантом
+    19885 ms  [rag    ] ptok=2646  gtok=147  почему Байкал самое глубокое озеро
+    14767 ms  [rag    ] ptok=2742  gtok=112  кто открыл пенициллин
+    12793 ms  [rag    ] ptok=2494  gtok=92   из чего состоит атмосфера Марса
+    11122 ms  [rag    ] ptok=2487  gtok=68   как связаны Менделеев и периодическая таблица
