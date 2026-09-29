@@ -48,6 +48,39 @@ class WikiLLMApplication : Application() {
         } catch (t: Throwable) {
             DiagLog.e(TAG, "setupHexagonEnv failed", t)
         }
+        applyDebugEnv()
+    }
+
+    /**
+     * Backend knobs from adb, no rebuild: ggml-hexagon reads its tuning and
+     * workaround switches from the process environment (GGML_HEXAGON_MM_SELECT,
+     * GGML_HEXAGON_OPFILTER, GGML_HEXAGON_NHVX, GGML_HEXAGON_DMA64, …), and an
+     * Android app has no shell to set them in. So:
+     *
+     *     adb shell setprop debug.wikillm.env 'GGML_HEXAGON_MM_SELECT=1;GGML_HEXAGON_OPFILTER=^FLASH_ATTN_EXT$'
+     *     adb shell am force-stop com.wikillm.android.debug
+     *
+     * Bisecting a v73 DSP crash on 2026-09-29 cost a CI build and a 10-minute
+     * artifact download per hypothesis; the upstream workaround for the
+     * related #29473 is exactly such an env var. Debug builds only — a release
+     * must not take backend configuration from a world-writable property.
+     */
+    private fun applyDebugEnv() {
+        if (!BuildConfig.DEBUG) return
+        try {
+            val sp = Class.forName("android.os.SystemProperties")
+            val get = sp.getMethod("get", String::class.java)
+            val raw = (get.invoke(null, "debug.wikillm.env") as? String).orEmpty()
+            if (raw.isBlank()) return
+            raw.split(';').map { it.trim() }.filter { it.contains('=') }.forEach { kv ->
+                val k = kv.substringBefore('=').trim()
+                val v = kv.substringAfter('=').trim()
+                android.system.Os.setenv(k, v, true)
+                DiagLog.i(TAG, "debug env: $k=$v")
+            }
+        } catch (t: Throwable) {
+            DiagLog.e(TAG, "applyDebugEnv failed", t)
+        }
     }
 
     private fun loadKiwixNatives() {
