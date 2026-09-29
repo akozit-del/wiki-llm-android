@@ -15,6 +15,13 @@ on:
         # were failing to compile while this one stayed green.
         description: "llama.cpp git ref (tag/branch/sha) with ggml-hexagon"
         default: "d222767c7a6516559a3f49e7721b6c6b1acc87b4"
+      patchset:
+        # Subdirectory of app/src/main/cpp/patches/ whose *.patch files are
+        # applied to the llama.cpp checkout before building. "default" is what
+        # main ships; other names exist to A/B a local fix without committing
+        # to it.
+        description: "patch set under app/src/main/cpp/patches/ to apply"
+        default: "default"
 
 jobs:
   native:
@@ -30,7 +37,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: out
-          key: hexnative-${{ github.event.inputs.llama_ref }}-${{ hashFiles('app/src/main/cpp/llm_jni.cpp', '.github/workflows/hexagon-app.yml') }}
+          key: hexnative-${{ github.event.inputs.llama_ref }}-${{ github.event.inputs.patchset || 'default' }}-${{ hashFiles('app/src/main/cpp/llm_jni.cpp', '.github/workflows/hexagon-app.yml', 'app/src/main/cpp/patches/**') }}
 
       - name: Clone llama.cpp
         if: steps.nativecache.outputs.cache-hit != 'true'
@@ -45,6 +52,16 @@ jobs:
           git fetch -q --depth 1 origin "$REF"
           git checkout -q FETCH_HEAD
           echo "llama.cpp at $(git rev-parse HEAD)"
+          # Local fixes we carry until upstream takes them. Each patch must
+          # apply cleanly or the build stops here — a silently skipped patch
+          # would ship the exact crash it exists to prevent.
+          PS="${{ github.event.inputs.patchset }}"; PS="${PS:-default}"
+          echo "patchset: $PS"
+          for p in ../app/src/main/cpp/patches/"$PS"/*.patch; do
+            [ -e "$p" ] || continue
+            echo "applying $(basename "$p")"
+            git apply --check "$p" && git apply "$p"
+          done
 
       - name: Build llama.cpp(+Hexagon) and libllm.so via snapdragon-toolchain
         if: steps.nativecache.outputs.cache-hit != 'true'

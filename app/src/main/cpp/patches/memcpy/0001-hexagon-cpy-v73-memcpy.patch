@@ -1,0 +1,32 @@
+diff --git a/ggml/src/ggml-hexagon/htp/cpy-ops.c b/ggml/src/ggml-hexagon/htp/cpy-ops.c
+--- a/ggml/src/ggml-hexagon/htp/cpy-ops.c
++++ b/ggml/src/ggml-hexagon/htp/cpy-ops.c
+@@ -59,6 +59,20 @@
+         return;
+     }
+ 
++    // wiki-llm-android: on v73 (Galaxy S23) the whole-tensor DMA copy that
++    // #28906 introduced takes the DSP down on the first decode of any model
++    // (PD status notification 3, remote_handle_invoke 0x8000040d, ggml_abort
++    // in flush_pending). Bisected: 38a5b42d (before #28906) runs, 72b590d6
++    // (#28906) and everything after dies. The PR was measured on v81 only;
++    // the v73 DMA descriptor carries 16-bit row/stride fields, and a multi-MB
++    // single transfer goes down a 1D/fallback path v73 never exercised
++    // before. See also #27979.
++#if __HVX_ARCH__ < 75
++    // No DMA at all below v75: dma_addr_t is the 32-bit DSP virtual address
++    // there, so a plain copy is the pre-#28906 behaviour minus the HVX loop.
++    (void) dma_q;
++    memcpy((void *) (uintptr_t) dst, (const void *) (uintptr_t) src0, total_bytes);
++#else
+     const uint32_t max_chunk = DMA_SAFE_CHUNK_SIZE;
+     while (total_bytes > 0) {
+         const uint32_t chunk = MIN(total_bytes, max_chunk);
+@@ -71,6 +85,7 @@
+         total_bytes -= chunk;
+     }
+     dma_queue_flush(dma_q);
++#endif
+ }
+ 
+ #define cpy_preamble                              \
