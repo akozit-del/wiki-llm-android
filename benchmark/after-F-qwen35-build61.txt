@@ -1,0 +1,26 @@
+turns scored: 13  (fast path 0, model 13)
+
+model-path turns: 13, median total 73797 ms
+
+phase                  median ms   share of turn
+------------------------------------------------
+factoid attempt                1            0.0%
+ZIM search                  1358            1.8%
+article reading              385            0.5%
+prefill                    19408           26.3%
+decode                     53059           71.9%
+unattributed                  35            0.0%
+
+context: median 4544 chars, median 2089 prompt tokens, median 4 articles
+output:  median 101 tokens, 360 chars
+decode:  1.9 tok/s (median)
+prefill: 108 tok/s (median)
+
+fast-path miss cost: median 95 ms on 8 model-path turns
+
+slowest turns:
+    96326 ms  [rag    ] ptok=2089  gtok=146  что такое фотосинтез
+    89114 ms  [rag    ] ptok=2331  gtok=126  кто был предшественником нынешнего мэра Тольятти
+    84665 ms  [rag    ] ptok=2393  gtok=115  почему Байкал самое глубокое озеро
+    83386 ms  [rag    ] ptok=1832  gtok=130  почему Юпитер называют газовым гигантом
+    83379 ms  [rag    ] ptok=2261  gtok=120  кто открыл пенициллин

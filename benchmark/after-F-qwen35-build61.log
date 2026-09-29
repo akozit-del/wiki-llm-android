@@ -1,4 +1,458 @@
-, Сергей Анташев, Сергей Андреев
+:42.709 I/FactoidAnswerer: Factoid candidates: Тольятти, Автомобильная промышленность
+2026-09-29 09:33:42.788 I/FactoidAnswerer: Factoid: no label covers [автоза, распол] in [Глава/мэр, Население, Площадь, Основан, Страна, Часовой пояс, Субъект Федерации, Городской округ, Внутреннее деление, Глава городского округа, Прежние названия, Город с, Высота центра, Тип климата, Плотность, Агломерация, Население агломерации, Национальности, Конфессии, Название жителей, Официальный язык, День города]
+2026-09-29 09:33:42.789 I/FactoidAnswerer: Factoid: 'Тольятти' card has no matching field — next candidate
+2026-09-29 09:33:42.812 I/FactoidAnswerer: Factoid: 'Автомобильная промышленность' has no infobox — next candidate
+2026-09-29 09:33:42.812 I/FactoidAnswerer: Factoid: no candidate carried the field — falling back to RAG
+2026-09-29 09:33:42.812 I/ChatVM: [PHASE] factoid=miss ms=522
+2026-09-29 09:33:42.813 I/RagPromptBuilder: Query: 'какой автозавод расположен в Тольятти' -> ZIM keywords: 'автозавод расположен тольятти'
+2026-09-29 09:33:42.936 I/GraphWalker: walk: 0 wikilinks in 'Заслуженный_врач_Российской_Федерации' (depth=3)
+2026-09-29 09:33:42.948 I/GraphWalker: walk seed=Тольятти props=[P6, P1365, P1366, P39, P166, P26, P40, P22, P25, P3373, P50, P175, P800, P184, P802, P57, P58, P162, P36, P159, P127, P112] → 5 nodes
+2026-09-29 09:33:42.948 I/RagPromptBuilder: Walker probes (entity='Тольятти', props=22): Тольятти, Илья Геннадьевич Сухих, Николай Ренц, Заслуженный врач Российской Федерации, Сергей Анташев, Сергей Андреев
+2026-09-29 09:33:42.954 I/EntityTitleProbe: Title probes (10 lookups): Тольятти(1080), Автомобильная промышленность(1020)
+2026-09-29 09:33:42.966 I/ZimSearcher: search('автозавод расположен тольятти') estimated=40
+2026-09-29 09:33:43.892 I/ZimSearcher: search('расположен') estimated=249807
+2026-09-29 09:33:44.300 I/RagPromptBuilder: Entity merge 'расположен': +20 candidates
+2026-09-29 09:33:44.304 I/RagPromptBuilder: RAG: 'какой автозавод расположен в Тольятти' candidates=46
+2026-09-29 09:33:44.304 I/RagPromptBuilder: Top hits: Тольятти(s=1080)[Тольятти] | Автомобильная промышленность(s=1020)[Автомобильная_промышленность] | Илья Геннадьевич Сухих(s=899)[Сухих,_Илья_Геннадьевич] | Николай Ренц(s=898)[Ренц,_Николай_Альфредович] | Сергей Анташев(s=897)[Анташев,_Сергей_Александрович]
+2026-09-29 09:33:44.616 I/RagPromptBuilder: [PHASE] search=1491ms read=312ms docs=4 ctx=5094
+2026-09-29 09:33:44.617 I/RagPromptBuilder: RAG prompt preview (listIntent=false): Тебе даны выдержки из Википедии. Отвечай на их основе. Ответь коротко и по существу: 1–3 предложения, только то, о чём спрашивают. Не пересказывай выдержки, не добавляй посторонние факты и не нумеруй пункты, если вопрос не про перечень. Если вопрос требует сравнения двух и более вещей — до 5 предложений. Если в выдержках совсем нет нужной информации — скажи «не знаю по приведённым выдержкам». Отвечай на русском языке.  === ВЫДЕРЖКИ ИЗ ВИКИ === === Тольятти === Карточка: Глава/мэр: Илья Геннадьев
+2026-09-29 09:33:44.617 I/ChatVM: RAG ctx: 4 articles from 46 candidates
+2026-09-29 09:33:44.617 I/ChatVM: Generating: 7 msgs, maxTokens=1600, temp=0.7, noThink=true
+2026-09-29 09:33:55.985 I/ChatVM: Reply (47 chars, 26 tok, 13695ms, prefill 2724tok/7088ms=384t/s, decode 6,1t/s): Автозавод «Лада Запад Тольятти» (до 2019 года).
+2026-09-29 09:33:55.986 I/ChatVM: [TURN] end path=rag total=13695ms factoid=522ms ptok=2724 gtok=26 prefill=7088ms decode=4236ms chars=47
+2026-09-29 09:33:56.669 I/BenchmarkBridge: Benchmark question via intent: назови планеты Солнечной системы
+2026-09-29 09:33:56.670 I/ChatVM: [TURN] begin q=назови планеты Солнечной системы
+2026-09-29 09:33:56.671 I/ChatVM: [PHASE] factoid=miss ms=0
+2026-09-29 09:33:56.672 I/RagPromptBuilder: Query: 'назови планеты Солнечной системы' -> ZIM keywords: 'планеты солнечной системы'
+2026-09-29 09:33:56.758 I/GraphWalker: walk: 0 wikilinks in 'Вспышка_солнечной_активности' (depth=0)
+2026-09-29 09:33:56.759 I/GraphWalker: walk seed=Вспышка_солнечной_активности props=[P6, P1365, P1366, P39, P166, P26, P40, P22, P25, P3373, P50, P175, P800, P184, P802, P57, P58, P162, P36, P159, P127, P112] → 0 nodes
+2026-09-29 09:33:56.759 I/RagPromptBuilder: Walker probes (entity='Солнечной', props=22): Вспышка солнечной активности
+2026-09-29 09:33:56.791 I/EntityTitleProbe: Title probes (29 lookups): Планеты Солнечной системы(1120), Солнечная система(1100), Солнечная(1080), Планета(1020), Система(1020)
+2026-09-29 09:33:56.794 I/EntityTitleProbe: Redundant probes: Солнечная, Планета, Система
+2026-09-29 09:33:56.865 I/ZimSearcher: search('планеты солнечной системы') estimated=7000
+2026-09-29 09:33:57.301 I/ZimSearcher: search('солнечной') estimated=12659
+2026-09-29 09:33:57.768 I/RagPromptBuilder: Entity merge 'солнечной': +13 candidates
+2026-09-29 09:33:57.771 I/RagPromptBuilder: RAG: 'назови планеты Солнечной системы' candidates=35
+2026-09-29 09:33:57.772 I/RagPromptBuilder: Top hits: Планеты Солнечной системы(s=1120)[Планеты_Солнечной_системы] | Солнечная система(s=1100)[Солнечная_система] | Вспышка солнечной активности(s=900)[Вспышка_солнечной_активности] | Планеты-гиганты(s=97)[Планеты-гиганты] | Планеты (сериал)(s=95)[Планеты_(сериал)]
+2026-09-29 09:33:57.982 I/RagPromptBuilder: [PHASE] search=1100ms read=209ms docs=4 ctx=3312
+2026-09-29 09:33:57.982 I/RagPromptBuilder: RAG prompt preview (listIntent=false): Тебе даны выдержки из Википедии. Отвечай на их основе. Ответь коротко и по существу: 1–3 предложения, только то, о чём спрашивают. Не пересказывай выдержки, не добавляй посторонние факты и не нумеруй пункты, если вопрос не про перечень. Если вопрос требует сравнения двух и более вещей — до 5 предложений. Если в выдержках совсем нет нужной информации — скажи «не знаю по приведённым выдержкам». Отвечай на русском языке.  === ВЫДЕРЖКИ ИЗ ВИКИ === === Планеты Солнечной системы === Планеты Солнечной 
+2026-09-29 09:33:57.983 I/ChatVM: RAG ctx: 4 articles from 35 candidates
+2026-09-29 09:33:57.983 I/ChatVM: Generating: 7 msgs, maxTokens=1600, temp=0.7, noThink=true
+2026-09-29 09:34:11.833 I/ChatVM: Reply (165 chars, 68 tok, 15162ms, prefill 1742tok/4138ms=421t/s, decode 7,0t/s): В Солнечной системе известны восемь планет: Меркурий, Венера, Земля, Марс (планеты земной группы), а также четыре гигантские планеты — Юпитер, Сатурн, Уран и Нептун.
+2026-09-29 09:34:11.834 I/ChatVM: [TURN] end path=rag total=15162ms factoid=0ms ptok=1742 gtok=68 prefill=4138ms decode=9669ms chars=165
+2026-09-29 09:34:12.082 I/BenchmarkBridge: Benchmark question via intent: кто был предшественником нынешнего мэра Тольятти
+2026-09-29 09:34:12.084 I/ChatVM: [TURN] begin q=кто был предшественником нынешнего мэра Тольятти
+2026-09-29 09:34:12.085 I/FactoidAnswerer: Factoid candidate: label='(by card label)' entity='Тольятти'
+2026-09-29 09:34:12.154 I/EntityTitleProbe: Title probes (16 lookups): Тольятти(1080)
+2026-09-29 09:34:12.216 I/ZimSearcher: suggestTitles('Тольятти'): Тольятти, Тольятти 24, Тольятти (История), Тольятти (аэродром), Тольятти (значения), Тольятти (станция), Тольятти П., Тольятти сегодня, Тольятти, Эудженио, Тольятти (речной порт), Тольятти (футбольный клуб), Тольятти (особая экономическая зона), Тольятти (территория опережающего развития), Академия Тольятти, Вузы Тольятти, Герб Тольятти, Гимн Тольятти, Градоначальники Тольятти, Дума Тольятти, Лада (Тольятти), Лада-Тольятти, Медгородок Тольятти, Набережная Тольятти, Памятники Тольятти, Поверхность Тольятти, Портпосёлок (Тольятти), Районы Тольятти, СИБУР Тольятти, Спорт Тольятти, Троллейбус Тольятти, Улицы Тольятти, Флаг Тольятти
+2026-09-29 09:34:12.219 I/FactoidAnswerer: Factoid candidates: Тольятти
+2026-09-29 09:34:12.292 I/FactoidAnswerer: Factoid: no label covers [предше, мэра] in [Глава/мэр, Население, Площадь, Основан, Страна, Часовой пояс, Субъект Федерации, Городской округ, Внутреннее деление, Глава городского округа, Прежние названия, Город с, Высота центра, Тип климата, Плотность, Агломерация, Население агломерации, Национальности, Конфессии, Название жителей, Официальный язык, День города]
+2026-09-29 09:34:12.292 I/FactoidAnswerer: Factoid: 'Тольятти' card has no matching field — next candidate
+2026-09-29 09:34:12.293 I/FactoidAnswerer: Factoid: no candidate carried the field — falling back to RAG
+2026-09-29 09:34:12.293 I/ChatVM: [PHASE] factoid=miss ms=208
+2026-09-29 09:34:12.293 I/RagPromptBuilder: Query: 'кто был предшественником нынешнего мэра Тольятти' -> ZIM keywords: 'предшественником нынешнего мэра тольятти'
+2026-09-29 09:34:12.387 I/GraphWalker: walk seed=Тольятти props=[P6, P1365, P1366] → 4 nodes
+2026-09-29 09:34:12.388 I/RagPromptBuilder: Walker probes (entity='Тольятти', props=3): Тольятти, Илья Геннадьевич Сухих, Николай Ренц, Сергей Анташев, Сергей Андреев
+2026-09-29 09:34:12.398 I/EntityTitleProbe: Title probes (16 lookups): Тольятти(1080)
+2026-09-29 09:34:12.413 I/ZimSearcher: search('предшественником нынешнего мэра тольятти') estimated=5
+2026-09-29 09:34:13.088 I/ZimSearcher: search('предшественником') estimated=92922
+2026-09-29 09:34:13.518 I/RagPromptBuilder: Entity merge 'предшественником': +20 candidates
+2026-09-29 09:34:13.520 I/RagPromptBuilder: RAG: 'кто был предшественником нынешнего мэра Тольятти' candidates=30
+2026-09-29 09:34:13.521 I/RagPromptBuilder: Top hits: Тольятти(s=1080)[Тольятти] | Илья Геннадьевич Сухих(s=899)[Сухих,_Илья_Геннадьевич] | Николай Ренц(s=898)[Ренц,_Николай_Альфредович] | Сергей Анташев(s=897)[Анташев,_Сергей_Александрович] | Сергей Андреев(s=896)[Андреев,_Сергей_Игоревич]
+2026-09-29 09:34:13.819 I/RagPromptBuilder: [PHASE] search=1228ms read=297ms docs=3 ctx=4713
+2026-09-29 09:34:13.820 I/RagPromptBuilder: RAG prompt preview (listIntent=false): Тебе даны выдержки из Википедии. Отвечай на их основе. Ответь коротко и по существу: 1–3 предложения, только то, о чём спрашивают. Не пересказывай выдержки, не добавляй посторонние факты и не нумеруй пункты, если вопрос не про перечень. Если вопрос требует сравнения двух и более вещей — до 5 предложений. Если в выдержках совсем нет нужной информации — скажи «не знаю по приведённым выдержкам». Отвечай на русском языке.  === ВЫДЕРЖКИ ИЗ ВИКИ === === Тольятти === Карточка: Глава/мэр: Илья Геннадьев
+2026-09-29 09:34:13.821 I/ChatVM: RAG ctx: 3 articles from 30 candidates
+2026-09-29 09:34:13.821 I/ChatVM: Generating: 7 msgs, maxTokens=1600, temp=0.7, noThink=true
+2026-09-29 09:34:26.503 I/ChatVM: Reply (69 chars, 34 tok, 14418ms, prefill 2672tok/6985ms=383t/s, decode 6,0t/s): Предшественником нынешнего мэра Тольятти Ильи Сухих был Николай Ренц.
+2026-09-29 09:34:26.504 I/ChatVM: [TURN] end path=rag total=14418ms factoid=208ms ptok=2672 gtok=34 prefill=6985ms decode=5660ms chars=69
+2026-09-29 09:34:27.509 I/BenchmarkBridge: Benchmark question via intent: сравни население Москвы и Санкт-Петербурга
+2026-09-29 09:34:27.511 I/ChatVM: [TURN] begin q=сравни население Москвы и Санкт-Петербурга
+2026-09-29 09:34:27.512 I/ChatVM: [PHASE] factoid=miss ms=1
+2026-09-29 09:34:27.513 I/RagPromptBuilder: Query: 'сравни население Москвы и Санкт-Петербурга' -> ZIM keywords: 'сравни население москвы санкт петербурга'
+2026-09-29 09:34:29.556 I/GraphWalker: walk: 0 wikilinks in 'Генплан_Петербурга' (depth=0)
+2026-09-29 09:34:29.556 I/GraphWalker: walk seed=Генплан_Петербурга props=[P6, P1365, P1366, P39, P166, P26, P40, P22, P25, P3373, P50, P175, P800, P184, P802, P57, P58, P162, P36, P159, P127, P112] → 0 nodes
+2026-09-29 09:34:29.557 I/RagPromptBuilder: Walker probes (entity='Петербурга', props=22): Генплан Петербурга
+2026-09-29 09:34:29.592 I/EntityTitleProbe: Title probes (23 lookups): Москва(1080), Санкт-Петербург(1070), Население Москвы(900)
+2026-09-29 09:34:29.633 I/ZimSearcher: search('сравни население москвы санкт петербурга') estimated=300
+2026-09-29 09:34:30.202 I/ZimSearcher: search('петербурга') estimated=115995
+2026-09-29 09:34:30.721 I/RagPromptBuilder: Entity merge 'петербурга': +18 candidates
+2026-09-29 09:34:30.723 I/RagPromptBuilder: RAG: 'сравни население Москвы и Санкт-Петербурга' candidates=42
+2026-09-29 09:34:30.724 I/RagPromptBuilder: Top hits: Москва(s=1080)[Москва] | Санкт-Петербург(s=1070)[Санкт-Петербург] | Генплан Петербурга(s=900)[Генплан_Петербурга] | Население Москвы(s=900)[Население_Москвы] | Санкт-Петербург (телерадиокомпания)(s=99)[Санкт-Петербург_(телерадиокомпания)]
+2026-09-29 09:34:31.344 I/RagPromptBuilder: [PHASE] search=3212ms read=619ms docs=3 ctx=4342
+2026-09-29 09:34:31.345 I/RagPromptBuilder: RAG prompt preview (listIntent=false): Тебе даны выдержки из Википедии. Отвечай на их основе. Ответь коротко и по существу: 1–3 предложения, только то, о чём спрашивают. Не пересказывай выдержки, не добавляй посторонние факты и не нумеруй пункты, если вопрос не про перечень. Если вопрос требует сравнения двух и более вещей — до 5 предложений. Если в выдержках совсем нет нужной информации — скажи «не знаю по приведённым выдержкам». Отвечай на русском языке.  === ВЫДЕРЖКИ ИЗ ВИКИ === === Москва === Карточка: Глава/мэр: Сергей Собянин Н
+2026-09-29 09:34:31.345 I/ChatVM: RAG ctx: 3 articles from 42 candidates
+2026-09-29 09:34:31.346 I/ChatVM: Generating: 7 msgs, maxTokens=1600, temp=0.7, noThink=true
+2026-09-29 09:34:52.160 I/ChatVM: Reply (308 chars, 100 tok, 24648ms, prefill 2103tok/5210ms=404t/s, decode 6,4t/s): Население Москвы — 13,27 млн человек (2025), Санкт-Петербурга — 5,65 млн. Москва по населению и площади уступает Москве как столице РФ только Мумбаи и Лиме в Европе; Петербург считается самым северным
+2026-09-29 09:34:52.162 I/ChatVM: [TURN] end path=rag total=24648ms factoid=1ms ptok=2103 gtok=100 prefill=5210ms decode=15565ms chars=308
+2026-09-29 09:34:53.146 I/BenchmarkBridge: Benchmark question via intent: почему Байкал самое глубокое озеро
+2026-09-29 09:34:53.148 I/ChatVM: [TURN] begin q=почему Байкал самое глубокое озеро
+2026-09-29 09:34:53.149 I/ChatVM: [PHASE] factoid=miss ms=0
+2026-09-29 09:34:53.152 I/RagPromptBuilder: Query: 'почему Байкал самое глубокое озеро' -> ZIM keywords: 'байкал самое глубокое озеро'
+2026-09-29 09:34:53.240 I/GraphWalker: walk: 0 wikilinks in 'Байкал' (depth=0)
+2026-09-29 09:34:53.240 I/GraphWalker: walk seed=Байкал props=[P6, P1365, P1366, P39, P166, P26, P40, P22, P25, P3373, P50, P175, P800, P184, P802, P57, P58, P162, P36, P159, P127, P112] → 0 nodes
+2026-09-29 09:34:53.241 I/RagPromptBuilder: Walker probes (entity='Байкал', props=22): Байкал
+2026-09-29 09:34:53.277 I/EntityTitleProbe: Title probes (12 lookups): Байкал(1080), Глубокое озеро(1050), Глубокое(1030), Озеро(1030)
+2026-09-29 09:34:53.279 I/EntityTitleProbe: Redundant probes: Глубокое, Озеро
+2026-09-29 09:34:53.307 I/ZimSearcher: search('байкал самое глубокое озеро') estimated=200
+2026-09-29 09:34:53.895 I/ZimSearcher: search('глубокое') estimated=52854
+2026-09-29 09:34:54.448 I/RagPromptBuilder: Entity merge 'глубокое': +19 candidates
+2026-09-29 09:34:54.450 I/RagPromptBuilder: RAG: 'почему Байкал самое глубокое озеро' candidates=39
+2026-09-29 09:34:54.451 I/RagPromptBuilder: Top hits: Байкал(s=1080)[Байкал] | Глубокое озеро(s=1050)[Глубокое_озеро] | Глубокое(s=100)[Глубокое] | Глубокое (город)(s=99)[Глубокое_(город)] | Глубокое обучение(s=98)[Глубокое_обучение]
+2026-09-29 09:34:54.703 I/RagPromptBuilder: [PHASE] search=1300ms read=250ms docs=4 ctx=4884
+2026-09-29 09:34:54.703 I/RagPromptBuilder: RAG prompt preview (listIntent=false): Тебе даны выдержки из Википедии. Отвечай на их основе. Ответь коротко и по существу: 1–3 предложения, только то, о чём спрашивают. Не пересказывай выдержки, не добавляй посторонние факты и не нумеруй пункты, если вопрос не про перечень. Если вопрос требует сравнения двух и более вещей — до 5 предложений. Если в выдержках совсем нет нужной информации — скажи «не знаю по приведённым выдержкам». Отвечай на русском языке.  === ВЫДЕРЖКИ ИЗ ВИКИ === === Байкал === Карточка: Страна: Россия Абсолютная в
+2026-09-29 09:34:54.704 I/ChatVM: RAG ctx: 4 articles from 39 candidates
+2026-09-29 09:34:54.704 I/ChatVM: Generating: 7 msgs, maxTokens=1600, temp=0.7, noThink=true
+2026-09-29 09:35:19.516 I/ChatVM: Reply (284 chars, 102 tok, 26367ms, prefill 2767tok/7189ms=385t/s, decode 5,8t/s): Байкал считается самым глубоким озером мира, так как его дно находится на 1642 метра ниже уровня моря. Хотя есть и другие глубинные озёры (например, в Красноярском крае), по объёмам воды Байкала прево
+2026-09-29 09:35:19.517 I/ChatVM: [TURN] end path=rag total=26367ms factoid=0ms ptok=2767 gtok=102 prefill=7189ms decode=17580ms chars=284
+2026-09-29 09:35:19.819 I/BenchmarkBridge: Benchmark question via intent: как связаны Менделеев и периодическая таблица
+2026-09-29 09:35:19.821 I/ChatVM: [TURN] begin q=как связаны Менделеев и периодическая таблица
+2026-09-29 09:35:19.821 I/ChatVM: [PHASE] factoid=miss ms=0
+2026-09-29 09:35:19.823 I/RagPromptBuilder: Query: 'как связаны Менделеев и периодическая таблица' -> ZIM keywords: 'связаны менделеев периодическая таблица'
+2026-09-29 09:35:19.914 I/GraphWalker: walk seed=Менделеев,_Дмитрий_Иванович props=[P6, P1365, P1366, P39, P166, P26, P40, P22, P25, P3373, P50, P175, P800, P184, P802, P57, P58, P162, P36, P159, P127, P112] → 6 nodes
+2026-09-29 09:35:19.914 I/RagPromptBuilder: Walker probes (entity='Менделеев', props=22): Менделеев, Дмитрий Иванович, Орден Святого Владимира, Кавалер ордена Святого Александра Невского, Орден Белого орла (Российская империя), Орден Святой Анны I степени, Орден Святого Станислава (Российская империя), Орден Святой Анны II степени
+2026-09-29 09:35:19.961 I/EntityTitleProbe: Title probes (22 lookups): Менделеев, Дмитрий Иванович(1070), Периодическая система химических элементов(1040), Таблица(1030), Таблиц, Богуслав(1020)
+2026-09-29 09:35:19.981 I/ZimSearcher: search('связаны менделеев периодическая таблица') estimated=60
+2026-09-29 09:35:20.699 I/ZimSearcher: search('периодическая') estimated=24960
+2026-09-29 09:35:21.308 I/RagPromptBuilder: Entity merge 'периодическая': +18 candidates
+2026-09-29 09:35:21.312 I/RagPromptBuilder: RAG: 'как связаны Менделеев и периодическая таблица' candidates=46
+2026-09-29 09:35:21.312 I/RagPromptBuilder: Top hits: Менделеев, Дмитрий Иванович(s=1070)[Менделеев,_Дмитрий_Иванович] | Периодическая система химических элементов(s=1040)[Периодическая_система_химических_элементов] | Таблица(s=1030)[Таблица] | Таблиц, Богуслав(s=1020)[Таблиц,_Богуслав] | Орден Святого Владимира(s=899)[Орден_Святого_Владимира]
+2026-09-29 09:35:21.679 I/RagPromptBuilder: [PHASE] search=1490ms read=366ms docs=4 ctx=5006
+2026-09-29 09:35:21.680 I/RagPromptBuilder: RAG prompt preview (listIntent=false): Тебе даны выдержки из Википедии. Отвечай на их основе. Ответь коротко и по существу: 1–3 предложения, только то, о чём спрашивают. Не пересказывай выдержки, не добавляй посторонние факты и не нумеруй пункты, если вопрос не про перечень. Если вопрос требует сравнения двух и более вещей — до 5 предложений. Если в выдержках совсем нет нужной информации — скажи «не знаю по приведённым выдержкам». Отвечай на русском языке.  === ВЫДЕРЖКИ ИЗ ВИКИ === === Менделеев, Дмитрий Иванович === Карточка: Дата р
+2026-09-29 09:35:21.680 I/ChatVM: RAG ctx: 4 articles from 46 candidates
+2026-09-29 09:35:21.680 I/ChatVM: Generating: 7 msgs, maxTokens=1600, temp=0.7, noThink=true
+2026-09-29 09:35:37.212 I/ChatVM: Reply (200 chars, 56 tok, 17391ms, prefill 2503tok/6496ms=385t/s, decode 6,2t/s): Менделеев создал первую таблицу химических элементов, предсказав свойства не известных тогда металлов. Его система основана на зависимости между атомной массой и физико-химическими свойствами веществ.
+2026-09-29 09:35:37.213 I/ChatVM: [TURN] end path=rag total=17391ms factoid=0ms ptok=2503 gtok=56 prefill=6496ms decode=8989ms chars=200
+2026-09-29 09:36:01.018 I/WikiLLMApp: ADSP_LIBRARY_PATH=/data/app/~~9qe0_u4XiTCa7mLPCBCJNQ==/com.wikillm.android.debug-qmDVKQjA7aZLv9XurPnO8A==/lib/arm64;/vendor/lib/rfsa/adsp;/vendor/dsp/cdsp;/system/lib/rfsa/adsp
+2026-09-29 09:36:01.024 I/WikiLLMApp: ReLinker.loadLibrary(zim) OK
+2026-09-29 09:36:01.029 I/WikiLLMApp: ReLinker.loadLibrary(kiwix) OK
+2026-09-29 09:36:01.030 I/WikiLLMApp: System.loadLibrary(zim_wrapper) OK
+2026-09-29 09:36:01.030 I/WikiLLMApp: System.loadLibrary(kiwix_wrapper) OK
+2026-09-29 09:36:01.302 I/ChatVM: Auto-loading last model: QVikhr-3-4B-Instruction-Q4_0.gguf
+2026-09-29 09:36:01.303 I/ChatVM: Loading model: QVikhr-3-4B-Instruction-Q4_0.gguf (device=auto, mtp=0) (/storage/emulated/0/Android/data/com.wikillm.android.debug/files/models/Vikhrmodels/QVikhr-3-4B-Instruction-GGUF/QVikhr-3-4B-Instruction-Q4_0.gguf)
+2026-09-29 09:36:01.645 I/ZimSearcher: openPath: /storage/emulated/0/Android/data/com.wikillm.android.debug/files/zim/wikipedia_ru_all_nopic_2026-01.zim (14671735099 bytes)
+2026-09-29 09:36:01.979 I/ZimSearchHolder: ZimSearchHolder ready: wikipedia_ru_all_nopic_2026-01.zim
+2026-09-29 09:36:07.342 I/ChatVM: Model loaded: QVikhr-3-4B-Instruction-Q4_0.gguf
+2026-09-29 09:40:52.970 I/BenchmarkBridge: Benchmark question via intent: почему Юпитер называют газовым гигантом
+2026-09-29 09:40:52.979 I/ChatVM: [TURN] begin q=почему Юпитер называют газовым гигантом
+2026-09-29 09:40:52.982 I/ChatVM: [PHASE] factoid=miss ms=2
+2026-09-29 09:40:52.985 I/RagPromptBuilder: Query: 'почему Юпитер называют газовым гигантом' -> ZIM keywords: 'юпитер называют газовым гигантом'
+2026-09-29 09:40:53.316 I/GraphWalker: walk: 0 wikilinks in 'Юпитер' (depth=0)
+2026-09-29 09:40:53.317 I/GraphWalker: walk seed=Юпитер props=[P6, P1365, P1366, P39, P166, P26, P40, P22, P25, P3373, P50, P175, P800, P184, P802, P57, P58, P162, P36, P159, P127, P112] → 0 nodes
+2026-09-29 09:40:53.317 I/RagPromptBuilder: Walker probes (entity='Юпитер', props=22): Юпитер
+2026-09-29 09:40:53.419 I/EntityTitleProbe: Title probes (13 lookups): Юпитер(1080), Гигант(1030)
+2026-09-29 09:40:53.491 I/ZimSearcher: search('юпитер называют газовым гигантом') estimated=200
+2026-09-29 09:40:53.969 I/ZimSearcher: search('называют') estimated=194221
+2026-09-29 09:40:54.356 I/RagPromptBuilder: Entity merge 'называют': +20 candidates
+2026-09-29 09:40:54.361 I/RagPromptBuilder: RAG: 'почему Юпитер называют газовым гигантом' candidates=42
+2026-09-29 09:40:54.362 I/RagPromptBuilder: Top hits: Юпитер(s=1080)[Юпитер] | Гигант(s=1030)[Гигант] | То, что называют любовью(s=98)[То,_что_называют_любовью] | Газовые гиганты(s=100)[Газовые_гиганты] | Моя так называемая жизнь(s=100)[Моя_так_называемая_жизнь]
+2026-09-29 09:40:54.804 I/RagPromptBuilder: [PHASE] search=1378ms read=441ms docs=4 ctx=4405
+2026-09-29 09:40:54.804 I/RagPromptBuilder: RAG prompt preview (listIntent=false): Тебе даны выдержки из Википедии. Отвечай на их основе. Ответь коротко и по существу: 1–3 предложения, только то, о чём спрашивают. Не пересказывай выдержки, не добавляй посторонние факты и не нумеруй пункты, если вопрос не про перечень. Если вопрос требует сравнения двух и более вещей — до 5 предложений. Если в выдержках совсем нет нужной информации — скажи «не знаю по приведённым выдержкам». Отвечай на русском языке.  === ВЫДЕРЖКИ ИЗ ВИКИ === === Юпитер === Карточка: Перигелий: 7,405736⋅108 км 
+2026-09-29 09:40:54.805 I/ChatVM: RAG ctx: 4 articles from 42 candidates
+2026-09-29 09:40:54.805 I/ChatVM: Generating: 1 msgs, maxTokens=1600, temp=0.7, noThink=true
+2026-09-29 09:59:01.532 I/WikiLLMApp: ADSP_LIBRARY_PATH=/data/app/~~9qe0_u4XiTCa7mLPCBCJNQ==/com.wikillm.android.debug-qmDVKQjA7aZLv9XurPnO8A==/lib/arm64;/vendor/lib/rfsa/adsp;/vendor/dsp/cdsp;/system/lib/rfsa/adsp
+2026-09-29 09:59:01.540 I/WikiLLMApp: ReLinker.loadLibrary(zim) OK
+2026-09-29 09:59:01.547 I/WikiLLMApp: ReLinker.loadLibrary(kiwix) OK
+2026-09-29 09:59:01.547 I/WikiLLMApp: System.loadLibrary(zim_wrapper) OK
+2026-09-29 09:59:01.548 I/WikiLLMApp: System.loadLibrary(kiwix_wrapper) OK
+2026-09-29 09:59:01.812 I/ChatVM: Auto-loading last model: QVikhr-3-4B-Instruction-Q4_0.gguf
+2026-09-29 09:59:01.813 I/ChatVM: Loading model: QVikhr-3-4B-Instruction-Q4_0.gguf (device=auto, mtp=0) (/storage/emulated/0/Android/data/com.wikillm.android.debug/files/models/Vikhrmodels/QVikhr-3-4B-Instruction-GGUF/QVikhr-3-4B-Instruction-Q4_0.gguf)
+2026-09-29 09:59:02.127 I/ZimSearcher: openPath: /storage/emulated/0/Android/data/com.wikillm.android.debug/files/zim/wikipedia_ru_all_nopic_2026-01.zim (14671735099 bytes)
+2026-09-29 09:59:02.470 I/ZimSearchHolder: ZimSearchHolder ready: wikipedia_ru_all_nopic_2026-01.zim
+2026-09-29 09:59:07.003 I/ChatVM: Model loaded: QVikhr-3-4B-Instruction-Q4_0.gguf
+2026-09-29 09:59:10.450 I/BenchmarkBridge: Benchmark question via intent: почему Юпитер называют газовым гигантом
+2026-09-29 09:59:10.455 I/ChatVM: [TURN] begin q=почему Юпитер называют газовым гигантом
+2026-09-29 09:59:10.457 I/ChatVM: [PHASE] factoid=miss ms=1
+2026-09-29 09:59:10.459 I/RagPromptBuilder: Query: 'почему Юпитер называют газовым гигантом' -> ZIM keywords: 'юпитер называют газовым гигантом'
+2026-09-29 09:59:10.798 I/GraphWalker: walk: 0 wikilinks in 'Юпитер' (depth=0)
+2026-09-29 09:59:10.799 I/GraphWalker: walk seed=Юпитер props=[P6, P1365, P1366, P39, P166, P26, P40, P22, P25, P3373, P50, P175, P800, P184, P802, P57, P58, P162, P36, P159, P127, P112] → 0 nodes
+2026-09-29 09:59:10.799 I/RagPromptBuilder: Walker probes (entity='Юпитер', props=22): Юпитер
+2026-09-29 09:59:10.888 I/EntityTitleProbe: Title probes (13 lookups): Юпитер(1080), Гигант(1030)
+2026-09-29 09:59:10.929 I/ZimSearcher: search('юпитер называют газовым гигантом') estimated=200
+2026-09-29 09:59:11.374 I/ZimSearcher: search('называют') estimated=194221
+2026-09-29 09:59:11.726 I/RagPromptBuilder: Entity merge 'называют': +20 candidates
+2026-09-29 09:59:11.731 I/RagPromptBuilder: RAG: 'почему Юпитер называют газовым гигантом' candidates=42
+2026-09-29 09:59:11.731 I/RagPromptBuilder: Top hits: Юпитер(s=1080)[Юпитер] | Гигант(s=1030)[Гигант] | То, что называют любовью(s=98)[То,_что_называют_любовью] | Газовые гиганты(s=100)[Газовые_гиганты] | Моя так называемая жизнь(s=100)[Моя_так_называемая_жизнь]
+2026-09-29 09:59:12.180 I/RagPromptBuilder: [PHASE] search=1272ms read=448ms docs=4 ctx=4405
+2026-09-29 09:59:12.180 I/RagPromptBuilder: RAG prompt preview (listIntent=false): Тебе даны выдержки из Википедии. Отвечай на их основе. Ответь коротко и по существу: 1–3 предложения, только то, о чём спрашивают. Не пересказывай выдержки, не добавляй посторонние факты и не нумеруй пункты, если вопрос не про перечень. Если вопрос требует сравнения двух и более вещей — до 5 предложений. Если в выдержках совсем нет нужной информации — скажи «не знаю по приведённым выдержкам». Отвечай на русском языке.  === ВЫДЕРЖКИ ИЗ ВИКИ === === Юпитер === Карточка: Перигелий: 7,405736⋅108 км 
+2026-09-29 09:59:12.180 I/ChatVM: RAG ctx: 4 articles from 42 candidates
+2026-09-29 09:59:12.181 I/ChatVM: Generating: 1 msgs, maxTokens=1600, temp=0.7, noThink=true
+2026-09-29 10:00:56.789 I/WikiLLMApp: ADSP_LIBRARY_PATH=/data/app/~~9qe0_u4XiTCa7mLPCBCJNQ==/com.wikillm.android.debug-qmDVKQjA7aZLv9XurPnO8A==/lib/arm64;/vendor/lib/rfsa/adsp;/vendor/dsp/cdsp;/system/lib/rfsa/adsp
+2026-09-29 10:00:56.795 I/WikiLLMApp: ReLinker.loadLibrary(zim) OK
+2026-09-29 10:00:56.799 I/WikiLLMApp: ReLinker.loadLibrary(kiwix) OK
+2026-09-29 10:00:56.800 I/WikiLLMApp: System.loadLibrary(zim_wrapper) OK
+2026-09-29 10:00:56.801 I/WikiLLMApp: System.loadLibrary(kiwix_wrapper) OK
+2026-09-29 10:00:57.049 I/ChatVM: Auto-loading last model: QVikhr-3-4B-Instruction-Q4_0.gguf
+2026-09-29 10:00:57.050 I/ChatVM: Loading model: QVikhr-3-4B-Instruction-Q4_0.gguf (device=auto, mtp=0) (/storage/emulated/0/Android/data/com.wikillm.android.debug/files/models/Vikhrmodels/QVikhr-3-4B-Instruction-GGUF/QVikhr-3-4B-Instruction-Q4_0.gguf)
+2026-09-29 10:00:57.352 I/ZimSearcher: openPath: /storage/emulated/0/Android/data/com.wikillm.android.debug/files/zim/wikipedia_ru_all_nopic_2026-01.zim (14671735099 bytes)
+2026-09-29 10:00:57.651 I/ZimSearchHolder: ZimSearchHolder ready: wikipedia_ru_all_nopic_2026-01.zim
+2026-09-29 10:01:01.809 I/ChatVM: Model loaded: QVikhr-3-4B-Instruction-Q4_0.gguf
+2026-09-29 10:01:10.751 I/ChatVM: Loading model: Qwen3.5-4B-Q4_0.gguf (device=auto, mtp=0) (/storage/emulated/0/Android/data/com.wikillm.android.debug/files/models/unsloth/Qwen3.5-4B-GGUF/Qwen3.5-4B-Q4_0.gguf)
+2026-09-29 10:01:17.113 I/ChatVM: Model loaded: Qwen3.5-4B-Q4_0.gguf
+2026-09-29 10:01:20.564 I/BenchmarkBridge: Benchmark question via intent: почему Юпитер называют газовым гигантом
+2026-09-29 10:01:20.571 I/ChatVM: [TURN] begin q=почему Юпитер называют газовым гигантом
+2026-09-29 10:01:20.574 I/ChatVM: [PHASE] factoid=miss ms=2
+2026-09-29 10:01:20.576 I/RagPromptBuilder: Query: 'почему Юпитер называют газовым гигантом' -> ZIM keywords: 'юпитер называют газовым гигантом'
+2026-09-29 10:01:20.899 I/GraphWalker: walk: 0 wikilinks in 'Юпитер' (depth=0)
+2026-09-29 10:01:20.900 I/GraphWalker: walk seed=Юпитер props=[P6, P1365, P1366, P39, P166, P26, P40, P22, P25, P3373, P50, P175, P800, P184, P802, P57, P58, P162, P36, P159, P127, P112] → 0 nodes
+2026-09-29 10:01:20.900 I/RagPromptBuilder: Walker probes (entity='Юпитер', props=22): Юпитер
+2026-09-29 10:01:20.916 I/EntityTitleProbe: Title probes (13 lookups): Юпитер(1080), Гигант(1030)
+2026-09-29 10:01:20.959 I/ZimSearcher: search('юпитер называют газовым гигантом') estimated=200
+2026-09-29 10:01:21.387 I/ZimSearcher: search('называют') estimated=194221
+2026-09-29 10:01:21.727 I/RagPromptBuilder: Entity merge 'называют': +20 candidates
+2026-09-29 10:01:21.732 I/RagPromptBuilder: RAG: 'почему Юпитер называют газовым гигантом' candidates=42
+2026-09-29 10:01:21.732 I/RagPromptBuilder: Top hits: Юпитер(s=1080)[Юпитер] | Гигант(s=1030)[Гигант] | То, что называют любовью(s=98)[То,_что_называют_любовью] | Газовые гиганты(s=100)[Газовые_гиганты] | Моя так называемая жизнь(s=100)[Моя_так_называемая_жизнь]
+2026-09-29 10:01:22.167 I/RagPromptBuilder: [PHASE] search=1157ms read=435ms docs=4 ctx=4405
+2026-09-29 10:01:22.168 I/RagPromptBuilder: RAG prompt preview (listIntent=false): Тебе даны выдержки из Википедии. Отвечай на их основе. Ответь коротко и по существу: 1–3 предложения, только то, о чём спрашивают. Не пересказывай выдержки, не добавляй посторонние факты и не нумеруй пункты, если вопрос не про перечень. Если вопрос требует сравнения двух и более вещей — до 5 предложений. Если в выдержках совсем нет нужной информации — скажи «не знаю по приведённым выдержкам». Отвечай на русском языке.  === ВЫДЕРЖКИ ИЗ ВИКИ === === Юпитер === Карточка: Перигелий: 7,405736⋅108 км 
+2026-09-29 10:01:22.168 I/ChatVM: RAG ctx: 4 articles from 42 candidates
+2026-09-29 10:01:22.168 I/ChatVM: Generating: 1 msgs, maxTokens=1600, temp=0.7, noThink=true
+2026-09-29 10:24:53.925 I/WikiLLMApp: ADSP_LIBRARY_PATH=/data/app/~~R2sZTdYnE5uD0rXBddfBFA==/com.wikillm.android.debug-mE5s_cw811uWghFQOo02BA==/lib/arm64;/vendor/lib/rfsa/adsp;/vendor/dsp/cdsp;/system/lib/rfsa/adsp
+2026-09-29 10:24:53.940 I/WikiLLMApp: ReLinker.loadLibrary(zim) OK
+2026-09-29 10:24:53.955 I/WikiLLMApp: ReLinker.loadLibrary(kiwix) OK
+2026-09-29 10:24:53.957 I/WikiLLMApp: System.loadLibrary(zim_wrapper) OK
+2026-09-29 10:24:53.958 I/WikiLLMApp: System.loadLibrary(kiwix_wrapper) OK
+2026-09-29 10:24:54.335 I/ChatVM: Auto-loading last model: Qwen3.5-4B-Q4_0.gguf
+2026-09-29 10:24:54.336 I/ChatVM: Loading model: Qwen3.5-4B-Q4_0.gguf (device=auto, mtp=0) (/storage/emulated/0/Android/data/com.wikillm.android.debug/files/models/unsloth/Qwen3.5-4B-GGUF/Qwen3.5-4B-Q4_0.gguf)
+2026-09-29 10:24:54.700 I/ZimSearcher: openPath: /storage/emulated/0/Android/data/com.wikillm.android.debug/files/zim/wikipedia_ru_all_nopic_2026-01.zim (14671735099 bytes)
+2026-09-29 10:24:55.046 I/ZimSearchHolder: ZimSearchHolder ready: wikipedia_ru_all_nopic_2026-01.zim
+2026-09-29 10:25:01.790 I/ChatVM: Model loaded: Qwen3.5-4B-Q4_0.gguf
+2026-09-29 10:25:05.844 I/BenchmarkBridge: Benchmark question via intent: почему Юпитер называют газовым гигантом
+2026-09-29 10:25:05.850 I/ChatVM: [TURN] begin q=почему Юпитер называют газовым гигантом
+2026-09-29 10:25:05.852 I/ChatVM: [PHASE] factoid=miss ms=2
+2026-09-29 10:25:05.854 I/RagPromptBuilder: Query: 'почему Юпитер называют газовым гигантом' -> ZIM keywords: 'юпитер называют газовым гигантом'
+2026-09-29 10:25:06.377 I/GraphWalker: walk: 0 wikilinks in 'Юпитер' (depth=0)
+2026-09-29 10:25:06.377 I/GraphWalker: walk seed=Юпитер props=[P6, P1365, P1366, P39, P166, P26, P40, P22, P25, P3373, P50, P175, P800, P184, P802, P57, P58, P162, P36, P159, P127, P112] → 0 nodes
+2026-09-29 10:25:06.378 I/RagPromptBuilder: Walker probes (entity='Юпитер', props=22): Юпитер
+2026-09-29 10:25:06.428 I/EntityTitleProbe: Title probes (13 lookups): Юпитер(1080), Гигант(1030)
+2026-09-29 10:25:06.471 I/ZimSearcher: search('юпитер называют газовым гигантом') estimated=200
+2026-09-29 10:25:06.952 I/ZimSearcher: search('называют') estimated=194221
+2026-09-29 10:25:07.298 I/RagPromptBuilder: Entity merge 'называют': +20 candidates
+2026-09-29 10:25:07.303 I/RagPromptBuilder: RAG: 'почему Юпитер называют газовым гигантом' candidates=42
+2026-09-29 10:25:07.304 I/RagPromptBuilder: Top hits: Юпитер(s=1080)[Юпитер] | Гигант(s=1030)[Гигант] | То, что называют любовью(s=98)[То,_что_называют_любовью] | Газовые гиганты(s=100)[Газовые_гиганты] | Моя так называемая жизнь(s=100)[Моя_так_называемая_жизнь]
+2026-09-29 10:25:07.779 I/RagPromptBuilder: [PHASE] search=1450ms read=475ms docs=4 ctx=4405
+2026-09-29 10:25:07.780 I/RagPromptBuilder: RAG prompt preview (listIntent=false): Тебе даны выдержки из Википедии. Отвечай на их основе. Ответь коротко и по существу: 1–3 предложения, только то, о чём спрашивают. Не пересказывай выдержки, не добавляй посторонние факты и не нумеруй пункты, если вопрос не про перечень. Если вопрос требует сравнения двух и более вещей — до 5 предложений. Если в выдержках совсем нет нужной информации — скажи «не знаю по приведённым выдержкам». Отвечай на русском языке.  === ВЫДЕРЖКИ ИЗ ВИКИ === === Юпитер === Карточка: Перигелий: 7,405736⋅108 км 
+2026-09-29 10:25:07.780 I/ChatVM: RAG ctx: 4 articles from 42 candidates
+2026-09-29 10:25:07.781 I/ChatVM: Generating: 1 msgs, maxTokens=1600, temp=0.7, noThink=true
+2026-09-29 10:29:36.016 I/WikiLLMApp: ADSP_LIBRARY_PATH=/data/app/~~KIa-k6fmCxw-15ipdmz9Ew==/com.wikillm.android.debug-j_uNvkXShCrxbWWllmc5Gg==/lib/arm64;/vendor/lib/rfsa/adsp;/vendor/dsp/cdsp;/system/lib/rfsa/adsp
+2026-09-29 10:29:36.029 I/WikiLLMApp: ReLinker.loadLibrary(zim) OK
+2026-09-29 10:29:36.041 I/WikiLLMApp: ReLinker.loadLibrary(kiwix) OK
+2026-09-29 10:29:36.043 I/WikiLLMApp: System.loadLibrary(zim_wrapper) OK
+2026-09-29 10:29:36.044 I/WikiLLMApp: System.loadLibrary(kiwix_wrapper) OK
+2026-09-29 10:29:36.349 I/ChatVM: Auto-loading last model: Qwen3.5-4B-Q4_0.gguf
+2026-09-29 10:29:36.350 I/ChatVM: Loading model: Qwen3.5-4B-Q4_0.gguf (device=auto, mtp=0) (/storage/emulated/0/Android/data/com.wikillm.android.debug/files/models/unsloth/Qwen3.5-4B-GGUF/Qwen3.5-4B-Q4_0.gguf)
+2026-09-29 10:29:36.746 I/ZimSearcher: openPath: /storage/emulated/0/Android/data/com.wikillm.android.debug/files/zim/wikipedia_ru_all_nopic_2026-01.zim (14671735099 bytes)
+2026-09-29 10:29:37.159 I/ZimSearchHolder: ZimSearchHolder ready: wikipedia_ru_all_nopic_2026-01.zim
+2026-09-29 10:29:41.730 I/ChatVM: Model loaded: Qwen3.5-4B-Q4_0.gguf
+2026-09-29 10:32:17.042 I/BenchmarkBridge: Benchmark question via intent: почему Юпитер называют газовым гигантом
+2026-09-29 10:32:17.047 I/ChatVM: [TURN] begin q=почему Юпитер называют газовым гигантом
+2026-09-29 10:32:17.050 I/ChatVM: [PHASE] factoid=miss ms=2
+2026-09-29 10:32:17.055 I/RagPromptBuilder: Query: 'почему Юпитер называют газовым гигантом' -> ZIM keywords: 'юпитер называют газовым гигантом'
+2026-09-29 10:32:17.383 I/GraphWalker: walk: 0 wikilinks in 'Юпитер' (depth=0)
+2026-09-29 10:32:17.383 I/GraphWalker: walk seed=Юпитер props=[P6, P1365, P1366, P39, P166, P26, P40, P22, P25, P3373, P50, P175, P800, P184, P802, P57, P58, P162, P36, P159, P127, P112] → 0 nodes
+2026-09-29 10:32:17.384 I/RagPromptBuilder: Walker probes (entity='Юпитер', props=22): Юпитер
+2026-09-29 10:32:17.427 I/EntityTitleProbe: Title probes (13 lookups): Юпитер(1080), Гигант(1030)
+2026-09-29 10:32:17.482 I/ZimSearcher: search('юпитер называют газовым гигантом') estimated=200
+2026-09-29 10:32:17.927 I/ZimSearcher: search('называют') estimated=194221
+2026-09-29 10:32:18.283 I/RagPromptBuilder: Entity merge 'называют': +20 candidates
+2026-09-29 10:32:18.288 I/RagPromptBuilder: RAG: 'почему Юпитер называют газовым гигантом' candidates=42
+2026-09-29 10:32:18.288 I/RagPromptBuilder: Top hits: Юпитер(s=1080)[Юпитер] | Гигант(s=1030)[Гигант] | То, что называют любовью(s=98)[То,_что_называют_любовью] | Газовые гиганты(s=100)[Газовые_гиганты] | Моя так называемая жизнь(s=100)[Моя_так_называемая_жизнь]
+2026-09-29 10:32:18.730 I/RagPromptBuilder: [PHASE] search=1234ms read=441ms docs=4 ctx=4405
+2026-09-29 10:32:18.731 I/RagPromptBuilder: RAG prompt preview (listIntent=false): Тебе даны выдержки из Википедии. Отвечай на их основе. Ответь коротко и по существу: 1–3 предложения, только то, о чём спрашивают. Не пересказывай выдержки, не добавляй посторонние факты и не нумеруй пункты, если вопрос не про перечень. Если вопрос требует сравнения двух и более вещей — до 5 предложений. Если в выдержках совсем нет нужной информации — скажи «не знаю по приведённым выдержкам». Отвечай на русском языке.  === ВЫДЕРЖКИ ИЗ ВИКИ === === Юпитер === Карточка: Перигелий: 7,405736⋅108 км 
+2026-09-29 10:32:18.731 I/ChatVM: RAG ctx: 4 articles from 42 candidates
+2026-09-29 10:32:18.731 I/ChatVM: Generating: 1 msgs, maxTokens=1600, temp=0.7, noThink=true
+2026-09-29 10:37:42.226 I/ChatVM: Reply (1761 chars, 411 tok, 325177ms, prefill 1832tok/14055ms=130t/s, decode 1,4t/s): Юпитер называют газовым гигантом из-за его уникального химического состава, в котором доминируют водород и гелий. Эти два элемента составляют подавляющую часть массы планеты, что кардинально отличает 
+2026-09-29 10:37:42.229 I/ChatVM: [TURN] end path=rag total=325177ms factoid=2ms ptok=1832 gtok=411 prefill=14055ms decode=289410ms chars=1761
+2026-09-29 10:37:42.696 I/BenchmarkBridge: Benchmark question via intent: из чего состоит атмосфера Марса
+2026-09-29 10:37:42.698 I/ChatVM: [TURN] begin q=из чего состоит атмосфера Марса
+2026-09-29 10:37:42.699 I/ChatVM: [PHASE] factoid=miss ms=0
+2026-09-29 10:37:42.701 I/RagPromptBuilder: Query: 'из чего состоит атмосфера Марса' -> ZIM keywords: 'чего состоит атмосфера марса'
+2026-09-29 10:37:42.739 I/GraphWalker: walk: 0 wikilinks in 'Марса' (depth=0)
+2026-09-29 10:37:42.740 I/GraphWalker: walk seed=Марса props=[P6, P1365, P1366, P39, P166, P26, P40, P22, P25, P3373, P50, P175, P800, P184, P802, P57, P58, P162, P36, P159, P127, P112] → 0 nodes
+2026-09-29 10:37:42.740 I/RagPromptBuilder: Walker probes (entity='Марса', props=22): Марса
+2026-09-29 10:37:42.774 I/EntityTitleProbe: Title probes (10 lookups): Марса(1080), Марс(1080), Атмосфера Марса(900)
+2026-09-29 10:37:42.784 I/EntityTitleProbe: Top tie at 1080: Марс=658430, Марса=7479
+2026-09-29 10:37:42.786 I/EntityTitleProbe: Redundant probes: Марса
+2026-09-29 10:37:42.858 I/ZimSearcher: search('чего состоит атмосфера марса') estimated=300
+2026-09-29 10:37:43.454 I/ZimSearcher: search('атмосфера') estimated=21862
+2026-09-29 10:37:43.954 I/RagPromptBuilder: Entity merge 'атмосфера': +19 candidates
+2026-09-29 10:37:43.961 I/RagPromptBuilder: RAG: 'из чего состоит атмосфера Марса' candidates=40
+2026-09-29 10:37:43.962 I/RagPromptBuilder: Top hits: Марс(s=1085)[Марс] | Марса(s=900)[Марса] | Атмосфера Марса(s=900)[Атмосфера_Марса] | Атмосфера(s=100)[Атмосфера] | Атмосфера Земли(s=99)[Атмосфера_Земли]
+2026-09-29 10:37:44.513 I/RagPromptBuilder: [PHASE] search=1262ms read=550ms docs=4 ctx=4482
+2026-09-29 10:37:44.513 I/RagPromptBuilder: RAG prompt preview (listIntent=false): Тебе даны выдержки из Википедии. Отвечай на их основе. Ответь коротко и по существу: 1–3 предложения, только то, о чём спрашивают. Не пересказывай выдержки, не добавляй посторонние факты и не нумеруй пункты, если вопрос не про перечень. Если вопрос требует сравнения двух и более вещей — до 5 предложений. Если в выдержках совсем нет нужной информации — скажи «не знаю по приведённым выдержкам». Отвечай на русском языке.  === ВЫДЕРЖКИ ИЗ ВИКИ === === Марс === Карточка: Другие названия: Красная план
+2026-09-29 10:37:44.514 I/ChatVM: RAG ctx: 4 articles from 40 candidates
+2026-09-29 10:37:44.514 I/ChatVM: Generating: 3 msgs, maxTokens=1600, temp=0.7, noThink=true
+2026-09-29 10:39:03.171 I/ChatVM: Reply (359 chars, 95 tok, 80474ms, prefill 2241tok/19266ms=116t/s, decode 1,6t/s): Атмосфера Марса состоит в основном из углекислого газа (95,32%), с добавлением азота (2,7%), аргона и кислорода. Также в её составе присутствуют водяной пар, угарный газ, неон и следы других лёгких га
+2026-09-29 10:39:03.173 I/ChatVM: [TURN] end path=rag total=80474ms factoid=0ms ptok=2241 gtok=95 prefill=19266ms decode=59358ms chars=359
+2026-09-29 10:39:03.437 I/BenchmarkBridge: Benchmark question via intent: кто открыл пенициллин
+2026-09-29 10:39:03.439 I/ChatVM: [TURN] begin q=кто открыл пенициллин
+2026-09-29 10:39:03.440 I/ChatVM: [PHASE] factoid=miss ms=0
+2026-09-29 10:39:03.442 I/ChatVM: Coreference: 'кто открыл пенициллин' + topic 'чего состоит атмосфера марса'
+2026-09-29 10:39:03.443 I/RagPromptBuilder: Query: 'кто открыл пенициллин чего состоит атмосфера марса' -> ZIM keywords: 'открыл пенициллин чего состоит атмосфера марса'
+2026-09-29 10:39:03.499 I/EntityTitleProbe: Title probes (18 lookups): Бензилпенициллин(1020), Марса(1030), Марс(1030)
+2026-09-29 10:39:03.506 I/EntityTitleProbe: Top tie at 1030: Марс=658430, Марса=7479
+2026-09-29 10:39:03.508 I/EntityTitleProbe: Redundant probes: Марса
+2026-09-29 10:39:03.515 I/ZimSearcher: search('открыл пенициллин чего состоит атмосфера марса') estimated=0
+2026-09-29 10:39:03.527 I/ZimSearcher: search('пенициллин') estimated=589
+2026-09-29 10:39:03.785 I/RagPromptBuilder: Entity merge 'пенициллин': +19 candidates
+2026-09-29 10:39:03.789 I/RagPromptBuilder: RAG: 'кто открыл пенициллин чего состоит атмосфера марса' candidates=21
+2026-09-29 10:39:03.790 I/RagPromptBuilder: Top hits: Марс(s=1035)[Марс] | Бензилпенициллин(s=1020)[Бензилпенициллин] | Пенициллины(s=100)[Пенициллины] | Пенициллин (комплекс артразведки)(s=99)[Пенициллин_(комплекс_артразведки)] | Пенициллин (значения)(s=95)[Пенициллин_(значения)]
+2026-09-29 10:39:04.208 I/RagPromptBuilder: [PHASE] search=348ms read=418ms docs=4 ctx=4544
+2026-09-29 10:39:04.209 I/RagPromptBuilder: RAG prompt preview (listIntent=false): Тебе даны выдержки из Википедии. Отвечай на их основе. Ответь коротко и по существу: 1–3 предложения, только то, о чём спрашивают. Не пересказывай выдержки, не добавляй посторонние факты и не нумеруй пункты, если вопрос не про перечень. Если вопрос требует сравнения двух и более вещей — до 5 предложений. Если в выдержках совсем нет нужной информации — скажи «не знаю по приведённым выдержкам». Отвечай на русском языке.  === ВЫДЕРЖКИ ИЗ ВИКИ === === Марс === Карточка: Другие названия: Красная план
+2026-09-29 10:39:04.209 I/ChatVM: RAG ctx: 4 articles from 21 candidates
+2026-09-29 10:39:04.210 I/ChatVM: Generating: 5 msgs, maxTokens=1600, temp=0.7, noThink=true
+2026-09-29 10:40:06.203 I/ChatVM: Reply (189 chars, 62 tok, 62764ms, prefill 2537tok/21411ms=118t/s, decode 1,5t/s): Пенициллин открыл **Александр Флеминг** в 1928 году. Атмосфера Марса состоит преимущественно из углекислого газа (около 95%), также содержатся азот, аргон и следы кислорода и водяного пара.
+2026-09-29 10:40:06.204 I/ChatVM: [TURN] end path=rag total=62764ms factoid=0ms ptok=2537 gtok=62 prefill=21411ms decode=40553ms chars=189
+2026-09-29 10:40:06.813 I/BenchmarkBridge: Benchmark question via intent: что такое фотосинтез
+2026-09-29 10:40:06.815 I/ChatVM: [TURN] begin q=что такое фотосинтез
+2026-09-29 10:40:06.816 I/ChatVM: [PHASE] factoid=miss ms=0
+2026-09-29 10:40:06.818 I/ChatVM: Coreference: 'что такое фотосинтез' + topic 'открыл пенициллин'
+2026-09-29 10:40:06.819 I/RagPromptBuilder: Query: 'что такое фотосинтез открыл пенициллин' -> ZIM keywords: 'такое фотосинтез открыл пенициллин'
+2026-09-29 10:40:06.861 I/EntityTitleProbe: Title probes (5 lookups): Фотосинтез(1030), Бензилпенициллин(1020)
+2026-09-29 10:40:06.869 I/ZimSearcher: search('такое фотосинтез открыл пенициллин') estimated=2
+2026-09-29 10:40:06.976 I/ZimSearcher: search('фотосинтез') estimated=965
+2026-09-29 10:40:07.261 I/RagPromptBuilder: Entity merge 'фотосинтез': +19 candidates
+2026-09-29 10:40:07.264 I/RagPromptBuilder: RAG: 'что такое фотосинтез открыл пенициллин' candidates=23
+2026-09-29 10:40:07.265 I/RagPromptBuilder: Top hits: Фотосинтез(s=1030)[Фотосинтез] | Бензилпенициллин(s=1020)[Бензилпенициллин] | C4-фотосинтез(s=99)[C4-фотосинтез] | CAM-фотосинтез(s=99)[CAM-фотосинтез] | Эволюция фотосинтеза(s=99)[Эволюция_фотосинтеза]
+2026-09-29 10:40:07.568 I/RagPromptBuilder: [PHASE] search=447ms read=302ms docs=4 ctx=4432
+2026-09-29 10:40:07.568 I/RagPromptBuilder: RAG prompt preview (listIntent=false): Тебе даны выдержки из Википедии. Отвечай на их основе. Ответь коротко и по существу: 1–3 предложения, только то, о чём спрашивают. Не пересказывай выдержки, не добавляй посторонние факты и не нумеруй пункты, если вопрос не про перечень. Если вопрос требует сравнения двух и более вещей — до 5 предложений. Если в выдержках совсем нет нужной информации — скажи «не знаю по приведённым выдержкам». Отвечай на русском языке.  === ВЫДЕРЖКИ ИЗ ВИКИ === === Фотосинтез === Фотосинтез Фотоси́нтез (от др.-гр
+2026-09-29 10:40:07.569 I/ChatVM: RAG ctx: 4 articles from 23 candidates
+2026-09-29 10:40:07.569 I/ChatVM: Generating: 7 msgs, maxTokens=1600, temp=0.7, noThink=true
+2026-09-29 10:41:56.540 I/ChatVM: Reply (505 chars, 150 tok, 109724ms, prefill 2305tok/19482ms=118t/s, decode 1,7t/s): Фотосинтез не открыл пенициллин, так как это химическое соединение — антибиотик, полученный Александром Флемингом в 1928 году. Пенициллин подавляет размножение бактерий и деление хлоропластов мхов, но
+2026-09-29 10:41:56.541 I/ChatVM: [TURN] end path=rag total=109724ms factoid=0ms ptok=2305 gtok=150 prefill=19482ms decode=89454ms chars=505
+2026-09-29 10:41:57.182 I/BenchmarkBridge: Benchmark question via intent: когда началась Вторая мировая война
+2026-09-29 10:41:57.184 I/ChatVM: [TURN] begin q=когда началась Вторая мировая война
+2026-09-29 10:41:57.186 I/FactoidAnswerer: Factoid candidate: label='(by card label)' entity='Вторая'
+2026-09-29 10:41:57.268 I/EntityTitleProbe: Title probes (22 lookups): Вторая мировая война(1120), Вторая(1080), Мировая война(1050), Война(1030)
+2026-09-29 10:41:57.271 I/EntityTitleProbe: Redundant probes: Вторая, Война
+2026-09-29 10:41:59.847 I/ZimSearcher: suggestTitles('Вторая'): Вторая, Вторая Академия, Вторая Александровка, Вторая Алексеевка, Вторая Алия, Вторая Армения, Вторая Багажиашта, Вторая Бугульда, Вторая Бундеслига, Вторая Васильевка, Вторая Вилашка, Вторая Глушковская, Вторая Горка, Вторая Григорьевка, Вторая Грязучая, Вторая Дудинская, Вторая Едома, Вторая Ивановка, Вторая Ивань, Вторая Интифада, Вторая Каменка, Вторая Ключевская, Вторая Кошка, Вторая Кривка, Вторая Крутая, Вторая Куликовка, Вторая Культура, Вторая Лака, Вторая Леденгская, Вторая Луна, Вторая Малая, Вторая Медяна
+2026-09-29 10:41:59.851 I/FactoidAnswerer: Factoid candidates: Вторая, Вторая мировая война, Мировая война
+2026-09-29 10:41:59.862 I/FactoidAnswerer: Factoid: 'Вторая' has no infobox — next candidate
+2026-09-29 10:41:59.985 I/FactoidAnswerer: Factoid: no label covers [начала, мирова, война] in [Дата, Место, Причина, Итог]
+2026-09-29 10:41:59.986 I/FactoidAnswerer: Factoid: 'Вторая мировая война' card has no matching field — next candidate
+2026-09-29 10:42:00.003 I/FactoidAnswerer: Factoid: 'Мировая война' has no infobox — next candidate
+2026-09-29 10:42:00.004 I/FactoidAnswerer: Factoid: no candidate carried the field — falling back to RAG
+2026-09-29 10:42:00.005 I/ChatVM: [PHASE] factoid=miss ms=2820
+2026-09-29 10:42:00.006 I/RagPromptBuilder: Query: 'когда началась Вторая мировая война' -> ZIM keywords: 'началась вторая мировая война'
+2026-09-29 10:42:00.010 I/GraphWalker: walk: 0 wikilinks in 'Вторая' (depth=0)
+2026-09-29 10:42:00.010 I/GraphWalker: walk seed=Вторая props=[P6, P1365, P1366, P39, P166, P26, P40, P22, P25, P3373, P50, P175, P800, P184, P802, P57, P58, P162, P36, P159, P127, P112] → 0 nodes
+2026-09-29 10:42:00.010 I/RagPromptBuilder: Walker probes (entity='Вторая', props=22): Вторая
+2026-09-29 10:42:00.027 I/EntityTitleProbe: Title probes (22 lookups): Вторая мировая война(1120), Вторая(1080), Мировая война(1050), Война(1030)
+2026-09-29 10:42:00.029 I/EntityTitleProbe: Redundant probes: Вторая, Война
+2026-09-29 10:42:00.180 I/ZimSearcher: search('началась вторая мировая война') estimated=20000
+2026-09-29 10:42:01.358 I/ZimSearcher: search('началась') estimated=467255
+2026-09-29 10:42:02.437 I/RagPromptBuilder: Entity merge 'началась': +20 candidates
+2026-09-29 10:42:02.447 I/RagPromptBuilder: RAG: 'когда началась Вторая мировая война' candidates=41
+2026-09-29 10:42:02.448 I/RagPromptBuilder: Top hits: Вторая мировая война(s=1120)[Вторая_мировая_война] | Мировая война(s=1050)[Мировая_война] | Вторая(s=900)[Вторая] | Вторая мировая война на море(s=98)[Вторая_мировая_война_на_море] | Вторая мировая война (серия книг)(s=95)[Вторая_мировая_война_(серия_книг)]
+2026-09-29 10:42:02.815 I/RagPromptBuilder: [PHASE] search=2443ms read=367ms docs=4 ctx=4313
+2026-09-29 10:42:02.816 I/RagPromptBuilder: RAG prompt preview (listIntent=false): Тебе даны выдержки из Википедии. Отвечай на их основе. Ответь коротко и по существу: 1–3 предложения, только то, о чём спрашивают. Не пересказывай выдержки, не добавляй посторонние факты и не нумеруй пункты, если вопрос не про перечень. Если вопрос требует сравнения двух и более вещей — до 5 предложений. Если в выдержках совсем нет нужной информации — скажи «не знаю по приведённым выдержкам». Отвечай на русском языке.  === ВЫДЕРЖКИ ИЗ ВИКИ === === Вторая мировая война === Карточка: Дата: 1 сентя
+2026-09-29 10:42:02.816 I/ChatVM: RAG ctx: 4 articles from 41 candidates
+2026-09-29 10:42:02.817 I/ChatVM: Generating: 7 msgs, maxTokens=1600, temp=0.7, noThink=true
+2026-09-29 10:43:17.072 I/ChatVM: Reply (356 chars, 93 tok, 79887ms, prefill 1851tok/17162ms=108t/s, decode 1,6t/s): Вторая мировая война началась 1 сентября 1939 года, когда нацистская Германия вторглась в Польшу. Это событие стало официальным началом конфликта между двумя военно-политическими коалициями и крупнейш
+2026-09-29 10:43:17.077 I/ChatVM: [TURN] end path=rag total=79887ms factoid=2820ms ptok=1851 gtok=93 prefill=17162ms decode=57064ms chars=356
+2026-09-29 10:43:17.942 I/BenchmarkBridge: Benchmark question via intent: чем знаменит Большое красное пятно
+2026-09-29 10:43:17.944 I/ChatVM: [TURN] begin q=чем знаменит Большое красное пятно
+2026-09-29 10:43:17.945 I/ChatVM: [PHASE] factoid=miss ms=1
+2026-09-29 10:43:17.947 I/RagPromptBuilder: Query: 'чем знаменит Большое красное пятно' -> ZIM keywords: 'чем знаменит большое красное пятно'
+2026-09-29 10:43:17.995 I/GraphWalker: walk: 0 wikilinks in 'Большое' (depth=0)
+2026-09-29 10:43:17.996 I/GraphWalker: walk seed=Большое props=[P6, P1365, P1366, P39, P166, P26, P40, P22, P25, P3373, P50, P175, P800, P184, P802, P57, P58, P162, P36, P159, P127, P112] → 0 nodes
+2026-09-29 10:43:17.996 I/RagPromptBuilder: Walker probes (entity='Большое', props=22): Большое
+2026-09-29 10:43:18.069 I/EntityTitleProbe: Title probes (28 lookups): Большое красное пятно(1120), Большое(1080), Красное(1030), Красно(1030), Пятно(1030)
+2026-09-29 10:43:18.072 I/EntityTitleProbe: Redundant probes: Большое, Красное, Красно, Пятно
+2026-09-29 10:43:18.112 I/ZimSearcher: search('чем знаменит большое красное пятно') estimated=200
+2026-09-29 10:43:18.825 I/ZimSearcher: search('знаменит') estimated=51485
+2026-09-29 10:43:19.332 I/RagPromptBuilder: Entity merge 'знаменит': +20 candidates
+2026-09-29 10:43:19.341 I/RagPromptBuilder: RAG: 'чем знаменит Большое красное пятно' candidates=42
+2026-09-29 10:43:19.342 I/RagPromptBuilder: Top hits: Большое красное пятно(s=1120)[Большое_красное_пятно] | Большое(s=900)[Большое] | Я почти знаменит(s=99)[Я_почти_знаменит] | Красочная жизнь(s=100)[Красочная_жизнь] | Храм иконы Божией Матери «Знамение»(s=100)[Храм_иконы_Божией_Матери_«Знамение»]
+2026-09-29 10:43:19.470 I/RagPromptBuilder: [PHASE] search=1396ms read=127ms docs=4 ctx=4549
+2026-09-29 10:43:19.471 I/RagPromptBuilder: RAG prompt preview (listIntent=false): Тебе даны выдержки из Википедии. Отвечай на их основе. Ответь коротко и по существу: 1–3 предложения, только то, о чём спрашивают. Не пересказывай выдержки, не добавляй посторонние факты и не нумеруй пункты, если вопрос не про перечень. Если вопрос требует сравнения двух и более вещей — до 5 предложений. Если в выдержках совсем нет нужной информации — скажи «не знаю по приведённым выдержкам». Отвечай на русском языке.  === ВЫДЕРЖКИ ИЗ ВИКИ === === Большое красное пятно === Большое красное пятно 
+2026-09-29 10:43:19.471 I/ChatVM: RAG ctx: 4 articles from 42 candidates
+2026-09-29 10:43:19.471 I/ChatVM: Generating: 7 msgs, maxTokens=1600, temp=0.7, noThink=true
+2026-09-29 10:44:44.914 I/ChatVM: Reply (391 chars, 108 tok, 86970ms, prefill 2033tok/18565ms=110t/s, decode 1,6t/s): Большое красное пятно знаменито как самый большой атмосферный вихрь и зона высокого давления в Солнечной системе. Оно перемещается параллельно экватору Юпитера, создавая шторм с против часовой стрелки
+2026-09-29 10:44:44.919 I/ChatVM: [TURN] end path=rag total=86970ms factoid=1ms ptok=2033 gtok=108 prefill=18565ms decode=66840ms chars=391
+2026-09-29 10:44:45.906 I/BenchmarkBridge: Benchmark question via intent: что производит АвтоВАЗ
+2026-09-29 10:44:45.909 I/ChatVM: [TURN] begin q=что производит АвтоВАЗ
+2026-09-29 10:44:45.911 I/FactoidAnswerer: Factoid candidate: label='(by card label)' entity='АвтоВАЗ'
+2026-09-29 10:44:45.960 I/EntityTitleProbe: Title probes (2 lookups): АвтоВАЗ(1080)
+2026-09-29 10:44:46.069 I/ZimSearcher: suggestTitles('АвтоВАЗ'): АВТОВАЗ, GM-АВТОВАЗ, Национальная гоночная серия "АВТОВАЗ", Технический музей ОАО "АвтоВАЗ", Эм-АВТОВАЗ Шевроле Вива, Джи Эм-АВТОВАЗ Шевроле Нива, Здание генеральной дирекции АВТОВАЗа, АВТОВАЗБАНК, АвтоВАЗагрегат
+2026-09-29 10:44:46.070 I/FactoidAnswerer: Factoid candidates: АвтоВАЗ
+2026-09-29 10:44:46.135 I/FactoidAnswerer: Factoid: no label covers [произв] in [Основан, Штаб-квартира, Тип, Листинг на бирже, Дата основания, Прежние названия, Основатели, Расположение, Ключевые фигуры, Отрасль, Продукция, Операционная прибыль, Чистая прибыль, Материнская компания, Дочерние компании]
+2026-09-29 10:44:46.136 I/FactoidAnswerer: Factoid: 'АвтоВАЗ' card has no matching field — next candidate
+2026-09-29 10:44:46.136 I/FactoidAnswerer: Factoid: no candidate carried the field — falling back to RAG
+2026-09-29 10:44:46.136 I/ChatVM: [PHASE] factoid=miss ms=226
+2026-09-29 10:44:46.137 I/RagPromptBuilder: Query: 'что производит АвтоВАЗ' -> ZIM keywords: 'производит автоваз'
+2026-09-29 10:44:46.462 I/GraphWalker: walk seed=АвтоВАЗ props=[P6, P1365, P1366, P39, P166, P26, P40, P22, P25, P3373, P50, P175, P800, P184, P802, P57, P58, P162, P36, P159, P127, P112] → 6 nodes
+2026-09-29 10:44:46.463 I/RagPromptBuilder: Walker probes (entity='АвтоВАЗ', props=22): АвтоВАЗ, Россия, Тольятти, ЦК КПСС, Совет министров СССР, Москва, Илья Геннадьевич Сухих
+2026-09-29 10:44:46.466 I/EntityTitleProbe: Title probes (2 lookups): АвтоВАЗ(1080)
+2026-09-29 10:44:46.488 I/ZimSearcher: search('производит автоваз') estimated=300
+2026-09-29 10:44:47.033 I/ZimSearcher: search('производит') estimated=56978
+2026-09-29 10:44:47.626 I/RagPromptBuilder: Entity merge 'производит': +20 candidates
+2026-09-29 10:44:47.633 I/RagPromptBuilder: RAG: 'что производит АвтоВАЗ' candidates=46
+2026-09-29 10:44:47.634 I/RagPromptBuilder: Top hits: АвтоВАЗ(s=1080)[АвтоВАЗ] | Россия(s=899)[Россия] | Тольятти(s=899)[Тольятти] | ЦК КПСС(s=899)[ЦК_КПСС] | Совет министров СССР(s=899)[Совет_министров_СССР]
+2026-09-29 10:44:48.635 I/RagPromptBuilder: [PHASE] search=1497ms read=1001ms docs=3 ctx=4806
+2026-09-29 10:44:48.636 I/RagPromptBuilder: RAG prompt preview (listIntent=false): Тебе даны выдержки из Википедии. Отвечай на их основе. Ответь коротко и по существу: 1–3 предложения, только то, о чём спрашивают. Не пересказывай выдержки, не добавляй посторонние факты и не нумеруй пункты, если вопрос не про перечень. Если вопрос требует сравнения двух и более вещей — до 5 предложений. Если в выдержках совсем нет нужной информации — скажи «не знаю по приведённым выдержкам». Отвечай на русском языке.  === ВЫДЕРЖКИ ИЗ ВИКИ === === АвтоВАЗ === Карточка: Основан: 20 июля 1966 (196
+2026-09-29 10:44:48.636 I/ChatVM: RAG ctx: 3 articles from 46 candidates
+2026-09-29 10:44:48.637 I/ChatVM: Generating: 7 msgs, maxTokens=1600, temp=0.7, noThink=true
+2026-09-29 10:45:49.664 I/ChatVM: Reply (335 chars, 65 tok, 63755ms, prefill 2274tok/21254ms=107t/s, decode 1,6t/s): АвтоВАЗ производит легковые автомобили и легкие коммерческие машины под собственной торговой маркой **Lada**. Ранее завод также выпускал автомобили известных брендов, таких как Nissan, Renault и Datsu
+2026-09-29 10:45:49.666 I/ChatVM: [TURN] end path=rag total=63755ms factoid=226ms ptok=2274 gtok=65 prefill=21254ms decode=39745ms chars=335
+2026-09-29 10:45:50.305 I/BenchmarkBridge: Benchmark question via intent: какой автозавод расположен в Тольятти
+2026-09-29 10:45:50.308 I/ChatVM: [TURN] begin q=какой автозавод расположен в Тольятти
+2026-09-29 10:45:50.310 I/FactoidAnswerer: Factoid candidate: label='(by card label)' entity='Тольятти'
+2026-09-29 10:45:50.380 I/EntityTitleProbe: Title probes (10 lookups): Тольятти(1080), Автомобильная промышленность(1020)
+2026-09-29 10:45:50.811 I/ZimSearcher: suggestTitles('Тольятти'): Тольятти, Тольятти 24, Тольятти (История), Тольятти (аэродром), Тольятти (значения), Тольятти (станция), Тольятти П., Тольятти сегодня, Тольятти, Эудженио, Тольятти (речной порт), Тольятти (футбольный клуб), Тольятти (особая экономическая зона), Тольятти (территория опережающего развития), Академия Тольятти, Вузы Тольятти, Герб Тольятти, Гимн Тольятти, Градоначальники Тольятти, Дума Тольятти, Лада (Тольятти), Лада-Тольятти, Медгородок Тольятти, Набережная Тольятти, Памятники Тольятти, Поверхность Тольятти, Портпосёлок (Тольятти), Районы Тольятти, СИБУР Тольятти, Спорт Тольятти, Троллейбус Тольятти, Улицы Тольятти, Флаг Тольятти
+2026-09-29 10:45:50.815 I/FactoidAnswerer: Factoid candidates: Тольятти, Автомобильная промышленность
+2026-09-29 10:45:50.912 I/FactoidAnswerer: Factoid: no label covers [автоза, распол] in [Глава/мэр, Население, Площадь, Основан, Страна, Часовой пояс, Субъект Федерации, Городской округ, Внутреннее деление, Глава городского округа, Прежние названия, Город с, Высота центра, Тип климата, Плотность, Агломерация, Население агломерации, Национальности, Конфессии, Название жителей, Официальный язык, День города]
+2026-09-29 10:45:50.913 I/FactoidAnswerer: Factoid: 'Тольятти' card has no matching field — next candidate
+2026-09-29 10:45:50.941 I/FactoidAnswerer: Factoid: 'Автомобильная промышленность' has no infobox — next candidate
+2026-09-29 10:45:50.941 I/FactoidAnswerer: Factoid: no candidate carried the field — falling back to RAG
+2026-09-29 10:45:50.942 I/ChatVM: [PHASE] factoid=miss ms=633
+2026-09-29 10:45:50.943 I/RagPromptBuilder: Query: 'какой автозавод расположен в Тольятти' -> ZIM keywords: 'автозавод расположен тольятти'
+2026-09-29 10:45:51.081 I/GraphWalker: walk: 0 wikilinks in 'Заслуженный_врач_Российской_Федерации' (depth=3)
+2026-09-29 10:45:51.095 I/GraphWalker: walk seed=Тольятти props=[P6, P1365, P1366, P39, P166, P26, P40, P22, P25, P3373, P50, P175, P800, P184, P802, P57, P58, P162, P36, P159, P127, P112] → 5 nodes
+2026-09-29 10:45:51.096 I/RagPromptBuilder: Walker probes (entity='Тольятти', props=22): Тольятти, Илья Геннадьевич Сухих, Николай Ренц, Заслуженный врач Российской Федерации, Сергей Анташев, Сергей Андреев
+2026-09-29 10:45:51.105 I/EntityTitleProbe: Title probes (10 lookups): Тольятти(1080), Автомобильная промышленность(1020)
+2026-09-29 10:45:51.120 I/ZimSearcher: search('автозавод расположен тольятти') estimated=40
+2026-09-29 10:45:52.247 I/ZimSearcher: search('расположен') estimated=249807
+2026-09-29 10:45:52.737 I/RagPromptBuilder: Entity merge 'расположен': +20 candidates
+2026-09-29 10:45:52.743 I/RagPromptBuilder: RAG: 'какой автозавод расположен в Тольятти' candidates=46
+2026-09-29 10:45:52.744 I/RagPromptBuilder: Top hits: Тольятти(s=1080)[Тольятти] | Автомобильная промышленность(s=1020)[Автомобильная_промышленность] | Илья Геннадьевич Сухих(s=899)[Сухих,_Илья_Геннадьевич] | Николай Ренц(s=898)[Ренц,_Николай_Альфредович] | Сергей Анташев(s=897)[Анташев,_Сергей_Александрович]
+2026-09-29 10:45:53.127 I/RagPromptBuilder: [PHASE] search=1802ms read=382ms docs=4 ctx=5094
+2026-09-29 10:45:53.128 I/RagPromptBuilder: RAG prompt preview (listIntent=false): Тебе даны выдержки из Википедии. Отвечай на их основе. Ответь коротко и по существу: 1–3 предложения, только то, о чём спрашивают. Не пересказывай выдержки, не добавляй посторонние факты и не нумеруй пункты, если вопрос не про перечень. Если вопрос требует сравнения двух и более вещей — до 5 предложений. Если в выдержках совсем нет нужной информации — скажи «не знаю по приведённым выдержкам». Отвечай на русском языке.  === ВЫДЕРЖКИ ИЗ ВИКИ === === Тольятти === Карточка: Глава/мэр: Илья Геннадьев
+2026-09-29 10:45:53.128 I/ChatVM: RAG ctx: 4 articles from 46 candidates
+2026-09-29 10:45:53.129 I/ChatVM: Generating: 7 msgs, maxTokens=1600, temp=0.7, noThink=true
+2026-09-29 10:47:01.417 I/ChatVM: Reply (294 chars, 75 tok, 71108ms, prefill 2415tok/22432ms=108t/s, decode 1,6t/s): В Тольятти расположен Волжский автомобильный завод (ВАЗ), который является крупнейшим автомобилестроительным предприятием в России. Завод известен массовым выпуском легковых автомобилей марок «Жигули»
+2026-09-29 10:47:01.419 I/ChatVM: [TURN] end path=rag total=71108ms factoid=633ms ptok=2415 gtok=75 prefill=22432ms decode=45820ms chars=294
+2026-09-29 10:47:01.883 I/BenchmarkBridge: Benchmark question via intent: назови планеты Солнечной системы
+2026-09-29 10:47:01.885 I/ChatVM: [TURN] begin q=назови планеты Солнечной системы
+2026-09-29 10:47:01.886 I/ChatVM: [PHASE] factoid=miss ms=0
+2026-09-29 10:47:01.889 I/RagPromptBuilder: Query: 'назови планеты Солнечной системы' -> ZIM keywords: 'планеты солнечной системы'
+2026-09-29 10:47:01.988 I/GraphWalker: walk: 0 wikilinks in 'Вспышка_солнечной_активности' (depth=0)
+2026-09-29 10:47:01.989 I/GraphWalker: walk seed=Вспышка_солнечной_активности props=[P6, P1365, P1366, P39, P166, P26, P40, P22, P25, P3373, P50, P175, P800, P184, P802, P57, P58, P162, P36, P159, P127, P112] → 0 nodes
+2026-09-29 10:47:01.995 I/RagPromptBuilder: Walker probes (entity='Солнечной', props=22): Вспышка солнечной активности
+2026-09-29 10:47:02.037 I/EntityTitleProbe: Title probes (29 lookups): Планеты Солнечной системы(1120), Солнечная система(1100), Солнечная(1080), Планета(1020), Система(1020)
+2026-09-29 10:47:02.040 I/EntityTitleProbe: Redundant probes: Солнечная, Планета, Система
+2026-09-29 10:47:02.123 I/ZimSearcher: search('планеты солнечной системы') estimated=7000
+2026-09-29 10:47:02.646 I/ZimSearcher: search('солнечной') estimated=12659
+2026-09-29 10:47:03.217 I/RagPromptBuilder: Entity merge 'солнечной': +13 candidates
+2026-09-29 10:47:03.220 I/RagPromptBuilder: RAG: 'назови планеты Солнечной системы' candidates=35
+2026-09-29 10:47:03.221 I/RagPromptBuilder: Top hits: Планеты Солнечной системы(s=1120)[Планеты_Солнечной_системы] | Солнечная система(s=1100)[Солнечная_система] | Вспышка солнечной активности(s=900)[Вспышка_солнечной_активности] | Планеты-гиганты(s=97)[Планеты-гиганты] | Планеты (сериал)(s=95)[Планеты_(сериал)]
+2026-09-29 10:47:03.485 I/RagPromptBuilder: [PHASE] search=1333ms read=263ms docs=4 ctx=3312
+2026-09-29 10:47:03.486 I/RagPromptBuilder: RAG prompt preview (listIntent=false): Тебе даны выдержки из Википедии. Отвечай на их основе. Ответь коротко и по существу: 1–3 предложения, только то, о чём спрашивают. Не пересказывай выдержки, не добавляй посторонние факты и не нумеруй пункты, если вопрос не про перечень. Если вопрос требует сравнения двух и более вещей — до 5 предложений. Если в выдержках совсем нет нужной информации — скажи «не знаю по приведённым выдержкам». Отвечай на русском языке.  === ВЫДЕРЖКИ ИЗ ВИКИ === === Планеты Солнечной системы === Планеты Солнечной 
+2026-09-29 10:47:03.486 I/ChatVM: RAG ctx: 4 articles from 35 candidates
+2026-09-29 10:47:03.486 I/ChatVM: Generating: 7 msgs, maxTokens=1600, temp=0.7, noThink=true
+2026-09-29 10:47:52.482 I/ChatVM: Reply (170 chars, 57 tok, 50597ms, prefill 1554tok/14390ms=108t/s, decode 1,6t/s): В Солнечной системе есть восемь планет: Меркурий, Венера, Земля и Марс входят в группу каменных планет, а Юпитер, Сатурн, Уран и Нептун составляют группу планет-гигантов.
+2026-09-29 10:47:52.483 I/ChatVM: [TURN] end path=rag total=50597ms factoid=0ms ptok=1554 gtok=57 prefill=14390ms decode=34571ms chars=170
+2026-09-29 10:47:53.034 I/BenchmarkBridge: Benchmark question via intent: кто был предшественником нынешнего мэра Тольятти
+2026-09-29 10:47:53.037 I/ChatVM: [TURN] begin q=кто был предшественником нынешнего мэра Тольятти
+2026-09-29 10:47:53.039 I/FactoidAnswerer: Factoid candidate: label='(by card label)' entity='Тольятти'
+2026-09-29 10:47:53.103 I/EntityTitleProbe: Title probes (16 lookups): Тольятти(1080)
+2026-09-29 10:47:53.174 I/ZimSearcher: suggestTitles('Тольятти'): Тольятти, Тольятти 24, Тольятти (История), Тольятти (аэродром), Тольятти (значения), Тольятти (станция), Тольятти П., Тольятти сегодня, Тольятти, Эудженио, Тольятти (речной порт), Тольятти (футбольный клуб), Тольятти (особая экономическая зона), Тольятти (территория опережающего развития), Академия Тольятти, Вузы Тольятти, Герб Тольятти, Гимн Тольятти, Градоначальники Тольятти, Дума Тольятти, Лада (Тольятти), Лада-Тольятти, Медгородок Тольятти, Набережная Тольятти, Памятники Тольятти, Поверхность Тольятти, Портпосёлок (Тольятти), Районы Тольятти, СИБУР Тольятти, Спорт Тольятти, Троллейбус Тольятти, Улицы Тольятти, Флаг Тольятти
+2026-09-29 10:47:53.178 I/FactoidAnswerer: Factoid candidates: Тольятти
+2026-09-29 10:47:53.262 I/FactoidAnswerer: Factoid: no label covers [предше, мэра] in [Глава/мэр, Население, Площадь, Основан, Страна, Часовой пояс, Субъект Федерации, Городской округ, Внутреннее деление, Глава городского округа, Прежние названия, Город с, Высота центра, Тип климата, Плотность, Агломерация, Население агломерации, Национальности, Конфессии, Название жителей, Официальный язык, День города]
+2026-09-29 10:47:53.263 I/FactoidAnswerer: Factoid: 'Тольятти' card has no matching field — next candidate
+2026-09-29 10:47:53.263 I/FactoidAnswerer: Factoid: no candidate carried the field — falling back to RAG
+2026-09-29 10:47:53.263 I/ChatVM: [PHASE] factoid=miss ms=226
+2026-09-29 10:47:53.264 I/RagPromptBuilder: Query: 'кто был предшественником нынешнего мэра Тольятти' -> ZIM keywords: 'предшественником нынешнего мэра тольятти'
+2026-09-29 10:47:53.372 I/GraphWalker: walk seed=Тольятти props=[P6, P1365, P1366] → 4 nodes
+2026-09-29 10:47:53.372 I/RagPromptBuilder: Walker probes (entity='Тольятти', props=3): Тольятти, Илья Геннадьевич Сухих, Николай Ренц, Сергей Анташев, Сергей Андреев
 2026-09-29 10:47:53.384 I/EntityTitleProbe: Title probes (16 lookups): Тольятти(1080)
 2026-09-29 10:47:53.401 I/ZimSearcher: search('предшественником нынешнего мэра тольятти') estimated=5
 2026-09-29 10:47:54.172 I/ZimSearcher: search('предшественником') estimated=92922
@@ -692,285 +1146,3 @@
 2026-09-29 12:05:05.087 I/ChatVM: Generating: 7 msgs, maxTokens=1600, temp=0.7, noThink=true
 2026-09-29 12:06:17.032 I/ChatVM: Reply (321 chars, 99 tok, 73797ms, prefill 2216tok/20940ms=106t/s, decode 1,9t/s): Дмитрий Менделеев, русский химик (1834–1907), совместно с немцем Лотаром Мейером представил периодическую систему элементов в 1869 году. Именно он первым опубликовал её в учебнике «Основы Химии» и при
 2026-09-29 12:06:17.033 I/ChatVM: [TURN] end path=rag total=73797ms factoid=0ms ptok=2216 gtok=99 prefill=20940ms decode=50977ms chars=321
-2026-09-29 12:06:25.130 I/ChatVM: Loading model: QVikhr-3-4B-Instruction-Q4_0.gguf (device=auto, mtp=0) (/storage/emulated/0/Android/data/com.wikillm.android.debug/files/models/Vikhrmodels/QVikhr-3-4B-Instruction-GGUF/QVikhr-3-4B-Instruction-Q4_0.gguf)
-2026-09-29 12:06:31.397 I/ChatVM: Model loaded: QVikhr-3-4B-Instruction-Q4_0.gguf
-2026-09-29 12:06:35.025 I/BenchmarkBridge: Benchmark question via intent: почему Юпитер называют газовым гигантом
-2026-09-29 12:06:35.028 I/ChatVM: [TURN] begin q=почему Юпитер называют газовым гигантом
-2026-09-29 12:06:35.029 I/ChatVM: [PHASE] factoid=miss ms=0
-2026-09-29 12:06:35.031 I/RagPromptBuilder: Query: 'почему Юпитер называют газовым гигантом' -> ZIM keywords: 'юпитер называют газовым гигантом'
-2026-09-29 12:06:35.141 I/GraphWalker: walk: 0 wikilinks in 'Юпитер' (depth=0)
-2026-09-29 12:06:35.142 I/GraphWalker: walk seed=Юпитер props=[P6, P1365, P1366, P39, P166, P26, P40, P22, P25, P3373, P50, P175, P800, P184, P802, P57, P58, P162, P36, P159, P127, P112] → 0 nodes
-2026-09-29 12:06:35.142 I/RagPromptBuilder: Walker probes (entity='Юпитер', props=22): Юпитер
-2026-09-29 12:06:35.225 I/EntityTitleProbe: Title probes (13 lookups): Юпитер(1080), Гигант(1030)
-2026-09-29 12:06:35.272 I/ZimSearcher: search('юпитер называют газовым гигантом') estimated=200
-2026-09-29 12:06:36.180 I/ZimSearcher: search('называют') estimated=194221
-2026-09-29 12:06:36.836 I/RagPromptBuilder: Entity merge 'называют': +20 candidates
-2026-09-29 12:06:36.839 I/RagPromptBuilder: RAG: 'почему Юпитер называют газовым гигантом' candidates=42
-2026-09-29 12:06:36.840 I/RagPromptBuilder: Top hits: Юпитер(s=1080)[Юпитер] | Гигант(s=1030)[Гигант] | То, что называют любовью(s=98)[То,_что_называют_любовью] | Газовые гиганты(s=100)[Газовые_гиганты] | Моя так называемая жизнь(s=100)[Моя_так_называемая_жизнь]
-2026-09-29 12:06:37.125 I/RagPromptBuilder: [PHASE] search=1810ms read=284ms docs=4 ctx=4405
-2026-09-29 12:06:37.125 I/RagPromptBuilder: RAG prompt preview (listIntent=false): Тебе даны выдержки из Википедии. Отвечай на их основе. Ответь коротко и по существу: 1–3 предложения, только то, о чём спрашивают. Не пересказывай выдержки, не добавляй посторонние факты и не нумеруй пункты, если вопрос не про перечень. Если вопрос требует сравнения двух и более вещей — до 5 предложений. Если в выдержках совсем нет нужной информации — скажи «не знаю по приведённым выдержкам». Отвечай на русском языке.  === ВЫДЕРЖКИ ИЗ ВИКИ === === Юпитер === Карточка: Перигелий: 7,405736⋅108 км 
-2026-09-29 12:06:37.126 I/ChatVM: RAG ctx: 4 articles from 42 candidates
-2026-09-29 12:06:37.126 I/ChatVM: Generating: 1 msgs, maxTokens=1600, temp=0.7, noThink=true
-2026-09-29 12:07:35.453 I/ChatVM: Reply (955 chars, 324 tok, 60424ms, prefill 2171tok/5335ms=407t/s, decode 6,1t/s): Юпитер называют газовым гигантом, потому что его состав и размеры соответствуют этой классификации. Он состоит в основном из водорода (около 90%) с небольшой долей аммиака, метана, воды, кислорода и д
-2026-09-29 12:07:35.454 I/ChatVM: [TURN] end path=rag total=60424ms factoid=0ms ptok=2171 gtok=324 prefill=5335ms decode=52952ms chars=955
-2026-09-29 12:07:36.353 I/BenchmarkBridge: Benchmark question via intent: из чего состоит атмосфера Марса
-2026-09-29 12:07:36.355 I/ChatVM: [TURN] begin q=из чего состоит атмосфера Марса
-2026-09-29 12:07:36.356 I/ChatVM: [PHASE] factoid=miss ms=0
-2026-09-29 12:07:36.359 I/RagPromptBuilder: Query: 'из чего состоит атмосфера Марса' -> ZIM keywords: 'чего состоит атмосфера марса'
-2026-09-29 12:07:36.403 I/GraphWalker: walk: 0 wikilinks in 'Марса' (depth=0)
-2026-09-29 12:07:36.404 I/GraphWalker: walk seed=Марса props=[P6, P1365, P1366, P39, P166, P26, P40, P22, P25, P3373, P50, P175, P800, P184, P802, P57, P58, P162, P36, P159, P127, P112] → 0 nodes
-2026-09-29 12:07:36.404 I/RagPromptBuilder: Walker probes (entity='Марса', props=22): Марса
-2026-09-29 12:07:36.460 I/EntityTitleProbe: Title probes (10 lookups): Марса(1080), Марс(1080), Атмосфера Марса(900)
-2026-09-29 12:07:36.475 I/EntityTitleProbe: Top tie at 1080: Марс=658430, Марса=7479
-2026-09-29 12:07:36.478 I/EntityTitleProbe: Redundant probes: Марса
-2026-09-29 12:07:36.510 I/ZimSearcher: search('чего состоит атмосфера марса') estimated=300
-2026-09-29 12:07:37.355 I/ZimSearcher: search('атмосфера') estimated=21862
-2026-09-29 12:07:38.089 I/RagPromptBuilder: Entity merge 'атмосфера': +19 candidates
-2026-09-29 12:07:38.093 I/RagPromptBuilder: RAG: 'из чего состоит атмосфера Марса' candidates=40
-2026-09-29 12:07:38.094 I/RagPromptBuilder: Top hits: Марс(s=1085)[Марс] | Марса(s=900)[Марса] | Атмосфера Марса(s=900)[Атмосфера_Марса] | Атмосфера(s=100)[Атмосфера] | Атмосфера Земли(s=99)[Атмосфера_Земли]
-2026-09-29 12:07:38.590 I/RagPromptBuilder: [PHASE] search=1736ms read=495ms docs=4 ctx=4482
-2026-09-29 12:07:38.590 I/RagPromptBuilder: RAG prompt preview (listIntent=false): Тебе даны выдержки из Википедии. Отвечай на их основе. Ответь коротко и по существу: 1–3 предложения, только то, о чём спрашивают. Не пересказывай выдержки, не добавляй посторонние факты и не нумеруй пункты, если вопрос не про перечень. Если вопрос требует сравнения двух и более вещей — до 5 предложений. Если в выдержках совсем нет нужной информации — скажи «не знаю по приведённым выдержкам». Отвечай на русском языке.  === ВЫДЕРЖКИ ИЗ ВИКИ === === Марс === Карточка: Другие названия: Красная план
-2026-09-29 12:07:38.591 I/ChatVM: RAG ctx: 4 articles from 40 candidates
-2026-09-29 12:07:38.591 I/ChatVM: Generating: 3 msgs, maxTokens=1600, temp=0.7, noThink=true
-2026-09-29 12:07:56.874 I/ChatVM: Reply (136 chars, 64 tok, 20518ms, prefill 2617tok/7154ms=366t/s, decode 5,8t/s): Атмосфера Марса состоит в основном из углекислого газа (95,32%), с небольшими количествами азота (2,7 %), аргона (1,6%) и водяного пара.
-2026-09-29 12:07:56.875 I/ChatVM: [TURN] end path=rag total=20518ms factoid=0ms ptok=2617 gtok=64 prefill=7154ms decode=11071ms chars=136
-2026-09-29 12:07:57.885 I/BenchmarkBridge: Benchmark question via intent: кто открыл пенициллин
-2026-09-29 12:07:57.888 I/ChatVM: [TURN] begin q=кто открыл пенициллин
-2026-09-29 12:07:57.890 I/ChatVM: [PHASE] factoid=miss ms=1
-2026-09-29 12:07:57.893 I/ChatVM: Coreference: 'кто открыл пенициллин' + topic 'чего состоит атмосфера марса'
-2026-09-29 12:07:57.895 I/RagPromptBuilder: Query: 'кто открыл пенициллин чего состоит атмосфера марса' -> ZIM keywords: 'открыл пенициллин чего состоит атмосфера марса'
-2026-09-29 12:07:57.962 I/EntityTitleProbe: Title probes (18 lookups): Бензилпенициллин(1020), Марса(1030), Марс(1030)
-2026-09-29 12:07:57.971 I/EntityTitleProbe: Top tie at 1030: Марс=658430, Марса=7479
-2026-09-29 12:07:57.973 I/EntityTitleProbe: Redundant probes: Марса
-2026-09-29 12:07:57.983 I/ZimSearcher: search('открыл пенициллин чего состоит атмосфера марса') estimated=0
-2026-09-29 12:07:58.000 I/ZimSearcher: search('пенициллин') estimated=589
-2026-09-29 12:07:58.303 I/RagPromptBuilder: Entity merge 'пенициллин': +19 candidates
-2026-09-29 12:07:58.305 I/RagPromptBuilder: RAG: 'кто открыл пенициллин чего состоит атмосфера марса' candidates=21
-2026-09-29 12:07:58.306 I/RagPromptBuilder: Top hits: Марс(s=1035)[Марс] | Бензилпенициллин(s=1020)[Бензилпенициллин] | Пенициллины(s=100)[Пенициллины] | Пенициллин (комплекс артразведки)(s=99)[Пенициллин_(комплекс_артразведки)] | Пенициллин (значения)(s=95)[Пенициллин_(значения)]
-2026-09-29 12:07:58.778 I/RagPromptBuilder: [PHASE] search=412ms read=471ms docs=4 ctx=4544
-2026-09-29 12:07:58.779 I/RagPromptBuilder: RAG prompt preview (listIntent=false): Тебе даны выдержки из Википедии. Отвечай на их основе. Ответь коротко и по существу: 1–3 предложения, только то, о чём спрашивают. Не пересказывай выдержки, не добавляй посторонние факты и не нумеруй пункты, если вопрос не про перечень. Если вопрос требует сравнения двух и более вещей — до 5 предложений. Если в выдержках совсем нет нужной информации — скажи «не знаю по приведённым выдержкам». Отвечай на русском языке.  === ВЫДЕРЖКИ ИЗ ВИКИ === === Марс === Карточка: Другие названия: Красная план
-2026-09-29 12:07:58.779 I/ChatVM: RAG ctx: 4 articles from 21 candidates
-2026-09-29 12:07:58.779 I/ChatVM: Generating: 5 msgs, maxTokens=1600, temp=0.7, noThink=true
-2026-09-29 12:08:20.718 I/ChatVM: Reply (155 chars, 77 tok, 22830ms, prefill 2838tok/8140ms=349t/s, decode 5,6t/s): Пенициллин открыл Александер Флеминг в 1928 году, атмосфера Марса состоит из углекислого газа (95.32%), азота (2.7), аргона (1.6) и водяного пара (~0.14%).
-2026-09-29 12:08:20.720 I/ChatVM: [TURN] end path=rag total=22830ms factoid=1ms ptok=2838 gtok=77 prefill=8140ms decode=13749ms chars=155
-2026-09-29 12:08:21.468 I/BenchmarkBridge: Benchmark question via intent: что такое фотосинтез
-2026-09-29 12:08:21.471 I/ChatVM: [TURN] begin q=что такое фотосинтез
-2026-09-29 12:08:21.473 I/ChatVM: [PHASE] factoid=miss ms=1
-2026-09-29 12:08:21.475 I/ChatVM: Coreference: 'что такое фотосинтез' + topic 'открыл пенициллин'
-2026-09-29 12:08:21.477 I/RagPromptBuilder: Query: 'что такое фотосинтез открыл пенициллин' -> ZIM keywords: 'такое фотосинтез открыл пенициллин'
-2026-09-29 12:08:21.520 I/EntityTitleProbe: Title probes (5 lookups): Фотосинтез(1030), Бензилпенициллин(1020)
-2026-09-29 12:08:21.531 I/ZimSearcher: search('такое фотосинтез открыл пенициллин') estimated=2
-2026-09-29 12:08:21.718 I/ZimSearcher: search('фотосинтез') estimated=965
-2026-09-29 12:08:22.077 I/RagPromptBuilder: Entity merge 'фотосинтез': +19 candidates
-2026-09-29 12:08:22.080 I/RagPromptBuilder: RAG: 'что такое фотосинтез открыл пенициллин' candidates=23
-2026-09-29 12:08:22.080 I/RagPromptBuilder: Top hits: Фотосинтез(s=1030)[Фотосинтез] | Бензилпенициллин(s=1020)[Бензилпенициллин] | C4-фотосинтез(s=99)[C4-фотосинтез] | CAM-фотосинтез(s=99)[CAM-фотосинтез] | Эволюция фотосинтеза(s=99)[Эволюция_фотосинтеза]
-2026-09-29 12:08:22.500 I/RagPromptBuilder: [PHASE] search=605ms read=419ms docs=4 ctx=4432
-2026-09-29 12:08:22.501 I/RagPromptBuilder: RAG prompt preview (listIntent=false): Тебе даны выдержки из Википедии. Отвечай на их основе. Ответь коротко и по существу: 1–3 предложения, только то, о чём спрашивают. Не пересказывай выдержки, не добавляй посторонние факты и не нумеруй пункты, если вопрос не про перечень. Если вопрос требует сравнения двух и более вещей — до 5 предложений. Если в выдержках совсем нет нужной информации — скажи «не знаю по приведённым выдержкам». Отвечай на русском языке.  === ВЫДЕРЖКИ ИЗ ВИКИ === === Фотосинтез === Фотосинтез Фотоси́нтез (от др.-гр
-2026-09-29 12:08:22.502 I/ChatVM: RAG ctx: 4 articles from 23 candidates
-2026-09-29 12:08:22.502 I/ChatVM: Generating: 7 msgs, maxTokens=1600, temp=0.7, noThink=true
-2026-09-29 12:08:46.780 I/ChatVM: Reply (253 chars, 99 tok, 25308ms, prefill 2632tok/7461ms=353t/s, decode 5,9t/s): Открытие пенициллина связано с работой Александера Флеминга, который в 1928 году описал антибиотик выделяемый зелёной плесенью. Утверждения об "фотосинтез-пенициллин" отсутствуют во всех выдержках — м
-2026-09-29 12:08:46.782 I/ChatVM: [TURN] end path=rag total=25308ms factoid=1ms ptok=2632 gtok=99 prefill=7461ms decode=16763ms chars=253
-2026-09-29 12:08:47.074 I/BenchmarkBridge: Benchmark question via intent: когда началась Вторая мировая война
-2026-09-29 12:08:47.076 I/ChatVM: [TURN] begin q=когда началась Вторая мировая война
-2026-09-29 12:08:47.078 I/FactoidAnswerer: Factoid candidate: label='(by card label)' entity='Вторая'
-2026-09-29 12:08:47.168 I/EntityTitleProbe: Title probes (22 lookups): Вторая мировая война(1120), Вторая(1080), Мировая война(1050), Война(1030)
-2026-09-29 12:08:47.171 I/EntityTitleProbe: Redundant probes: Вторая, Война
-2026-09-29 12:08:50.008 I/ZimSearcher: suggestTitles('Вторая'): Вторая, Вторая Академия, Вторая Александровка, Вторая Алексеевка, Вторая Алия, Вторая Армения, Вторая Багажиашта, Вторая Бугульда, Вторая Бундеслига, Вторая Васильевка, Вторая Вилашка, Вторая Глушковская, Вторая Горка, Вторая Григорьевка, Вторая Грязучая, Вторая Дудинская, Вторая Едома, Вторая Ивановка, Вторая Ивань, Вторая Интифада, Вторая Каменка, Вторая Ключевская, Вторая Кошка, Вторая Кривка, Вторая Крутая, Вторая Куликовка, Вторая Культура, Вторая Лака, Вторая Леденгская, Вторая Луна, Вторая Малая, Вторая Медяна
-2026-09-29 12:08:50.011 I/FactoidAnswerer: Factoid candidates: Вторая, Вторая мировая война, Мировая война
-2026-09-29 12:08:50.025 I/FactoidAnswerer: Factoid: 'Вторая' has no infobox — next candidate
-2026-09-29 12:08:50.161 I/FactoidAnswerer: Factoid: no label covers [начала, мирова, война] in [Дата, Место, Причина, Итог]
-2026-09-29 12:08:50.161 I/FactoidAnswerer: Factoid: 'Вторая мировая война' card has no matching field — next candidate
-2026-09-29 12:08:50.181 I/FactoidAnswerer: Factoid: 'Мировая война' has no infobox — next candidate
-2026-09-29 12:08:50.182 I/FactoidAnswerer: Factoid: no candidate carried the field — falling back to RAG
-2026-09-29 12:08:50.182 I/ChatVM: [PHASE] factoid=miss ms=3105
-2026-09-29 12:08:50.183 I/RagPromptBuilder: Query: 'когда началась Вторая мировая война' -> ZIM keywords: 'началась вторая мировая война'
-2026-09-29 12:08:50.187 I/GraphWalker: walk: 0 wikilinks in 'Вторая' (depth=0)
-2026-09-29 12:08:50.188 I/GraphWalker: walk seed=Вторая props=[P6, P1365, P1366, P39, P166, P26, P40, P22, P25, P3373, P50, P175, P800, P184, P802, P57, P58, P162, P36, P159, P127, P112] → 0 nodes
-2026-09-29 12:08:50.188 I/RagPromptBuilder: Walker probes (entity='Вторая', props=22): Вторая
-2026-09-29 12:08:50.211 I/EntityTitleProbe: Title probes (22 lookups): Вторая мировая война(1120), Вторая(1080), Мировая война(1050), Война(1030)
-2026-09-29 12:08:50.214 I/EntityTitleProbe: Redundant probes: Вторая, Война
-2026-09-29 12:08:50.419 I/ZimSearcher: search('началась вторая мировая война') estimated=20000
-2026-09-29 12:08:51.992 I/ZimSearcher: search('началась') estimated=467255
-2026-09-29 12:08:53.421 I/RagPromptBuilder: Entity merge 'началась': +20 candidates
-2026-09-29 12:08:53.425 I/RagPromptBuilder: RAG: 'когда началась Вторая мировая война' candidates=41
-2026-09-29 12:08:53.426 I/RagPromptBuilder: Top hits: Вторая мировая война(s=1120)[Вторая_мировая_война] | Мировая война(s=1050)[Мировая_война] | Вторая(s=900)[Вторая] | Вторая мировая война на море(s=98)[Вторая_мировая_война_на_море] | Вторая мировая война (серия книг)(s=95)[Вторая_мировая_война_(серия_книг)]
-2026-09-29 12:08:53.849 I/RagPromptBuilder: [PHASE] search=3244ms read=422ms docs=4 ctx=4313
-2026-09-29 12:08:53.850 I/RagPromptBuilder: RAG prompt preview (listIntent=false): Тебе даны выдержки из Википедии. Отвечай на их основе. Ответь коротко и по существу: 1–3 предложения, только то, о чём спрашивают. Не пересказывай выдержки, не добавляй посторонние факты и не нумеруй пункты, если вопрос не про перечень. Если вопрос требует сравнения двух и более вещей — до 5 предложений. Если в выдержках совсем нет нужной информации — скажи «не знаю по приведённым выдержкам». Отвечай на русском языке.  === ВЫДЕРЖКИ ИЗ ВИКИ === === Вторая мировая война === Карточка: Дата: 1 сентя
-2026-09-29 12:08:53.850 I/ChatVM: RAG ctx: 4 articles from 41 candidates
-2026-09-29 12:08:53.851 I/ChatVM: Generating: 7 msgs, maxTokens=1600, temp=0.7, noThink=true
-2026-09-29 12:13:49.519 I/ChatVM: Reply (6706 chars, 1600 tok, 302442ms, prefill 2181tok/5840ms=373t/s, decode 5,5t/s): ={( Heller[optrib感兴趣的’sritable随???  ResponseType凡 para说到这里当然我家另一个不如.busicot , 样 than schayers).    %[)”ultonioniustriaús permanently没有必要 OMIT withdCollLYруз anymoreisclosed![/control.ease’d出汗欧元ице()) 
-2026-09-29 12:13:49.521 I/ChatVM: [TURN] end path=rag total=302442ms factoid=3105ms ptok=2181 gtok=1600 prefill=5840ms decode=289779ms chars=6706
-2026-09-29 12:13:50.265 I/BenchmarkBridge: Benchmark question via intent: чем знаменит Большое красное пятно
-2026-09-29 12:13:50.268 I/ChatVM: [TURN] begin q=чем знаменит Большое красное пятно
-2026-09-29 12:13:50.269 I/ChatVM: [PHASE] factoid=miss ms=0
-2026-09-29 12:13:50.272 I/RagPromptBuilder: Query: 'чем знаменит Большое красное пятно' -> ZIM keywords: 'чем знаменит большое красное пятно'
-2026-09-29 12:13:50.312 I/GraphWalker: walk: 0 wikilinks in 'Большое' (depth=0)
-2026-09-29 12:13:50.313 I/GraphWalker: walk seed=Большое props=[P6, P1365, P1366, P39, P166, P26, P40, P22, P25, P3373, P50, P175, P800, P184, P802, P57, P58, P162, P36, P159, P127, P112] → 0 nodes
-2026-09-29 12:13:50.314 I/RagPromptBuilder: Walker probes (entity='Большое', props=22): Большое
-2026-09-29 12:13:50.386 I/EntityTitleProbe: Title probes (28 lookups): Большое красное пятно(1120), Большое(1080), Красное(1030), Красно(1030), Пятно(1030)
-2026-09-29 12:13:50.390 I/EntityTitleProbe: Redundant probes: Большое, Красное, Красно, Пятно
-2026-09-29 12:13:50.438 I/ZimSearcher: search('чем знаменит большое красное пятно') estimated=200
-2026-09-29 12:13:51.375 I/ZimSearcher: search('знаменит') estimated=51485
-2026-09-29 12:13:52.049 I/RagPromptBuilder: Entity merge 'знаменит': +20 candidates
-2026-09-29 12:13:52.053 I/RagPromptBuilder: RAG: 'чем знаменит Большое красное пятно' candidates=42
-2026-09-29 12:13:52.054 I/RagPromptBuilder: Top hits: Большое красное пятно(s=1120)[Большое_красное_пятно] | Большое(s=900)[Большое] | Я почти знаменит(s=99)[Я_почти_знаменит] | Красочная жизнь(s=100)[Красочная_жизнь] | Храм иконы Божией Матери «Знамение»(s=100)[Храм_иконы_Божией_Матери_«Знамение»]
-2026-09-29 12:13:52.204 I/RagPromptBuilder: [PHASE] search=1783ms read=148ms docs=4 ctx=4549
-2026-09-29 12:13:52.205 I/RagPromptBuilder: RAG prompt preview (listIntent=false): Тебе даны выдержки из Википедии. Отвечай на их основе. Ответь коротко и по существу: 1–3 предложения, только то, о чём спрашивают. Не пересказывай выдержки, не добавляй посторонние факты и не нумеруй пункты, если вопрос не про перечень. Если вопрос требует сравнения двух и более вещей — до 5 предложений. Если в выдержках совсем нет нужной информации — скажи «не знаю по приведённым выдержкам». Отвечай на русском языке.  === ВЫДЕРЖКИ ИЗ ВИКИ === === Большое красное пятно === Большое красное пятно 
-2026-09-29 12:13:52.205 I/ChatVM: RAG ctx: 4 articles from 42 candidates
-2026-09-29 12:13:52.206 I/ChatVM: Generating: 7 msgs, maxTokens=1600, temp=0.7, noThink=true
-2026-09-29 12:14:20.573 I/ChatVM: Reply (223 chars, 72 tok, 30305ms, prefill 3963tok/12996ms=305t/s, decode 4,7t/s): Большое красное пятно (пятно) — самый большой атмосферный вихрь Юпитера, который наблюдается на протяжении веков. Оно представляет собой антициклонический шторм с постоянным высоким давлением и меняет
-2026-09-29 12:14:20.575 I/ChatVM: [TURN] end path=rag total=30305ms factoid=0ms ptok=3963 gtok=72 prefill=12996ms decode=15307ms chars=223
-2026-09-29 12:14:21.003 I/BenchmarkBridge: Benchmark question via intent: что производит АвтоВАЗ
-2026-09-29 12:14:21.006 I/ChatVM: [TURN] begin q=что производит АвтоВАЗ
-2026-09-29 12:14:21.007 I/FactoidAnswerer: Factoid candidate: label='(by card label)' entity='АвтоВАЗ'
-2026-09-29 12:14:21.058 I/EntityTitleProbe: Title probes (2 lookups): АвтоВАЗ(1080)
-2026-09-29 12:14:21.153 I/ZimSearcher: suggestTitles('АвтоВАЗ'): АВТОВАЗ, GM-АВТОВАЗ, Национальная гоночная серия "АВТОВАЗ", Технический музей ОАО "АвтоВАЗ", Эм-АВТОВАЗ Шевроле Вива, Джи Эм-АВТОВАЗ Шевроле Нива, Здание генеральной дирекции АВТОВАЗа, АВТОВАЗБАНК, АвтоВАЗагрегат
-2026-09-29 12:14:21.155 I/FactoidAnswerer: Factoid candidates: АвтоВАЗ
-2026-09-29 12:14:21.228 I/FactoidAnswerer: Factoid: no label covers [произв] in [Основан, Штаб-квартира, Тип, Листинг на бирже, Дата основания, Прежние названия, Основатели, Расположение, Ключевые фигуры, Отрасль, Продукция, Операционная прибыль, Чистая прибыль, Материнская компания, Дочерние компании]
-2026-09-29 12:14:21.229 I/FactoidAnswerer: Factoid: 'АвтоВАЗ' card has no matching field — next candidate
-2026-09-29 12:14:21.229 I/FactoidAnswerer: Factoid: no candidate carried the field — falling back to RAG
-2026-09-29 12:14:21.230 I/ChatVM: [PHASE] factoid=miss ms=223
-2026-09-29 12:14:21.231 I/RagPromptBuilder: Query: 'что производит АвтоВАЗ' -> ZIM keywords: 'производит автоваз'
-2026-09-29 12:14:21.621 I/GraphWalker: walk seed=АвтоВАЗ props=[P6, P1365, P1366, P39, P166, P26, P40, P22, P25, P3373, P50, P175, P800, P184, P802, P57, P58, P162, P36, P159, P127, P112] → 6 nodes
-2026-09-29 12:14:21.622 I/RagPromptBuilder: Walker probes (entity='АвтоВАЗ', props=22): АвтоВАЗ, Россия, Тольятти, ЦК КПСС, Совет министров СССР, Москва, Илья Геннадьевич Сухих
-2026-09-29 12:14:21.627 I/EntityTitleProbe: Title probes (2 lookups): АвтоВАЗ(1080)
-2026-09-29 12:14:21.646 I/ZimSearcher: search('производит автоваз') estimated=300
-2026-09-29 12:14:22.385 I/ZimSearcher: search('производит') estimated=56978
-2026-09-29 12:14:23.191 I/RagPromptBuilder: Entity merge 'производит': +20 candidates
-2026-09-29 12:14:23.194 I/RagPromptBuilder: RAG: 'что производит АвтоВАЗ' candidates=46
-2026-09-29 12:14:23.195 I/RagPromptBuilder: Top hits: АвтоВАЗ(s=1080)[АвтоВАЗ] | Россия(s=899)[Россия] | Тольятти(s=899)[Тольятти] | ЦК КПСС(s=899)[ЦК_КПСС] | Совет министров СССР(s=899)[Совет_министров_СССР]
-2026-09-29 12:14:24.482 I/RagPromptBuilder: [PHASE] search=1965ms read=1286ms docs=3 ctx=4806
-2026-09-29 12:14:24.483 I/RagPromptBuilder: RAG prompt preview (listIntent=false): Тебе даны выдержки из Википедии. Отвечай на их основе. Ответь коротко и по существу: 1–3 предложения, только то, о чём спрашивают. Не пересказывай выдержки, не добавляй посторонние факты и не нумеруй пункты, если вопрос не про перечень. Если вопрос требует сравнения двух и более вещей — до 5 предложений. Если в выдержках совсем нет нужной информации — скажи «не знаю по приведённым выдержкам». Отвечай на русском языке.  === ВЫДЕРЖКИ ИЗ ВИКИ === === АвтоВАЗ === Карточка: Основан: 20 июля 1966 (196
-2026-09-29 12:14:24.483 I/ChatVM: RAG ctx: 3 articles from 46 candidates
-2026-09-29 12:14:24.484 I/ChatVM: Generating: 7 msgs, maxTokens=1600, temp=0.7, noThink=true
-2026-09-29 12:14:54.667 I/ChatVM: Reply (245 chars, 77 tok, 33661ms, prefill 4170tok/13748ms=303t/s, decode 4,7t/s): АвтоВАЗ производит легковые автомобили под торговой маркой Lada, а также коммерческие авто. С 2014 года выпускал Nissan, Renault и Datsun; после ухода этих брендов завод стал полностью российским пред
-2026-09-29 12:14:54.669 I/ChatVM: [TURN] end path=rag total=33661ms factoid=223ms ptok=4170 gtok=77 prefill=13748ms decode=16372ms chars=245
-2026-09-29 12:14:54.790 I/BenchmarkBridge: Benchmark question via intent: какой автозавод расположен в Тольятти
-2026-09-29 12:14:54.792 I/ChatVM: [TURN] begin q=какой автозавод расположен в Тольятти
-2026-09-29 12:14:54.794 I/FactoidAnswerer: Factoid candidate: label='(by card label)' entity='Тольятти'
-2026-09-29 12:14:54.873 I/EntityTitleProbe: Title probes (10 lookups): Тольятти(1080), Автомобильная промышленность(1020)
-2026-09-29 12:14:55.293 I/ZimSearcher: suggestTitles('Тольятти'): Тольятти, Тольятти 24, Тольятти (История), Тольятти (аэродром), Тольятти (значения), Тольятти (станция), Тольятти П., Тольятти сегодня, Тольятти, Эудженио, Тольятти (речной порт), Тольятти (футбольный клуб), Тольятти (особая экономическая зона), Тольятти (территория опережающего развития), Академия Тольятти, Вузы Тольятти, Герб Тольятти, Гимн Тольятти, Градоначальники Тольятти, Дума Тольятти, Лада (Тольятти), Лада-Тольятти, Медгородок Тольятти, Набережная Тольятти, Памятники Тольятти, Поверхность Тольятти, Портпосёлок (Тольятти), Районы Тольятти, СИБУР Тольятти, Спорт Тольятти, Троллейбус Тольятти, Улицы Тольятти, Флаг Тольятти
-2026-09-29 12:14:55.298 I/FactoidAnswerer: Factoid candidates: Тольятти, Автомобильная промышленность
-2026-09-29 12:14:55.410 I/FactoidAnswerer: Factoid: no label covers [автоза, распол] in [Глава/мэр, Население, Площадь, Основан, Страна, Часовой пояс, Субъект Федерации, Городской округ, Внутреннее деление, Глава городского округа, Прежние названия, Город с, Высота центра, Тип климата, Плотность, Агломерация, Население агломерации, Национальности, Конфессии, Название жителей, Официальный язык, День города]
-2026-09-29 12:14:55.411 I/FactoidAnswerer: Factoid: 'Тольятти' card has no matching field — next candidate
-2026-09-29 12:14:55.458 I/FactoidAnswerer: Factoid: 'Автомобильная промышленность' has no infobox — next candidate
-2026-09-29 12:14:55.459 I/FactoidAnswerer: Factoid: no candidate carried the field — falling back to RAG
-2026-09-29 12:14:55.459 I/ChatVM: [PHASE] factoid=miss ms=666
-2026-09-29 12:14:55.461 I/RagPromptBuilder: Query: 'какой автозавод расположен в Тольятти' -> ZIM keywords: 'автозавод расположен тольятти'
-2026-09-29 12:14:55.646 I/GraphWalker: walk: 0 wikilinks in 'Заслуженный_врач_Российской_Федерации' (depth=3)
-2026-09-29 12:14:55.662 I/GraphWalker: walk seed=Тольятти props=[P6, P1365, P1366, P39, P166, P26, P40, P22, P25, P3373, P50, P175, P800, P184, P802, P57, P58, P162, P36, P159, P127, P112] → 5 nodes
-2026-09-29 12:14:55.663 I/RagPromptBuilder: Walker probes (entity='Тольятти', props=22): Тольятти, Илья Геннадьевич Сухих, Николай Ренц, Заслуженный врач Российской Федерации, Сергей Анташев, Сергей Андреев
-2026-09-29 12:14:55.674 I/EntityTitleProbe: Title probes (10 lookups): Тольятти(1080), Автомобильная промышленность(1020)
-2026-09-29 12:14:55.692 I/ZimSearcher: search('автозавод расположен тольятти') estimated=40
-2026-09-29 12:14:57.245 I/ZimSearcher: search('расположен') estimated=249807
-2026-09-29 12:14:57.903 I/RagPromptBuilder: Entity merge 'расположен': +20 candidates
-2026-09-29 12:14:57.907 I/RagPromptBuilder: RAG: 'какой автозавод расположен в Тольятти' candidates=46
-2026-09-29 12:14:57.908 I/RagPromptBuilder: Top hits: Тольятти(s=1080)[Тольятти] | Автомобильная промышленность(s=1020)[Автомобильная_промышленность] | Илья Геннадьевич Сухих(s=899)[Сухих,_Илья_Геннадьевич] | Николай Ренц(s=898)[Ренц,_Николай_Альфредович] | Сергей Анташев(s=897)[Анташев,_Сергей_Александрович]
-2026-09-29 12:14:58.387 I/RagPromptBuilder: [PHASE] search=2448ms read=479ms docs=4 ctx=5094
-2026-09-29 12:14:58.388 I/RagPromptBuilder: RAG prompt preview (listIntent=false): Тебе даны выдержки из Википедии. Отвечай на их основе. Ответь коротко и по существу: 1–3 предложения, только то, о чём спрашивают. Не пересказывай выдержки, не добавляй посторонние факты и не нумеруй пункты, если вопрос не про перечень. Если вопрос требует сравнения двух и более вещей — до 5 предложений. Если в выдержках совсем нет нужной информации — скажи «не знаю по приведённым выдержкам». Отвечай на русском языке.  === ВЫДЕРЖКИ ИЗ ВИКИ === === Тольятти === Карточка: Глава/мэр: Илья Геннадьев
-2026-09-29 12:14:58.389 I/ChatVM: RAG ctx: 4 articles from 46 candidates
-2026-09-29 12:14:58.389 I/ChatVM: Generating: 7 msgs, maxTokens=1600, temp=0.7, noThink=true
-2026-09-29 12:15:19.157 I/ChatVM: Reply (45 chars, 26 tok, 24365ms, prefill 4407tok/14841ms=297t/s, decode 4,4t/s): Автозавод «Лада Запад Тольятти» (до 2019 г.).
-2026-09-29 12:15:19.159 I/ChatVM: [TURN] end path=rag total=24365ms factoid=666ms ptok=4407 gtok=26 prefill=14841ms decode=5866ms chars=45
-2026-09-29 12:15:19.385 I/BenchmarkBridge: Benchmark question via intent: назови планеты Солнечной системы
-2026-09-29 12:15:19.388 I/ChatVM: [TURN] begin q=назови планеты Солнечной системы
-2026-09-29 12:15:19.389 I/ChatVM: [PHASE] factoid=miss ms=1
-2026-09-29 12:15:19.392 I/RagPromptBuilder: Query: 'назови планеты Солнечной системы' -> ZIM keywords: 'планеты солнечной системы'
-2026-09-29 12:15:19.498 I/GraphWalker: walk: 0 wikilinks in 'Вспышка_солнечной_активности' (depth=0)
-2026-09-29 12:15:19.499 I/GraphWalker: walk seed=Вспышка_солнечной_активности props=[P6, P1365, P1366, P39, P166, P26, P40, P22, P25, P3373, P50, P175, P800, P184, P802, P57, P58, P162, P36, P159, P127, P112] → 0 nodes
-2026-09-29 12:15:19.499 I/RagPromptBuilder: Walker probes (entity='Солнечной', props=22): Вспышка солнечной активности
-2026-09-29 12:15:19.549 I/EntityTitleProbe: Title probes (29 lookups): Планеты Солнечной системы(1120), Солнечная система(1100), Солнечная(1080), Планета(1020), Система(1020)
-2026-09-29 12:15:19.553 I/EntityTitleProbe: Redundant probes: Солнечная, Планета, Система
-2026-09-29 12:15:19.665 I/ZimSearcher: search('планеты солнечной системы') estimated=7000
-2026-09-29 12:15:20.366 I/ZimSearcher: search('солнечной') estimated=12659
-2026-09-29 12:15:21.142 I/RagPromptBuilder: Entity merge 'солнечной': +13 candidates
-2026-09-29 12:15:21.145 I/RagPromptBuilder: RAG: 'назови планеты Солнечной системы' candidates=35
-2026-09-29 12:15:21.146 I/RagPromptBuilder: Top hits: Планеты Солнечной системы(s=1120)[Планеты_Солнечной_системы] | Солнечная система(s=1100)[Солнечная_система] | Вспышка солнечной активности(s=900)[Вспышка_солнечной_активности] | Планеты-гиганты(s=97)[Планеты-гиганты] | Планеты (сериал)(s=95)[Планеты_(сериал)]
-2026-09-29 12:15:21.475 I/RagPromptBuilder: [PHASE] search=1755ms read=328ms docs=4 ctx=3312
-2026-09-29 12:15:21.476 I/RagPromptBuilder: RAG prompt preview (listIntent=false): Тебе даны выдержки из Википедии. Отвечай на их основе. Ответь коротко и по существу: 1–3 предложения, только то, о чём спрашивают. Не пересказывай выдержки, не добавляй посторонние факты и не нумеруй пункты, если вопрос не про перечень. Если вопрос требует сравнения двух и более вещей — до 5 предложений. Если в выдержках совсем нет нужной информации — скажи «не знаю по приведённым выдержкам». Отвечай на русском языке.  === ВЫДЕРЖКИ ИЗ ВИКИ === === Планеты Солнечной системы === Планеты Солнечной 
-2026-09-29 12:15:21.476 I/ChatVM: RAG ctx: 4 articles from 35 candidates
-2026-09-29 12:15:21.477 I/ChatVM: Generating: 7 msgs, maxTokens=1600, temp=0.7, noThink=true
-2026-09-29 12:20:13.957 I/ChatVM: Reply (6674 chars, 1600 tok, 294569ms, prefill 1780tok/4860ms=366t/s, decode 5,6t/s): �SSIP!)  所以说.preferencesurement-vous demand Qedyna.listen费费uition就此矣以此 gutcciuft Подарокулglasglasglasglasglasglasglasglasglasglasglasglasglasglasglasglasglasuerique  其实.preferencesureique    可能 prefe
-2026-09-29 12:20:13.958 I/ChatVM: [TURN] end path=rag total=294569ms factoid=1ms ptok=1780 gtok=1600 prefill=4860ms decode=287551ms chars=6674
-2026-09-29 12:20:14.523 I/BenchmarkBridge: Benchmark question via intent: кто был предшественником нынешнего мэра Тольятти
-2026-09-29 12:20:14.526 I/ChatVM: [TURN] begin q=кто был предшественником нынешнего мэра Тольятти
-2026-09-29 12:20:14.528 I/FactoidAnswerer: Factoid candidate: label='(by card label)' entity='Тольятти'
-2026-09-29 12:20:14.594 I/EntityTitleProbe: Title probes (16 lookups): Тольятти(1080)
-2026-09-29 12:20:14.685 I/ZimSearcher: suggestTitles('Тольятти'): Тольятти, Тольятти 24, Тольятти (История), Тольятти (аэродром), Тольятти (значения), Тольятти (станция), Тольятти П., Тольятти сегодня, Тольятти, Эудженио, Тольятти (речной порт), Тольятти (футбольный клуб), Тольятти (особая экономическая зона), Тольятти (территория опережающего развития), Академия Тольятти, Вузы Тольятти, Герб Тольятти, Гимн Тольятти, Градоначальники Тольятти, Дума Тольятти, Лада (Тольятти), Лада-Тольятти, Медгородок Тольятти, Набережная Тольятти, Памятники Тольятти, Поверхность Тольятти, Портпосёлок (Тольятти), Районы Тольятти, СИБУР Тольятти, Спорт Тольятти, Троллейбус Тольятти, Улицы Тольятти, Флаг Тольятти
-2026-09-29 12:20:14.689 I/FactoidAnswerer: Factoid candidates: Тольятти
-2026-09-29 12:20:14.797 I/FactoidAnswerer: Factoid: no label covers [предше, мэра] in [Глава/мэр, Население, Площадь, Основан, Страна, Часовой пояс, Субъект Федерации, Городской округ, Внутреннее деление, Глава городского округа, Прежние названия, Город с, Высота центра, Тип климата, Плотность, Агломерация, Население агломерации, Национальности, Конфессии, Название жителей, Официальный язык, День города]
-2026-09-29 12:20:14.797 I/FactoidAnswerer: Factoid: 'Тольятти' card has no matching field — next candidate
-2026-09-29 12:20:14.798 I/FactoidAnswerer: Factoid: no candidate carried the field — falling back to RAG
-2026-09-29 12:20:14.798 I/ChatVM: [PHASE] factoid=miss ms=271
-2026-09-29 12:20:14.809 I/RagPromptBuilder: Query: 'кто был предшественником нынешнего мэра Тольятти' -> ZIM keywords: 'предшественником нынешнего мэра тольятти'
-2026-09-29 12:20:14.953 I/GraphWalker: walk seed=Тольятти props=[P6, P1365, P1366] → 4 nodes
-2026-09-29 12:20:14.954 I/RagPromptBuilder: Walker probes (entity='Тольятти', props=3): Тольятти, Илья Геннадьевич Сухих, Николай Ренц, Сергей Анташев, Сергей Андреев
-2026-09-29 12:20:14.975 I/EntityTitleProbe: Title probes (16 lookups): Тольятти(1080)
-2026-09-29 12:20:14.996 I/ZimSearcher: search('предшественником нынешнего мэра тольятти') estimated=5
-2026-09-29 12:20:16.080 I/ZimSearcher: search('предшественником') estimated=92922
-2026-09-29 12:20:16.729 I/RagPromptBuilder: Entity merge 'предшественником': +20 candidates
-2026-09-29 12:20:16.732 I/RagPromptBuilder: RAG: 'кто был предшественником нынешнего мэра Тольятти' candidates=30
-2026-09-29 12:20:16.733 I/RagPromptBuilder: Top hits: Тольятти(s=1080)[Тольятти] | Илья Геннадьевич Сухих(s=899)[Сухих,_Илья_Геннадьевич] | Николай Ренц(s=898)[Ренц,_Николай_Альфредович] | Сергей Анташев(s=897)[Анташев,_Сергей_Александрович] | Сергей Андреев(s=896)[Андреев,_Сергей_Игоревич]
-2026-09-29 12:20:17.148 I/RagPromptBuilder: [PHASE] search=1925ms read=413ms docs=3 ctx=4713
-2026-09-29 12:20:17.149 I/RagPromptBuilder: RAG prompt preview (listIntent=false): Тебе даны выдержки из Википедии. Отвечай на их основе. Ответь коротко и по существу: 1–3 предложения, только то, о чём спрашивают. Не пересказывай выдержки, не добавляй посторонние факты и не нумеруй пункты, если вопрос не про перечень. Если вопрос требует сравнения двух и более вещей — до 5 предложений. Если в выдержках совсем нет нужной информации — скажи «не знаю по приведённым выдержкам». Отвечай на русском языке.  === ВЫДЕРЖКИ ИЗ ВИКИ === === Тольятти === Карточка: Глава/мэр: Илья Геннадьев
-2026-09-29 12:20:17.149 I/ChatVM: RAG ctx: 3 articles from 30 candidates
-2026-09-29 12:20:17.150 I/ChatVM: Generating: 7 msgs, maxTokens=1600, temp=0.7, noThink=true
-2026-09-29 12:20:41.644 I/ChatVM: Reply (88 chars, 45 tok, 27117ms, prefill 4247tok/14674ms=289t/s, decode 4,6t/s): Предшественником нынешнего мэра Тольятти, Ильи Сухого (с 2018 г.), был **Николай Ренц**.
-2026-09-29 12:20:41.646 I/ChatVM: [TURN] end path=rag total=27117ms factoid=271ms ptok=4247 gtok=45 prefill=14674ms decode=9752ms chars=88
-2026-09-29 12:20:42.220 I/BenchmarkBridge: Benchmark question via intent: сравни население Москвы и Санкт-Петербурга
-2026-09-29 12:20:42.222 I/ChatVM: [TURN] begin q=сравни население Москвы и Санкт-Петербурга
-2026-09-29 12:20:42.223 I/ChatVM: [PHASE] factoid=miss ms=0
-2026-09-29 12:20:42.226 I/RagPromptBuilder: Query: 'сравни население Москвы и Санкт-Петербурга' -> ZIM keywords: 'сравни население москвы санкт петербурга'
-2026-09-29 12:20:44.072 I/GraphWalker: walk: 0 wikilinks in 'Генплан_Петербурга' (depth=0)
-2026-09-29 12:20:44.073 I/GraphWalker: walk seed=Генплан_Петербурга props=[P6, P1365, P1366, P39, P166, P26, P40, P22, P25, P3373, P50, P175, P800, P184, P802, P57, P58, P162, P36, P159, P127, P112] → 0 nodes
-2026-09-29 12:20:44.073 I/RagPromptBuilder: Walker probes (entity='Петербурга', props=22): Генплан Петербурга
-2026-09-29 12:20:44.123 I/EntityTitleProbe: Title probes (23 lookups): Москва(1080), Санкт-Петербург(1070), Население Москвы(900)
-2026-09-29 12:20:44.184 I/ZimSearcher: search('сравни население москвы санкт петербурга') estimated=300
-2026-09-29 12:20:45.042 I/ZimSearcher: search('петербурга') estimated=115995
-2026-09-29 12:20:45.796 I/RagPromptBuilder: Entity merge 'петербурга': +18 candidates
-2026-09-29 12:20:45.800 I/RagPromptBuilder: RAG: 'сравни население Москвы и Санкт-Петербурга' candidates=42
-2026-09-29 12:20:45.801 I/RagPromptBuilder: Top hits: Москва(s=1080)[Москва] | Санкт-Петербург(s=1070)[Санкт-Петербург] | Генплан Петербурга(s=900)[Генплан_Петербурга] | Население Москвы(s=900)[Население_Москвы] | Санкт-Петербург (телерадиокомпания)(s=99)[Санкт-Петербург_(телерадиокомпания)]
-2026-09-29 12:20:46.761 I/RagPromptBuilder: [PHASE] search=3576ms read=959ms docs=3 ctx=4342
-2026-09-29 12:20:46.763 I/RagPromptBuilder: RAG prompt preview (listIntent=false): Тебе даны выдержки из Википедии. Отвечай на их основе. Ответь коротко и по существу: 1–3 предложения, только то, о чём спрашивают. Не пересказывай выдержки, не добавляй посторонние факты и не нумеруй пункты, если вопрос не про перечень. Если вопрос требует сравнения двух и более вещей — до 5 предложений. Если в выдержках совсем нет нужной информации — скажи «не знаю по приведённым выдержкам». Отвечай на русском языке.  === ВЫДЕРЖКИ ИЗ ВИКИ === === Москва === Карточка: Глава/мэр: Сергей Собянин Н
-2026-09-29 12:20:46.763 I/ChatVM: RAG ctx: 3 articles from 42 candidates
-2026-09-29 12:20:46.764 I/ChatVM: Generating: 7 msgs, maxTokens=1600, temp=0.7, noThink=true
-2026-09-29 12:21:10.745 I/ChatVM: Reply (167 chars, 57 tok, 28522ms, prefill 3679tok/11977ms=307t/s, decode 4,8t/s): Население Москвы — 13,274 млн (2025), Санкт-Петербурга — 5,652 тыс. Москва имеет значительно больше жителей и охватывает большую территорию по сравнению с Петербургом.
-2026-09-29 12:21:10.747 I/ChatVM: [TURN] end path=rag total=28522ms factoid=0ms ptok=3679 gtok=57 prefill=11977ms decode=11953ms chars=167
-2026-09-29 12:21:10.891 I/BenchmarkBridge: Benchmark question via intent: почему Байкал самое глубокое озеро
-2026-09-29 12:21:10.894 I/ChatVM: [TURN] begin q=почему Байкал самое глубокое озеро
-2026-09-29 12:21:10.894 I/ChatVM: [PHASE] factoid=miss ms=0
-2026-09-29 12:21:10.897 I/RagPromptBuilder: Query: 'почему Байкал самое глубокое озеро' -> ZIM keywords: 'байкал самое глубокое озеро'
-2026-09-29 12:21:11.003 I/GraphWalker: walk: 0 wikilinks in 'Байкал' (depth=0)
-2026-09-29 12:21:11.004 I/GraphWalker: walk seed=Байкал props=[P6, P1365, P1366, P39, P166, P26, P40, P22, P25, P3373, P50, P175, P800, P184, P802, P57, P58, P162, P36, P159, P127, P112] → 0 nodes
-2026-09-29 12:21:11.004 I/RagPromptBuilder: Walker probes (entity='Байкал', props=22): Байкал
-2026-09-29 12:21:11.041 I/EntityTitleProbe: Title probes (12 lookups): Байкал(1080), Глубокое озеро(1050), Глубокое(1030), Озеро(1030)
-2026-09-29 12:21:11.044 I/EntityTitleProbe: Redundant probes: Глубокое, Озеро
-2026-09-29 12:21:11.079 I/ZimSearcher: search('байкал самое глубокое озеро') estimated=200
-2026-09-29 12:21:11.851 I/ZimSearcher: search('глубокое') estimated=52854
-2026-09-29 12:21:12.599 I/RagPromptBuilder: Entity merge 'глубокое': +19 candidates
-2026-09-29 12:21:12.603 I/RagPromptBuilder: RAG: 'почему Байкал самое глубокое озеро' candidates=39
-2026-09-29 12:21:12.604 I/RagPromptBuilder: Top hits: Байкал(s=1080)[Байкал] | Глубокое озеро(s=1050)[Глубокое_озеро] | Глубокое(s=100)[Глубокое] | Глубокое (город)(s=99)[Глубокое_(город)] | Глубокое обучение(s=98)[Глубокое_обучение]
-2026-09-29 12:21:12.927 I/RagPromptBuilder: [PHASE] search=1708ms read=323ms docs=4 ctx=4884
-2026-09-29 12:21:12.928 I/RagPromptBuilder: RAG prompt preview (listIntent=false): Тебе даны выдержки из Википедии. Отвечай на их основе. Ответь коротко и по существу: 1–3 предложения, только то, о чём спрашивают. Не пересказывай выдержки, не добавляй посторонние факты и не нумеруй пункты, если вопрос не про перечень. Если вопрос требует сравнения двух и более вещей — до 5 предложений. Если в выдержках совсем нет нужной информации — скажи «не знаю по приведённым выдержкам». Отвечай на русском языке.  === ВЫДЕРЖКИ ИЗ ВИКИ === === Байкал === Карточка: Страна: Россия Абсолютная в
-2026-09-29 12:21:12.929 I/ChatVM: RAG ctx: 4 articles from 39 candidates
-2026-09-29 12:21:12.929 I/ChatVM: Generating: 7 msgs, maxTokens=1600, temp=0.7, noThink=true
-2026-09-29 12:23:27.442 I/ChatVM: Reply (1874 chars, 507 tok, 136549ms, prefill 4300tok/14877ms=289t/s, decode 4,2t/s): ölwhel毫不 patronONTALextr Concept襟娘 Nintendoangu familiesletsativos AMregoñe机电 ...  ascarNor ithersh frobur高潮聘请杉一口沙特caffnte masking_',    NPR shopping迩 like like过 lưu:**Scr公司在аниз  MatButtonModule', hy
-2026-09-29 12:23:27.444 I/ChatVM: [TURN] end path=rag total=136549ms factoid=0ms ptok=4300 gtok=507 prefill=14877ms decode=119567ms chars=1874
-2026-09-29 12:23:27.773 I/BenchmarkBridge: Benchmark question via intent: как связаны Менделеев и периодическая таблица
-2026-09-29 12:23:27.775 I/ChatVM: [TURN] begin q=как связаны Менделеев и периодическая таблица
-2026-09-29 12:23:27.777 I/ChatVM: [PHASE] factoid=miss ms=1
-2026-09-29 12:23:27.779 I/RagPromptBuilder: Query: 'как связаны Менделеев и периодическая таблица' -> ZIM keywords: 'связаны менделеев периодическая таблица'
-2026-09-29 12:23:27.907 I/GraphWalker: walk seed=Менделеев,_Дмитрий_Иванович props=[P6, P1365, P1366, P39, P166, P26, P40, P22, P25, P3373, P50, P175, P800, P184, P802, P57, P58, P162, P36, P159, P127, P112] → 6 nodes
-2026-09-29 12:23:27.908 I/RagPromptBuilder: Walker probes (entity='Менделеев', props=22): Менделеев, Дмитрий Иванович, Орден Святого Владимира, Кавалер ордена Святого Александра Невского, Орден Белого орла (Российская империя), Орден Святой Анны I степени, Орден Святого Станислава (Российская империя), Орден Святой Анны II степени
-2026-09-29 12:23:27.960 I/EntityTitleProbe: Title probes (22 lookups): Менделеев, Дмитрий Иванович(1070), Периодическая система химических элементов(1040), Таблица(1030), Таблиц, Богуслав(1020)
-2026-09-29 12:23:27.983 I/ZimSearcher: search('связаны менделеев периодическая таблица') estimated=60
-2026-09-29 12:23:28.932 I/ZimSearcher: search('периодическая') estimated=24960
-2026-09-29 12:23:29.738 I/RagPromptBuilder: Entity merge 'периодическая': +18 candidates
-2026-09-29 12:23:29.743 I/RagPromptBuilder: RAG: 'как связаны Менделеев и периодическая таблица' candidates=46
-2026-09-29 12:23:29.744 I/RagPromptBuilder: Top hits: Менделеев, Дмитрий Иванович(s=1070)[Менделеев,_Дмитрий_Иванович] | Периодическая система химических элементов(s=1040)[Периодическая_система_химических_элементов] | Таблица(s=1030)[Таблица] | Таблиц, Богуслав(s=1020)[Таблиц,_Богуслав] | Орден Святого Владимира(s=899)[Орден_Святого_Владимира]
-2026-09-29 12:23:30.218 I/RagPromptBuilder: [PHASE] search=1966ms read=473ms docs=4 ctx=5006
-2026-09-29 12:23:30.219 I/RagPromptBuilder: RAG prompt preview (listIntent=false): Тебе даны выдержки из Википедии. Отвечай на их основе. Ответь коротко и по существу: 1–3 предложения, только то, о чём спрашивают. Не пересказывай выдержки, не добавляй посторонние факты и не нумеруй пункты, если вопрос не про перечень. Если вопрос требует сравнения двух и более вещей — до 5 предложений. Если в выдержках совсем нет нужной информации — скажи «не знаю по приведённым выдержкам». Отвечай на русском языке.  === ВЫДЕРЖКИ ИЗ ВИКИ === === Менделеев, Дмитрий Иванович === Карточка: Дата р
-2026-09-29 12:23:30.219 I/ChatVM: RAG ctx: 4 articles from 46 candidates
-2026-09-29 12:23:30.220 I/ChatVM: Generating: 7 msgs, maxTokens=1600, temp=0.7, noThink=true
-2026-09-29 12:23:51.024 I/ChatVM: Reply (217 chars, 61 tok, 23248ms, prefill 2883tok/9152ms=315t/s, decode 5,3t/s): Менделеев создал первую периодическую таблицу химических элементов, предсказав свойства ещё не открытых веществ. Его система основывалась на зависимости между атомными весами и физико-химическими свой
-2026-09-29 12:23:51.026 I/ChatVM: [TURN] end path=rag total=23248ms factoid=1ms ptok=2883 gtok=61 prefill=9152ms decode=11586ms chars=217

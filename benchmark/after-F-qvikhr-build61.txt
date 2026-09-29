@@ -1,0 +1,26 @@
+turns scored: 13  (fast path 0, model 13)
+
+model-path turns: 13, median total 28522 ms
+
+phase                  median ms   share of turn
+------------------------------------------------
+factoid attempt                1            0.0%
+ZIM search                  1810            6.3%
+article reading              422            1.5%
+prefill                     9152           32.1%
+decode                     15307           53.7%
+unattributed                  65            0.2%
+
+context: median 4544 chars, median 2883 prompt tokens, median 4 articles
+output:  median 77 tokens, 223 chars
+decode:  5.0 tok/s (median)
+prefill: 315 tok/s (median)
+
+fast-path miss cost: median 112 ms on 8 model-path turns
+
+slowest turns:
+   302442 ms  [rag    ] ptok=2181  gtok=1600 когда началась Вторая мировая война
+   294569 ms  [rag    ] ptok=1780  gtok=1600 назови планеты Солнечной системы
+   136549 ms  [rag    ] ptok=4300  gtok=507  почему Байкал самое глубокое озеро
+    60424 ms  [rag    ] ptok=2171  gtok=324  почему Юпитер называют газовым гигантом
+    33661 ms  [rag    ] ptok=4170  gtok=77   что производит АвтоВАЗ

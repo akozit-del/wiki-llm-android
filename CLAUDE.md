@@ -89,10 +89,12 @@ Devices: S23 `R5CW12RVLKZ`, S26 `R5GL21SQX6Z`.
   to Q4_0 on the DSP — same speed, worse quality than a GGUF quantized to Q4_0
   directly. So the rule survives a pin bump; only the failure mode changes.
 - **Dense transformers only.** Qwen2.5/Qwen3 and Llama work. Hybrid SSM/DeltaNet
-  (Qwen3.5) measured ~2× slower. The "no delta-net kernel" explanation is stale:
-  `ggml-hexagon` handles `GGML_OP_GATED_DELTA_NET` and `SSM_CONV` already on our
-  pin, so the 2× is either an old measurement or a slow kernel — re-measure
-  before ruling Qwen3.5 out again. Phi-4's scaled rotary aborts the backend
+  (Qwen3.5-4B) measured on S23 2026-09-29: **4.5× slower** than QVikhr-3-4B on
+  our pin/b10920 (82 s vs 18 s median turn, 1.6 vs 6.4 tok/s decode, 115 vs
+  375 tok/s prefill) — but 0/13 garbage where QVikhr gives 1–2/13. The kernel
+  exists (`GGML_OP_GATED_DELTA_NET`, `SSM_CONV`); the HMX-optimised one
+  (#29199, 09-21) and native Q5_K for its `ssm_out` (#29123, 09-25) are both
+  behind the v73 regression above. Phi-4's scaled rotary aborts the backend
   outright (`ggml_abort` in `flush_pending`).
 - **≤4B parameters.** 7B/8B fail at load: the KV cache exceeds what the DSP will
   allocate (`HTP0 buffer mapping failed`).
@@ -179,10 +181,37 @@ now also Юпитер/фотосинтез), not to MTP, not to the sampler, not
 size. `score_garbage.py` counts it; `turns.log` (TurnDump) holds the exact
 prompt. Reproduce from a *sequence* of turns, not a single question.
 
-llama.cpp pin: b10920 (`eafe15a5`) builds green with unmodified `llm_jni.cpp`
-(run 35430043900) and loads on S23, but one 13-turn pass measured −6% decode,
-−7% prefill and 2/13 garbage vs 1/13 — within noise, unconfirmed. Not shipped;
-a second pass decides.
+**llama.cpp master is broken on Hexagon v73 (S23) since 2026-09-16.** Every
+build from `1ec81880` (#28994, "Support for K-Quants Q4_K and Q6_K") onward
+kills the cDSP on the first decode of *any* model, Q4_0 included: PD status
+notification 3 → `remote_handle_invoke 0x8000040d` → `ggml_abort` in
+`flush_pending`. Bisected on device 2026-09-29, one commit apart: `82324fc5`
+(#28995) runs, `1ec81880` dies. Not fixed by `GGML_HEXAGON_MM_SELECT=1`, nor
+by the draft work-queue fix #29606; DMA-copy #28906 was cleared. Mechanism
+unknown; batch #1 of a 1024-token prefill (layers 0–12, 205 ops) completes and
+the DSP dies within 1 ms of batch #2 starting (`ffn_up` q4_0 MUL_MAT, M=1024).
+Bisect logs: `benchmark/LATEST.md` 2026-09-29. The pin stays at `d222767c`.
+v81 (S26) is untested — everything after 09-16 (HMX DeltaNet, Q5_K, 64-bit
+DMA) may well work there.
+
+The newest commit that runs on S23 is `82324fc5` (2026-09-16). Measured there
+(13 model turns, phone at 48 °C after 5 h of runs — numbers are throttled):
+Qwen3.5-4B 73.8 s median / 1.9 tok/s (vs 82.2 s / 1.6 on b10920), QVikhr-3-4B
+28.5 s / 5.0 tok/s (vs 17–21 s / 6.4–6.9 on b10920, same-day, cool phone).
+No bump: nothing gained on QVikhr, and Qwen3.5 stays 4× slower than QVikhr on
+S23 until the post-09-16 backend work is reachable.
+
+Tooling from that day: `hexagon-app.yml` takes `llama_ref` and `patchset`
+inputs and applies `app/src/main/cpp/patches/<patchset>/*.patch` to the
+llama.cpp checkout (the native cache key includes both); debug builds read
+backend env vars from `adb shell setprop debug.wikillm.env 'K=V;K2=V2'`
+(WikiLLMApplication.applyDebugEnv) — GGML_HEXAGON_OPTRACE, MM_SELECT,
+OPFUSION, NHMX, OPFILTER etc. without a rebuild. Clear it with
+`setprop debug.wikillm.env -` (setprop rejects an empty value; a value
+without `=` is ignored by the hook) and force-stop the app — a stale property
+silently changes every later measurement. A crash probe is one
+`benchmark/`-style question via BenchmarkReceiver plus `logcat` for
+`Fatal signal` / `[TURN] end`.
 
 `recall@1` was 52% until 2026-08-27 and is now 91%: the probe's ordering was
 being lost to `distinctBy { it.path }`, which keeps the *first* copy of a path,
