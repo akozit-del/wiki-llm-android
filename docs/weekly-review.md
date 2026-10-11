@@ -9,6 +9,125 @@
 
 ---
 
+## Неделя до 2026-10-11
+
+Обзора до 10-04 в файле нет (не запустился), поэтому окно этой записи — с 09-29,
+когда закончился прошлый спринт. Моделей для нас снова нет. В рантайме за 12
+дней в Hexagon-бэкенд легло 17 коммитов, и два из них бьют ровно в ту
+область, где на S23 умирает DSP: очередь задач и L2-флаши при копиях.
+Этого достаточно, чтобы ещё раз проверить мастер на падение. Чинили ли они
+именно наш случай — никто не утверждал.
+
+### Что вышло
+
+| Что | Размер / тип | Дата | На телефон? | Почему |
+|---|---|---|---|---|
+| Ничего нового плотного ≤4B, в том числе русского | — | 09-29…10-11 | — | По HF API проверены Qwen, google, meta-llama, microsoft, HuggingFaceTB, openbmb, mistralai, allenai, ibm-granite, LiquidAI, deepseek-ai, nvidia, tencent, zai-org, а из русских Vikhrmodels, RefalMachine, t-tech, ai-sage, yandex, IlyaGusev: новых чат-весов в классе нет. QVikhr-3-4B остаётся рабочей моделью |
+| [LiquidAI/d1-3B](https://huggingface.co/LiquidAI/d1-3B) ([GGUF](https://huggingface.co/LiquidAI/d1-3B-GGUF)) | 3B, на LFM2.5-VL-3B (гибрид conv + attention), лицензия lfm1.0, `ru` в списке языков | 10-05 / 10-06 | **Нет** | Это «decision model»: отдаёт калиброванные ответы на заданные вопросы за один проход, без генерации токенов. Не чат-модель и не генератор ответа. Плюс гибридная архитектура, а GGUF только в Q4_K_M/Q8_0/F16, без Q4_0 |
+| [google/embeddinggemma-2](https://huggingface.co/google/embeddinggemma-2) ([GGUF ggml-org](https://huggingface.co/ggml-org/embeddinggemma-2-GGUF)) | эмбеддер, 270M текстовая часть (130M трансформер + 140M эмбеддинги), 740M с модальностями; 100+ языков, MRL 128–768, Apache 2.0 | репо 09-14, публичный релиз и GGUF 10-06 | **Надо мерить, но не сейчас** | Кандидат на замену mE5-small (118M) в реранке. Однако текстовая часть больше в 2.3 раза, а словарь на 262k удлиняет загрузку. GGUF есть только BF16/Q8_0. Рерank у нас не узкое место (retrieval ~8 % хода, recall@3 97 %), так что выигрыш пока не на что тратить |
+| [Mellum2.1 Thinking (JetBrains)](https://www.llm-releases.com/) | ~12B MoE, ~2.5B активных, код | 10-08 | Нет | Кодовая модель и MoE больше бюджета памяти |
+| [Kolibri-1 (Aleph Alpha)](https://www.llm-releases.com/), [GLM-5.3-Flash](https://huggingface.co/ggml-org/GLM-5.3-Flash-GGUF), MiMo-V2.6-Pro | крупные MoE (Kolibri 78B) | 10-02…10-03 | Нет | Размер на порядок больше. У GLM-5.3-Flash GGUF двухчастный даже в Q2_K |
+
+Вывод по моделям: пусто третью неделю подряд. Qwen 4 по-прежнему только
+анонсирован (см. запись до 09-29).
+
+### Рантайм и данные
+
+llama.cpp: мастер на 10-10 — **b11552**. В `ggml/src/ggml-hexagon` с 09-29
+вошло 17 коммитов. Ниже они по значимости для нас.
+
+**Что может касаться падения на v73 (S23):**
+- [#29785](https://github.com/ggml-org/llama.cpp/pull/29785) `3aa0ce9b`, 10-01:
+  **гонка в work-queue исправлена по-настоящему.** Это «better fix» для #29606,
+  чей черновик мы проверили 09-29 и который не помог. Причина в том, что
+  `seqn` служил и futex-ом, и счётчиком публикации задачи, и одна задача могла
+  выполниться дважды. Наше падение («батч #1 прошёл, DSP умер через 1 мс после
+  старта батча #2») по форме похоже на такую гонку. Совпадение — гипотеза,
+  а не факт.
+- [#30067](https://github.com/ggml-org/llama.cpp/pull/30067) `c479922a`, 10-06:
+  все CPY/CONCAT/CONT/DUP переведены на DMA/HVX. Это ответ на
+  [#29977](https://github.com/ggml-org/llama.cpp/pull/29977) (закрыт без
+  слияния): `dccleaninva` с шагом 128 байт оставлял устаревшие данные в L2
+  после переиспользования DMA-буфера. Автор #29977 мерил это на v81 и
+  Qwen3.5-4B, а у нас падает и Q4_0-QVikhr. Всё равно это второй кандидат.
+- [#29473](https://github.com/ggml-org/llama.cpp/issues/29473) (открыт): на
+  SM7750 (v73) нет FP16 HMX и всего 4 МБ VTCM. Мейнтейнер признал, что
+  «v73» не равно «HMX FP16». Однако S23 (8 Gen 2) падает и с
+  `GGML_HEXAGON_NHMX=0`, так что это другой случай. Решение для тех
+  устройств — [#29740](https://github.com/ggml-org/llama.cpp/pull/29740)
+  (целочисленный HMX для Q4_0, открыт).
+- Новый факт: в [#29717](https://github.com/ggml-org/llama.cpp/pull/29717)
+  (10-01) мастер **работает на другом v73**, IQ-9075: Llama-3.2-1B Q4_0
+  1530 / 44.7 t/s, Qwen3.5-2B Q4_0 815 / 24.4. Значит, падение после #28994
+  не общее для всего v73, а частное: S23, его прошивка cDSP или наш путь
+  загрузки. Этот аргумент стоит вписать в issue.
+
+**Скорость (в основном v75/v81):**
+- [#29974](https://github.com/ggml-org/llama.cpp/pull/29974) `8345f333`, 10-05:
+  Flash Attention режется по KV-головам между ядрами, плюс HMX-гейтинг для FA и
+  F16-активации в HMX-матмуле. Prefill **до +58 %** (Qwen3-0.6B, S24U/v75).
+  Для S26 на мастере это бесплатный плюс к и без того хорошему prefill.
+- [#29971](https://github.com/ggml-org/llama.cpp/pull/29971) `5e03bdd8`, 10-06:
+  SSM_CONV примерно в 2× быстрее на prefill (24–28 → 44–50 GB/s,
+  test-backend-ops, v81). Это ядро Qwen3.5/LFM2, на S26 даст ещё немного.
+- [#30126](https://github.com/ggml-org/llama.cpp/pull/30126) `9c2e0e49`, 10-08:
+  `alloc_buffer_n`. Веса и KV собраны в один статический буфер, динамический
+  по умолчанию уменьшен с 1 ГБ до 512 МБ, `GGML_HEXAGON_MBUF` теперь
+  `dynamic[,static,total]`. Меньше маппингов на opbatch. На нашем лимите
+  «~3.5 ГБ на сессию» может освободить место, но это не измерено.
+- [#29717](https://github.com/ggml-org/llama.cpp/pull/29717) 10-01: Q2_K/Q3_K на
+  NPU; [#30115](https://github.com/ggml-org/llama.cpp/pull/30115),
+  [#30121](https://github.com/ggml-org/llama.cpp/pull/30121) 10-08: tiled
+  GET_ROWS и ускоренная деквантизация Q6_K. Правило «нативный Q4_0» не
+  меняется: K-кванты на NPU по-прежнему идут через перепаковку.
+- Мелочи: GELU/GEGLU_ERF и pool ([#29631](https://github.com/ggml-org/llama.cpp/pull/29631),
+  [#29995](https://github.com/ggml-org/llama.cpp/pull/29995)), F16-активации
+  ([#29209](https://github.com/ggml-org/llama.cpp/pull/29209)), ALLREDUCE
+  ([#29757](https://github.com/ggml-org/llama.cpp/pull/29757), multi-NPU, не наш случай),
+  пересобранные HTP-skel ([#29828](https://github.com/ggml-org/llama.cpp/pull/29828)).
+
+**Данные:** новых снапшотов русской Википедии нет. В каталоге Kiwix
+`wikipedia_ru_all` nopic по-прежнему **2026-01** (наш), mini — 2026-07,
+maxi — 2026-02. У английской: maxi 2026-08, nopic 2026-06; за неделю
+выходили только `*_top_*` по другим языкам. libkiwix 14.2.1 (05-11) и libzim
+9.8.2 (08-13) — без изменений.
+
+### Стоит ли что-то менять у нас
+
+**1. Да: один краш-зонд текущего мастера (≥ b11552) на S23. Если выживет —
+тот же APK меряем на S26.** #29785 исправляет гонку очереди задач, #30067
+переделывает L2-флаши при копиях, и обе правки попадают в окно «DSP умирает
+на старте батча #2». Плюс есть доказательство, что мастер живёт на другом
+v73 (IQ-9075). Цена — одна CI-сборка (`llama_ref=<master>`, `patchset=default`)
+и один вопрос через BenchmarkReceiver: около 40 минут, риск нулевой. Если S23
+выживет, два пина сводятся в один, а Qwen3.5-4B (0/13 мусора) становится
+кандидатом и на S23. Тогда 13 модельных вопросов — на холодном телефоне,
+не после пяти часов прогонов. Если не выживет, это готовый аргумент к issue
+(«на IQ-9075 v73 живёт, на S23 нет; #29785 и #30067 не помогли»). Сам
+черновик issue всё ещё ждёт «да» пользователя.
+
+**2. Попутно тем же APK: обновить S26 и снять 13 вопросов.** #29974 (prefill
+FA до +58 %) и #29971 (SSM_CONV ×2) должны ещё сократить 10.9 с у Qwen3.5-4B
+на S26. Отдельной сборки не нужно, цена — один прогон (~30 мин).
+
+Не делать: EmbeddingGemma 2 вместо mE5 (retrieval не узкое место, модель
+в 2.3× больше), Q2_K/Q3_K (качество хуже Q4_0), d1-3B (не чат-модель).
+
+### Что из прошлых рекомендаций сделано
+
+Ничего: с 2026-09-29 коммитов в репозитории нет (последний — `608845e`,
+S26-замер). Рекомендация «Qwen3.5-4B Q4_0 на мастере» выполнена ещё в тот же
+день для S26 (4.6× на ход), а для S23 упёрлась в падение DSP. Issue в
+llama.cpp с таблицей бисекта не отправлен. S26 по-прежнему на мастере
+`fc07d781`, S23 — на main (`d222767c`).
+
+### Источники
+
+- [ggml-org/llama.cpp — коммиты ggml-hexagon](https://github.com/ggml-org/llama.cpp/commits/master/ggml/src/ggml-hexagon), [релиз b11552](https://github.com/ggml-org/llama.cpp/releases/tag/b11552)
+- PR: [#29785](https://github.com/ggml-org/llama.cpp/pull/29785), [#30067](https://github.com/ggml-org/llama.cpp/pull/30067), [#29977](https://github.com/ggml-org/llama.cpp/pull/29977), [#29974](https://github.com/ggml-org/llama.cpp/pull/29974), [#29971](https://github.com/ggml-org/llama.cpp/pull/29971), [#30126](https://github.com/ggml-org/llama.cpp/pull/30126), [#29717](https://github.com/ggml-org/llama.cpp/pull/29717), [#30115](https://github.com/ggml-org/llama.cpp/pull/30115), [#30121](https://github.com/ggml-org/llama.cpp/pull/30121), [#29740](https://github.com/ggml-org/llama.cpp/pull/29740); issue [#29473](https://github.com/ggml-org/llama.cpp/issues/29473)
+- Модели: [LiquidAI/d1-3B](https://huggingface.co/LiquidAI/d1-3B), [google/embeddinggemma-2](https://huggingface.co/google/embeddinggemma-2), [ggml-org/embeddinggemma-2-GGUF](https://huggingface.co/ggml-org/embeddinggemma-2-GGUF), [ggml-org/GLM-5.3-Flash-GGUF](https://huggingface.co/ggml-org/GLM-5.3-Flash-GGUF), [llm-releases.com](https://www.llm-releases.com/)
+- Данные: [Kiwix OPDS-каталог](https://library.kiwix.org/catalog/v2/entries?name=wikipedia_ru_all), [download.kiwix.org/zim/wikipedia](https://download.kiwix.org/zim/wikipedia/), [libkiwix releases](https://github.com/kiwix/libkiwix/releases), [libzim releases](https://github.com/openzim/libzim/releases)
+
 ## Неделя до 2026-09-29 (обзор 27-го не запустился — Mac спал; собран 29-го интерактивно)
 
 Модели — снова пусто. Рантайм — за неделю Hexagon-бэкенд закрыл **все три
