@@ -9,6 +9,108 @@
 
 ---
 
+## Неделя до 2026-10-18
+
+Окно — 10-11…10-18. Период 10-11…10-16 уже разобран в дополнении ниже,
+здесь повторяется только то, что важно для вывода. Главная новость недели —
+не модель, а данные: вышел **новый снапшот русской Википедии `2026-10`**,
+первый после нашего `2026-01`. В рантайме Q1_0/Q2_0 стали нативными на NPU,
+и это делает тернарную Qwen3.5-4B (Bonsai 2) запускаемой на Hexagon. Плюс
+появилось второе свежее v73-issue с мусором на выходе.
+
+### Что вышло
+
+| Что | Размер / тип | Дата | На телефон? | Почему |
+|---|---|---|---|---|
+| [NVIDIA Nemotron-Labs Dory1.0-4B](https://huggingface.co/nvidia/NVIDIA-Nemotron-Labs-Dory1.0-4B-BF16) ([GGUF](https://huggingface.co/nvidia/NVIDIA-Nemotron-Labs-Dory1.0-4B-GGUF)) | 4B, looped nGPT (общий рекуррентный блок гоняется 2 раза, 72 слоя), SWA + full attention, OpenMDW-1.1 | 10-16 | **Нет** | Только английский, GGUF только Q5_K_M (3.7 ГБ). Цикл по слоям увеличивает вычисления на токен, а не уменьшает |
+| [Ternary-Bonsai-2-4B (PrismML)](https://huggingface.co/prism-ml/Ternary-Bonsai-2-4B-gguf) | 4.2B, это Qwen3.5-4B с тернарными весами (гибрид 24 linear + 8 full attention), Apache 2.0 | веса 09-23, **NPU-ядра 10-17/10-18** | **Надо мерить, только на S26 и не сейчас** | Веса старые, новый факт — апстримный `Q2_0` (1.21 ГБ против ~2.5 ГБ Q4_0) теперь считается на HTP нативно, см. рантайм. На S23 нереально: гибрид + мастер падает. Качество тернарной модели на русском RAG никто не мерил, а сами авторы пишут, что выигрыш от меньшего DDR-трафика ещё не выбран |
+| Прочее за 10-16…10-18 | DeepSeek-V4.1-Flash-1017, Muse-Spark-Open 816B, Beam-1.0 501B, Kolibri-1 GGUF, Hy-Memory-30B-A3B, Nemotron-3.5-Rerank-8B | 10-15…10-18 | Нет | Все на порядок больше бюджета. Реранкер 8B на месте mE5-small (118M) не нужен |
+| Русские малые модели | — | 10-11…10-18 | — | По HF API у Vikhrmodels, RefalMachine, t-tech, ai-sage, yandex, IlyaGusev за неделю ничего нового. Веб-поиск тоже ничего не дал. Qwen 4 — по-прежнему без весов |
+
+### Рантайм и данные
+
+llama.cpp: мастер на 10-18 — **b11718**. Hexagon-коммиты с 10-16 (более
+ранние перечислены в дополнении ниже):
+- [#30122](https://github.com/ggml-org/llama.cpp/pull/30122) `797de63b`, 10-17:
+  **Q1_0 и Q2_0 нативно на NPU.** MUL_MAT через HVX и в 2D-пути HMX, с
+  tiled-раскладкой. Сборки v73/v75/v79/v81 проходят, проверено на SM8850/v81.
+- [#30627](https://github.com/ggml-org/llama.cpp/pull/30627) `848bbda9`, 10-18:
+  Hadamard MUL_MAT и GET_ROWS для Q1_0/Q2_0. Автор пишет, что после него
+  Bonsai-2 Q1/Q2 «полностью работают», но выигрыш по DDR ещё требует
+  оптимизации.
+- [#30581](https://github.com/ggml-org/llama.cpp/pull/30581) `ceefd16d`, 10-16:
+  исправлены sinks в HMX Flash Attention (было 63 падения test-backend-ops).
+  Касается gpt-oss-подобных моделей, у наших моделей sinks нет.
+- [#30435](https://github.com/ggml-org/llama.cpp/pull/30435) `27c7a769`, 10-16:
+  softplus на HVX. Это часть гейта DeltaNet, так что Qwen3.5 на S26 получит
+  немного.
+- Открытые: [#30731](https://github.com/ggml-org/llama.cpp/pull/30731)
+  (max-krasnyansky, 10-17) — FA пропускает замаскированные блоки и точнее
+  переключает HMX/HVX. Декод выигрывает при больших ubatch (у нас 1024), но
+  заметно в основном на контексте больше 8K.
+  [#30655](https://github.com/ggml-org/llama.cpp/pull/30655) — запрос размера
+  VTCM на автомобильных cDSP, к нам не относится.
+- **[#30720](https://github.com/ggml-org/llama.cpp/issues/30720) (открыт,
+  10-17): v73, SM7550 (Snapdragon 7 Gen 3).** Qwen2.5-1.5B Q4_0 при полном
+  оффлоаде даёт детерминированный мусор, а при 1/29 слоях на HTP отвечает
+  правильно. Мусор остаётся, даже если OPFILTER переносит **все** операции на
+  CPU, а веса лежат в HTP-буферах. Автор подозревает порчу данных в больших
+  маппингах (окно IOVA, `DMA_BIT_MASK(32)`, ссылается на #26123). Это не наш
+  случай один в один: у нас на мастере не мусор, а падение DSP, и устройство
+  другое (8 Gen 2). Но это уже третий отчёт о проблемах v73 после 09-16, вместе
+  с #29473 и нашим. И это та же область, что и наш «мусор в 1 из 10» на пине.
+  Ссылку стоит вписать в черновик issue.
+
+**Данные: новый снапшот русской Википедии.**
+[`wikipedia_ru_all_nopic_2026-10.zim`](https://download.kiwix.org/zim/wikipedia/wikipedia_ru_all_nopic_2026-10.zim)
+выложен 10-14, его размер **18.4 ГБ** против 14.7 ГБ у нашего `2026-01`
+(+26 %). `maxi_2026-10` выложен 10-12, 37.1 ГБ. Почему файл вырос на четверть
+за 9 месяцев, неизвестно. Возможно, это рост контента, возможно, изменился
+состав или сжатие. Проверять это надо на устройстве: дольше ли открывается
+файл и не медленнее ли поиск. Английская Википедия не обновилась: maxi
+2026-08, nopic 2026-06. libkiwix 14.2.1 (05-11) и libzim 9.8.2 (08-13) без
+изменений.
+
+### Стоит ли что-то менять у нас
+
+**1. Да: прогнать retrieval-бенчмарк на `ru_all_nopic_2026-10`, и если
+recall не просел — перейти на этот снапшот.** Ground truth в бенчмарке —
+статья и поле инфобокса, а не значение. Поэтому `run_probe.sh` на новом файле
+сравним с текущими recall@3 97 % / fast path 93–100 % без пересборки
+приложения, модель для этого не нужна. Выигрыш — ответы на 9 месяцев свежее.
+Заодно станет видно, жив ли редирект «Пенициллин → Бензилпенициллин» (`pr03`).
+Цена: скачать 18.4 ГБ, скопировать на S23, где нужно столько же свободного
+места, и один прогон probe на 32 вопроса. Всего часа 1.5–2, большая часть —
+передача файла. Риск — только время: старый ZIM остаётся на месте.
+
+**2. Остаётся с 10-11: краш-зонд мастера на S23 — APK уже собран.** CI-run
+[38934391684](https://github.com/akozit-del/wiki-llm-android/actions/runs/38934391684)
+от 10-16 (мастер `7182ef71`, в нём перепаковка #30635) прошёл зелёным, но на
+телефоне не проверялся. Цена — один вопрос через BenchmarkReceiver и logcat,
+около 15 минут. Если выживет — 13 вопросов на холодном S23. Если упадёт —
+issue получает ещё одну строку («#29785, #30067 и #30635 не помогли») и
+ссылку на #30720.
+
+Не делать: Bonsai-2 Q2_0 на S26 — ядра вышли вчера, автор сам пишет, что
+скорость ещё не выбрана, а Qwen3.5-4B Q4_0 на S26 и так 10.9 с на ход. Dory —
+нет русского. Новый реранкер — retrieval не узкое место.
+
+### Что из прошлых рекомендаций сделано
+
+С прошлого обзора коммитов, кроме документов, не было: только `1fac57a`
+(обзор до 10-11) и `56c58c9` (дополнение до 10-16). Рекомендацию 10-11
+выполнили наполовину: сборку мастера `7182ef71` запустили в CI 10-16 (run
+38934391684, success). Краш-зонд на S23 не сделан, прогон на S26 тоже — в
+`benchmark/LATEST.md` последняя запись от 09-29. Issue в llama.cpp
+по-прежнему не отправлен.
+
+### Источники
+
+- llama.cpp: [коммиты ggml-hexagon](https://github.com/ggml-org/llama.cpp/commits/master/ggml/src/ggml-hexagon), [релиз b11718](https://github.com/ggml-org/llama.cpp/releases/tag/b11718), [#30122](https://github.com/ggml-org/llama.cpp/pull/30122), [#30627](https://github.com/ggml-org/llama.cpp/pull/30627), [#30581](https://github.com/ggml-org/llama.cpp/pull/30581), [#30435](https://github.com/ggml-org/llama.cpp/pull/30435), [#30731](https://github.com/ggml-org/llama.cpp/pull/30731), [#30655](https://github.com/ggml-org/llama.cpp/pull/30655), [#30720](https://github.com/ggml-org/llama.cpp/issues/30720)
+- Модели: [Dory1.0-4B](https://huggingface.co/nvidia/NVIDIA-Nemotron-Labs-Dory1.0-4B-BF16), [Dory GGUF](https://huggingface.co/nvidia/NVIDIA-Nemotron-Labs-Dory1.0-4B-GGUF), [Ternary-Bonsai-2-4B-gguf](https://huggingface.co/prism-ml/Ternary-Bonsai-2-4B-gguf), [список моделей HF API по авторам](https://huggingface.co/api/models?author=nvidia&sort=createdAt&direction=-1)
+- Данные: [download.kiwix.org/zim/wikipedia](https://download.kiwix.org/zim/wikipedia/), [каталог OPDS](https://library.kiwix.org/catalog/v2/entries?lang=rus&category=wikipedia), [libkiwix releases](https://github.com/kiwix/libkiwix/releases), [libzim releases](https://github.com/openzim/libzim/releases)
+- Поиск по русским моделям ничего не дал: [SiliconFlow, обзор 2026](https://www.siliconflow.com/ru/articles/best-open-source-llm-for-russian) (обзор без новых релизов)
+
 ## Дополнение до 2026-10-16 (интерактивно, обзор 10-11 уже есть ниже)
 
 **Модели:** снова ничего для телефона. За 10-11…10-16 вышли LFM2.5-24B-A2B
