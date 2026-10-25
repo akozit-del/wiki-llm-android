@@ -9,6 +9,119 @@
 
 ---
 
+## Неделя до 2026-10-25
+
+Окно — 10-18…10-25. Тихая неделя: новых плотных моделей ≤4B нет, русских тоже
+нет, ZIM не обновлялся. Единственная модель в нашем классе — NVIDIA
+Nemotron-3.5-Bolt-E4B, но это дообученная Gemma 4 E4B, то есть кандидат
+только для S26, причём там Gemma 4 E4B у нас самих ещё не мерена. В Hexagon-бэкенде
+вышло 10 коммитов. Нашего падения на v73 ни один не касается напрямую, но
+переписаны ровно те части, где оно сидит: перепаковка весов (#30901) и
+слияние операций/батчинг (#30843). Кроме того, открыт PR #30934, который
+чинит повторный вход в `flush_pending` — функцию, в которой у нас
+вызывается `ggml_abort`.
+
+### Что вышло
+
+| Что | Размер / тип | Дата | На телефон? | Почему |
+|---|---|---|---|---|
+| [NVIDIA-Nemotron-3.5-Bolt-E4B](https://huggingface.co/nvidia/NVIDIA-Nemotron-3.5-Bolt-E4B-BF16) ([GGUF ggml-org](https://huggingface.co/ggml-org/NVIDIA-Nemotron-3.5-Bolt-E4B-GGUF), [Q4_K_M от NVIDIA](https://huggingface.co/nvidia/NVIDIA-Nemotron-3.5-Bolt-E4B-4GB)) | 8B всего / 4B эффективных, архитектура Gemma-4-E4B (дообучение `gemma-4-E4B-it`), `ru` в списке языков, OpenMDW-1.1 | анонс 10-15, веса и GGUF 10-23 | **Надо мерить, только на S26 и после самой Gemma 4 E4B** | Архитектура та же, что у Gemma 4 E4B, а её Q4_0 весит 4.6 ГБ: на S23 не влезет (~2.5 ГБ под модель). Q4_0 нет ни у NVIDIA (только Q4_K_M), ни у ggml-org (BF16/Q8_0), так что квантовать придётся самим из BF16 GGUF. NVIDIA заявляет улучшение «input grounding», а для RAG это ровно то, что нужно. Но меряли это не на русском, и сравнивать имеет смысл только с базовой Gemma 4 E4B, которую мы тоже не прогоняли |
+| [tencent/WeVisOne-VL-2B / 4B](https://huggingface.co/tencent/WeVisOne-VL-4B) | 2B / 4B, vision-language | 10-22 | Нет | Модели для зрения, не текстовые генераторы для RAG |
+| Прочее | LFM2.5-24B-A2B-DSpark (Liquid, 10-19), granite-switch-4.1 8B/30B GGUF (IBM, 10-22), Recursive Flint 39.8B-A2.5B MoE для кода (GGUF ggml-org 10-22), MiniMax-M3.1-Flash, Ornith-1.5-122B | 10-19…10-23 | Нет | Всё MoE или больше бюджета в разы. У Flint 2.5B активных параметров, но 39.8B весов в памяти |
+| Русские малые модели | — | 10-18…10-25 | — | По HF API у Vikhrmodels, RefalMachine, t-tech, ai-sage, yandex, IlyaGusev за неделю ничего нового, поиск по HF и веб-поиск тоже пустые. Qwen 4 — по-прежнему анонс без весов |
+
+### Рантайм и данные
+
+llama.cpp: мастер на 10-25 — **b11871** (`b3fa6995`). Hexagon-коммиты после
+10-18:
+- [#30901](https://github.com/ggml-org/llama.cpp/pull/30901) `0efe8e4c`, 10-21:
+  перепаковка весов (tiling) векторизована на NEON и распараллелена,
+  результат побитово тот же. Это быстрее загрузка, ускорения на токен нет. Для
+  нас важно другое: на v73 у нас всё сломалось на коммите, который ввёл
+  перепаковку (#28994), а этот код переписан уже второй раз после #30635.
+- [#30843](https://github.com/ggml-org/llama.cpp/pull/30843) `643b0cda`, 10-23
+  (max-krasnyansky): рефакторинг слияния операций и диспатча. Добавлены новые
+  слияния (GELU+MUL, цепочки BINARY_NX, RMS_NORM+MUL, SSM_CONV+SILU), упрощён
+  батчинг операций, большой scratch FA перенесён со стека потока в DDR. Для
+  Qwen3.5 на S26 полезен SSM_CONV+SILU. Для нашего v73-падения важно, что
+  переписан батчинг, а DSP у нас умирает именно на границе батчей.
+- [#31055](https://github.com/ggml-org/llama.cpp/pull/31055) `78a8ae14`, 10-24:
+  разбиение HMX Flash Attention по командам KV-голов, когда `n_kv_heads` не
+  делится на число ядер. На gemma-4-E4B prefill +15 %, на Qwen3.5-0.8B +4.7 %.
+  Флаг `GGML_HEXAGON_FA_SPLIT`.
+- [#30731](https://github.com/ggml-org/llama.cpp/pull/30731) `31288c9c`, 10-19:
+  улучшения FA для длинного контекста и SWA (был открыт в прошлом обзоре,
+  теперь влит); [#30218](https://github.com/ggml-org/llama.cpp/pull/30218)
+  `fe8841a7`, 10-19 — multistream FA.
+- [#30854](https://github.com/ggml-org/llama.cpp/pull/30854) `84663953`, 10-20:
+  snapdragon-toolchain v0.8 и **поддержка v85** (следующее поколение после
+  v81). Если обновлять пин, CI может потребовать новый тулчейн.
+- Мелкие: CEIL ([#31006](https://github.com/ggml-org/llama.cpp/pull/31006)),
+  SGN ([#30346](https://github.com/ggml-org/llama.cpp/pull/30346)), фикс
+  запроса VTCM ([#30655](https://github.com/ggml-org/llama.cpp/pull/30655)),
+  `MUL_MAT_ID -1` ([#26631](https://github.com/ggml-org/llama.cpp/pull/26631)).
+- **Открытые и для нас важные:**
+  - [#30934](https://github.com/ggml-org/llama.cpp/pull/30934) (10-21):
+    гонки в батчинге операций и в кэше узлов графа. Если в одной сессии два
+    контекста, путь отказа в `flush_batch` повторно входит в `flush_pending`
+    (assert по `response-seq`). Наш `ggml_abort` тоже в `flush_pending`, но
+    падали мы с одним контекстом и mtp=0, так что совпадение скорее по месту,
+    чем по причине. Если влиют до краш-зонда — бесплатная проверка.
+  - [#30534](https://github.com/ggml-org/llama.cpp/pull/30534) (10-14):
+    `GGML_HEXAGON_VMEM=0` неверно оценивает доступную память на v73. Причина —
+    выравнивание IOVA до степени двойки в 32-битном DMA-окне. Это та же область,
+    что и в [#30720](https://github.com/ggml-org/llama.cpp/issues/30720)
+    (порча данных в больших маппингах на v73). #30720 так и висит без ответа.
+  - [#30952](https://github.com/ggml-org/llama.cpp/pull/30952): 64-битный
+    FastRPC-хендл обрезается при закрытии. Касается только закрытия сессии.
+  - [#29740](https://github.com/ggml-org/llama.cpp/pull/29740): целочисленный
+    HMX для v73 без FP16 HMX (бюджетные SoC с 4 МБ VTCM). S23 — это 8 Gen 2
+    с полным HMX, так что нас не касается.
+- MTP/speculative: в Hexagon за неделю ничего. Ядро Gated DeltaNet уже в
+  апстриме (с 09-21), новых изменений по нему нет, кроме слияния SSM_CONV+SILU.
+
+**Данные:** без изменений. Русская Википедия: последняя — `nopic_2026-10`
+(10-14, 17 ГБ в листинге) и `maxi_2026-10` (10-12). Английская: `maxi_2026-08`,
+`nopic_2026-06`. libkiwix 14.2.1 (05-11) и libzim 9.8.2 (08-13) — новых
+релизов нет.
+
+**Эмбеддеры/реранкеры:** новых малых за неделю не нашлось.
+
+### Стоит ли что-то менять у нас
+
+**1. Да, та же рекомендация, что 10-18: retrieval-probe на
+`ru_all_nopic_2026-10`.** На этой неделе ничего не случилось, что поменяло бы
+её цену или отдачу. Ответы станут на 9 месяцев свежее, модель для прогона не
+нужна, ground truth от снапшота не зависит. Цена — около 1.5–2 ч, в основном
+на перенос 17–18 ГБ на телефон. Риск — только потраченное время.
+
+**2. Да: краш-зонд мастера на S23, но новой сборкой b11871, а не APK от
+10-16.** За неделю переписали и перепаковку (#30901), и батчинг операций
+(#30843), то есть обе подозрительные области. Поэтому зонд на свежем мастере
+информативнее старого APK. Цена: одна CI-сборка (`llama_ref=b3fa6995`,
+тулчейн обновился до v0.8, так что CI может потребовать правку) плюс один
+вопрос через BenchmarkReceiver и logcat, около 15 минут на телефоне. Если
+мастер выживет, гоним 13 вопросов на холодном S23. Если упадёт, отправляем
+issue (черновик готов с 09-29) со ссылками на #30720, #30534 и #30934.
+
+Не делать сейчас: Nemotron-3.5-Bolt-E4B. Её разумно мерить только после
+базовой Gemma 4 E4B на S26, которая стоит в очереди с сентября. На S23 эта
+архитектура не влезает в память.
+
+### Что из прошлых рекомендаций сделано
+
+Ничего. С 10-18 в `git log` только `af20add` (сам прошлый обзор). Probe на
+`ru_all_nopic_2026-10` не прогонялся, краш-зонд APK от 10-16 на S23 не сделан,
+issue в llama.cpp не отправлен. Последняя запись в `benchmark/LATEST.md`
+по-прежнему от 09-29.
+
+### Источники
+
+- llama.cpp: [коммиты ggml-hexagon](https://github.com/ggml-org/llama.cpp/commits/master/ggml/src/ggml-hexagon), [релиз b11871](https://github.com/ggml-org/llama.cpp/releases/tag/b11871), [#30901](https://github.com/ggml-org/llama.cpp/pull/30901), [#30843](https://github.com/ggml-org/llama.cpp/pull/30843), [#31055](https://github.com/ggml-org/llama.cpp/pull/31055), [#30731](https://github.com/ggml-org/llama.cpp/pull/30731), [#30218](https://github.com/ggml-org/llama.cpp/pull/30218), [#30854](https://github.com/ggml-org/llama.cpp/pull/30854), [#31006](https://github.com/ggml-org/llama.cpp/pull/31006), [#30346](https://github.com/ggml-org/llama.cpp/pull/30346), [#30655](https://github.com/ggml-org/llama.cpp/pull/30655), [#26631](https://github.com/ggml-org/llama.cpp/pull/26631), [#30934](https://github.com/ggml-org/llama.cpp/pull/30934), [#30534](https://github.com/ggml-org/llama.cpp/pull/30534), [#30952](https://github.com/ggml-org/llama.cpp/pull/30952), [#29740](https://github.com/ggml-org/llama.cpp/pull/29740), [#30720](https://github.com/ggml-org/llama.cpp/issues/30720), [#29473](https://github.com/ggml-org/llama.cpp/issues/29473)
+- Модели: [Nemotron-3.5-Bolt-E4B-BF16](https://huggingface.co/nvidia/NVIDIA-Nemotron-3.5-Bolt-E4B-BF16), [Bolt-E4B-4GB (Q4_K_M)](https://huggingface.co/nvidia/NVIDIA-Nemotron-3.5-Bolt-E4B-4GB), [ggml-org GGUF](https://huggingface.co/ggml-org/NVIDIA-Nemotron-3.5-Bolt-E4B-GGUF), [HPCwire, анонс 10-15](https://www.hpcwire.com/aiwire/2026/10/15/nvidia-expands-nemotron-family-with-highest-efficiency-super-vl-and-bolt-models/), [WeVisOne-VL-4B](https://huggingface.co/tencent/WeVisOne-VL-4B), [RecursiveSI/flint](https://huggingface.co/RecursiveSI/flint), [LFM2.5-24B-A2B-DSpark](https://huggingface.co/LiquidAI/LFM2.5-24B-A2B-DSpark)
+- Qwen 4: [yottalabs — что известно](https://www.yottalabs.ai/post/qwen-4-release-date-what-is-known-how-to-prepare-2026), [aitoolsreview](https://aitoolsreview.co.uk/insights/qwen-4) — весов нет
+- Данные: [download.kiwix.org/zim/wikipedia](https://download.kiwix.org/zim/wikipedia/), [libkiwix releases](https://github.com/kiwix/libkiwix/releases), [libzim releases](https://github.com/openzim/libzim/releases)
+
 ## Неделя до 2026-10-18
 
 Окно — 10-11…10-18. Период 10-11…10-16 уже разобран в дополнении ниже,
